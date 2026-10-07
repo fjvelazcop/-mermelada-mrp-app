@@ -1,0 +1,196 @@
+<div class="min-h-screen bg-stone-50 text-stone-900 flex flex-col font-sans selection:bg-amber-600 selection:text-white">
+  <!-- Top Bar Contract: Exactly 3 zones, single text brand mark, clean nav, 1-2 actions -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 lg:px-8 py-3.5 print:hidden">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      <!-- Zone 1: Single text element wordmark -->
+      <div class="flex items-center gap-3">
+        <a
+          href="javascript:void(0)"
+          (click)="setTab('dashboard')"
+          class="text-lg font-bold tracking-tight text-stone-900 flex items-center gap-2 hover:opacity-90 transition-opacity"
+        >
+          <span class="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
+            P
+          </span>
+          <span>PulpaCraft MRP</span>
+        </a>
+      </div>
+
+      <!-- Zone 2: 4-6 clean text navigation links / segmented controls -->
+      <nav class="hidden md:flex items-center gap-1 text-xs font-medium text-stone-600">
+        <button
+          (click)="setTab('dashboard')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-stone-100]="currentTab() === 'dashboard'"
+          [class.text-stone-900]="currentTab() === 'dashboard'"
+          [class.font-semibold]="currentTab() === 'dashboard'"
+        >
+          Tablero
+        </button>
+
+        <button
+          (click)="setTab('inventory')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-stone-100]="currentTab() === 'inventory'"
+          [class.text-stone-900]="currentTab() === 'inventory'"
+          [class.font-semibold]="currentTab() === 'inventory'"
+        >
+          Inventario & Materia Prima
+        </button>
+
+        <button
+          (click)="setTab('production')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-stone-100]="currentTab() === 'production'"
+          [class.text-stone-900]="currentTab() === 'production'"
+          [class.font-semibold]="currentTab() === 'production'"
+        >
+          Producción & BOM
+        </button>
+
+        <button
+          (click)="setTab('costing')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-stone-100]="currentTab() === 'costing'"
+          [class.text-stone-900]="currentTab() === 'costing'"
+          [class.font-semibold]="currentTab() === 'costing'"
+        >
+          Costos & Precios
+        </button>
+
+        <button
+          (click)="setTab('sales')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-stone-100]="currentTab() === 'sales'"
+          [class.text-stone-900]="currentTab() === 'sales'"
+          [class.font-semibold]="currentTab() === 'sales'"
+        >
+          Ventas & Despacho
+        </button>
+
+        <button
+          (click)="setTab('payroll')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-stone-100]="currentTab() === 'payroll'"
+          [class.text-stone-900]="currentTab() === 'payroll'"
+          [class.font-semibold]="currentTab() === 'payroll'"
+        >
+          Nómina Semanal
+        </button>
+
+        <button
+          (click)="setTab('architecture')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-stone-100]="currentTab() === 'architecture'"
+          [class.text-stone-900]="currentTab() === 'architecture'"
+          [class.font-semibold]="currentTab() === 'architecture'"
+        >
+          Arquitectura & Docs
+        </button>
+      </nav>
+
+      <!-- Zone 3: 1-2 primary actions (Role Switcher + Reset Demo) -->
+      <div class="flex items-center gap-2">
+        <!-- Role Switcher Button -->
+        <button
+          (click)="toggleUserRole()"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors shadow-xs"
+          [class.bg-stone-900]="api.currentRole() === 'admin'"
+          [class.text-white]="api.currentRole() === 'admin'"
+          [class.border-stone-900]="api.currentRole() === 'admin'"
+          [class.bg-amber-50]="api.currentRole() === 'operator'"
+          [class.text-amber-900]="api.currentRole() === 'operator'"
+          [class.border-amber-300]="api.currentRole() === 'operator'"
+          title="Alternar entre rol Administrador y Operario de Planta"
+        >
+          <mat-icon class="text-xs">{{ api.currentRole() === 'admin' ? 'admin_panel_settings' : 'engineering' }}</mat-icon>
+          <span>{{ api.currentRole() === 'admin' ? 'Rol: Administrador' : 'Rol: Operador Planta' }}</span>
+        </button>
+
+        <!-- Reset Demo Action -->
+        <button
+          (click)="resetDemoData()"
+          class="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors"
+          title="Restaurar datos de prueba originales"
+        >
+          <mat-icon class="text-sm">restart_alt</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Nav Bar (below header on small screens) -->
+    <div class="md:hidden flex items-center overflow-x-auto gap-2 pt-3 pb-1 border-t border-stone-100 mt-2 text-xs">
+      <button (click)="setTab('dashboard')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'dashboard'" [class.text-white]="currentTab() === 'dashboard'">Tablero</button>
+      <button (click)="setTab('inventory')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'inventory'" [class.text-white]="currentTab() === 'inventory'">Inventario</button>
+      <button (click)="setTab('production')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'production'" [class.text-white]="currentTab() === 'production'">Producción BOM</button>
+      <button (click)="setTab('costing')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'costing'" [class.text-white]="currentTab() === 'costing'">Costos & Precios</button>
+      <button (click)="setTab('sales')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'sales'" [class.text-white]="currentTab() === 'sales'">Ventas</button>
+      <button (click)="setTab('payroll')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'payroll'" [class.text-white]="currentTab() === 'payroll'">Nómina</button>
+      <button (click)="setTab('architecture')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'architecture'" [class.text-white]="currentTab() === 'architecture'">Arquitectura</button>
+    </div>
+  </header>
+
+  <!-- Global Toast Feedback Message -->
+  @if (api.toastMessage()) {
+    <div
+      class="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold transition-all transform animate-in fade-in slide-in-from-bottom-3 duration-200"
+      [class.bg-stone-900]="api.toastMessage()?.type === 'success'"
+      [class.text-white]="api.toastMessage()?.type === 'success'"
+      [class.border-stone-800]="api.toastMessage()?.type === 'success'"
+      [class.bg-rose-900]="api.toastMessage()?.type === 'error'"
+      [class.text-white]="api.toastMessage()?.type === 'error'"
+      [class.border-rose-800]="api.toastMessage()?.type === 'error'"
+      [class.bg-amber-900]="api.toastMessage()?.type === 'info'"
+      [class.text-white]="api.toastMessage()?.type === 'info'"
+      [class.border-amber-800]="api.toastMessage()?.type === 'info'"
+    >
+      <mat-icon class="text-sm">
+        {{ api.toastMessage()?.type === 'success' ? 'check_circle' : (api.toastMessage()?.type === 'error' ? 'error' : 'info') }}
+      </mat-icon>
+      <span>{{ api.toastMessage()?.text }}</span>
+    </div>
+  }
+
+  <!-- Main Viewport Canvas (1440px desktop baseline presence) -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+    @switch (currentTab()) {
+      @case ('dashboard') {
+        <app-dashboard />
+      }
+      @case ('inventory') {
+        <app-inventory />
+      }
+      @case ('production') {
+        <app-production />
+      }
+      @case ('costing') {
+        <app-costing />
+      }
+      @case ('sales') {
+        <app-sales />
+      }
+      @case ('payroll') {
+        <app-payroll />
+      }
+      @case ('architecture') {
+        <app-architecture-docs />
+      }
+    }
+  </main>
+
+  <!-- Footer (Quiet, editorial, anti-slop) -->
+  <footer class="bg-white border-t border-stone-200 py-6 px-4 text-xs text-stone-500 print:hidden">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+      <div>
+        <span class="font-bold text-stone-800">PulpaCraft MRP</span> · Sistema de Gestión de Producción de Mermeladas Make-to-Order
+      </div>
+      <div class="flex items-center gap-4 text-stone-400">
+        <span>Trazabilidad HACCP / BPM</span>
+        <span>·</span>
+        <span>Costeo de Semanas Inactivas</span>
+        <span>·</span>
+        <span>Facturación Fiscal Preparada</span>
+      </div>
+    </div>
+  </footer>
+</div>

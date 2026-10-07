@@ -1,0 +1,348 @@
+<div class="space-y-8">
+  <!-- Module Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+    <div>
+      <h1 class="text-2xl font-bold text-stone-900 tracking-tight">Módulo de Nómina Semanal & Control de Inactividad</h1>
+      <p class="text-sm text-stone-500 mt-1">
+        Pagos semanales al personal de planta y trazabilidad financiera de semanas inactivas (sin producción)
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      @if (api.currentRole() === 'admin') {
+        <button
+          (click)="openNewEmployeeModal()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white text-stone-700 border border-stone-300 rounded-lg shadow-xs hover:bg-stone-50 transition-colors"
+        >
+          <mat-icon class="text-stone-500 text-sm">badge</mat-icon>
+          Nuevo Operario
+        </button>
+
+        <button
+          (click)="openNewWeekModal()"
+          class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg shadow-xs hover:bg-stone-800 transition-colors"
+        >
+          <mat-icon class="text-stone-300 text-sm">payments</mat-icon>
+          Registrar Semana de Nómina
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- SECCIÓN 1: PANEL ANALÍTICO DE SEMANAS INACTIVAS (COSTOS FIJOS OPERACIONALES) -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-white border border-stone-200 rounded-xl p-5 shadow-xs">
+      <div class="flex items-center justify-between text-stone-500 mb-1">
+        <span class="text-xs uppercase tracking-wider font-semibold">Semanas Inactivas Registradas</span>
+        <mat-icon class="text-rose-600 text-lg">event_busy</mat-icon>
+      </div>
+      <div class="text-2xl font-bold text-stone-900 font-mono tabular-nums">
+        {{ inactiveWeeks().length }} semanas
+      </div>
+      <div class="text-xs text-stone-500 mt-2">
+        Semanas sin encendido de paila ni cocción
+      </div>
+    </div>
+
+    <div class="bg-white border border-stone-200 rounded-xl p-5 shadow-xs">
+      <div class="flex items-center justify-between text-stone-500 mb-1">
+        <span class="text-xs uppercase tracking-wider font-semibold">Costo Nómina en Inactividad</span>
+        <mat-icon class="text-amber-600 text-lg">money_off</mat-icon>
+      </div>
+      <div class="text-2xl font-bold text-rose-700 font-mono tabular-nums">
+        ${{ totalInactiveCostYTD() | number:'1.2-2' }}
+      </div>
+      <div class="text-xs text-stone-500 mt-2">
+        Nómina devengada y pagada sin generar producto
+      </div>
+    </div>
+
+    <div class="bg-white border border-stone-200 rounded-xl p-5 shadow-xs">
+      <div class="flex items-center justify-between text-stone-500 mb-1">
+        <span class="text-xs uppercase tracking-wider font-semibold">Plantilla Operativa Actual</span>
+        <mat-icon class="text-emerald-600 text-lg">groups</mat-icon>
+      </div>
+      <div class="text-2xl font-bold text-stone-900 font-mono tabular-nums">
+        {{ employees().length }} operarios
+      </div>
+      <div class="text-xs text-stone-500 mt-2">
+        Personal fijo de apoyo en planta y selección
+      </div>
+    </div>
+  </div>
+
+  <!-- SECCIÓN 2: HISTORIAL DE SEMANAS DE NÓMINA -->
+  <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+      <div>
+        <h2 class="text-lg font-bold text-stone-900">Historial Semanal de Nómina (2026)</h2>
+        <p class="text-xs text-stone-500">
+          Supervisión de desembolsos, bonificaciones por lote y distinción entre semanas activas e inactivas
+        </p>
+      </div>
+      <div class="flex items-center gap-3 text-xs text-stone-500">
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Producción Activa</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Semana Inactiva (Parada)</span>
+      </div>
+    </div>
+
+    <div class="space-y-4">
+      @for (week of payrollWeeks(); track week.id) {
+        <div class="border rounded-xl p-5 transition-all"
+          [class.border-rose-200]="!week.isActiveProduction"
+          [class.bg-rose-50/20]="!week.isActiveProduction"
+          [class.border-stone-200]="week.isActiveProduction"
+          [class.bg-white]="week.isActiveProduction">
+
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="text-base font-bold text-stone-900 font-mono">Semana #{{ week.weekNumber }}</span>
+                <span class="text-xs font-mono text-stone-500">{{ week.startDate }} al {{ week.endDate }}</span>
+                @if (week.isActiveProduction) {
+                  <span class="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded">
+                    Producción Activa
+                  </span>
+                } @else {
+                  <span class="text-xs font-semibold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded flex items-center gap-1">
+                    <mat-icon class="text-xs">pause</mat-icon>
+                    Semana Inactiva (Sin Producción)
+                  </span>
+                }
+              </div>
+
+              @if (!week.isActiveProduction && week.inactivityReason) {
+                <div class="mt-2 text-xs font-semibold text-rose-800 flex items-center gap-1">
+                  <mat-icon class="text-xs">error_outline</mat-icon>
+                  Causa: {{ week.inactivityReason === 'mantenimiento_preventivo' ? 'Mantenimiento Preventivo de Marmitas & Pailas' : (week.inactivityReason === 'escasez_fruta' ? 'Veda / Escasez de Fruta por Lluvias' : week.inactivityReason) }}
+                </div>
+              }
+
+              @if (week.notes) {
+                <p class="text-xs text-stone-600 mt-1 italic">
+                  "{{ week.notes }}"
+                </p>
+              }
+            </div>
+
+            <!-- Total Paid & Cost Absorption -->
+            <div class="flex items-center gap-6 border-t lg:border-t-0 pt-3 lg:pt-0 border-stone-100">
+              <div class="text-right">
+                <span class="text-xs text-stone-400 block">Total Desembolsado</span>
+                <span class="text-lg font-bold font-mono text-stone-900">${{ week.totalPayrollPaid | number:'1.2-2' }}</span>
+              </div>
+
+              @if (!week.isActiveProduction) {
+                <div class="text-right bg-rose-100/70 px-3 py-1.5 rounded-lg border border-rose-200">
+                  <span class="text-[10px] text-rose-700 block uppercase font-bold">Costo Fijo No Absorbido</span>
+                  <span class="text-sm font-bold font-mono text-rose-800">${{ week.fixedAbsorptionCost | number:'1.2-2' }}</span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Employee Payments Sub-table -->
+          <div class="mt-4 pt-3 border-t border-stone-100">
+            <details class="text-xs group">
+              <summary class="cursor-pointer text-stone-500 hover:text-stone-800 flex items-center gap-1 select-none">
+                <mat-icon class="text-xs transition-transform group-open:rotate-90">chevron_right</mat-icon>
+                <span>Ver pagos individuales a {{ week.payments.length }} operarios</span>
+              </summary>
+              <div class="mt-3 overflow-x-auto">
+                <table class="w-full text-left">
+                  <thead class="bg-stone-50 text-stone-600 border-b border-stone-200">
+                    <tr>
+                      <th class="py-2 px-3 font-semibold">Operario</th>
+                      <th class="py-2 px-3 font-semibold">Rol</th>
+                      <th class="py-2 px-3 text-right font-semibold">Sueldo Base</th>
+                      <th class="py-2 px-3 text-right font-semibold">Bono Prod.</th>
+                      <th class="py-2 px-3 text-right font-semibold">Deducciones</th>
+                      <th class="py-2 px-3 text-right font-semibold">Neto Pagado</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-stone-100">
+                    @for (p of week.payments; track p.employeeId) {
+                      <tr>
+                        <td class="py-2 px-3 font-medium text-stone-900">{{ p.employeeName }}</td>
+                        <td class="py-2 px-3 text-stone-600">{{ p.roleTitle }}</td>
+                        <td class="py-2 px-3 text-right font-mono">${{ p.baseAmount | number:'1.2-2' }}</td>
+                        <td class="py-2 px-3 text-right font-mono" [class.text-emerald-700]="p.productionBonus > 0">${{ p.productionBonus | number:'1.2-2' }}</td>
+                        <td class="py-2 px-3 text-right font-mono text-rose-700">-${{ p.deductions | number:'1.2-2' }}</td>
+                        <td class="py-2 px-3 text-right font-mono font-bold text-stone-900">${{ p.netPaid | number:'1.2-2' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- SECCIÓN 3: PERSONAL DE APOYO DE PLANTA -->
+  <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-lg font-bold text-stone-900">Personal de Planta & Sueldos Base</h2>
+        <p class="text-xs text-stone-500">Operarios fijos de cocción, despulpadora y empaque</p>
+      </div>
+      @if (api.currentRole() === 'admin') {
+        <button (click)="openNewEmployeeModal()" class="text-xs font-semibold text-stone-900 hover:text-amber-800 flex items-center gap-1">
+          <mat-icon class="text-xs">add</mat-icon>
+          Registrar Operario
+        </button>
+      }
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      @for (emp of employees(); track emp.id) {
+        <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/40">
+          <div class="flex items-start justify-between">
+            <div>
+              <span class="text-xs font-mono text-stone-400 block">{{ emp.nationalId }}</span>
+              <h3 class="font-bold text-stone-900 text-sm mt-0.5">{{ emp.fullName }}</h3>
+              <span class="text-xs text-stone-600 font-medium block mt-1">{{ emp.roleTitle }}</span>
+            </div>
+            <span class="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
+              Activo
+            </span>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-stone-200/60 flex items-center justify-between text-xs">
+            <span class="text-stone-500">Salario Semanal Fijo:</span>
+            <span class="font-mono font-bold text-stone-900 text-sm">${{ emp.weeklyBaseSalary | number:'1.2-2' }}</span>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- MODAL: REGISTRAR SEMANA DE NÓMINA -->
+  @if (isNewWeekModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-stone-800">payments</mat-icon>
+            <h3 class="text-lg font-bold text-stone-900">Registrar Semana de Nómina</h3>
+          </div>
+          <button (click)="closeNewWeekModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="newWeekForm" (ngSubmit)="submitPayrollWeek()" class="space-y-4 mt-4">
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Nro. Semana</label>
+              <input type="number" formControlName="weekNumber" min="1" max="52" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Fecha Inicio</label>
+              <input type="date" formControlName="startDate" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Fecha Fin</label>
+              <input type="date" formControlName="endDate" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+            </div>
+          </div>
+
+          <!-- Production State Switch -->
+          <div class="bg-stone-50 p-3.5 rounded-xl border border-stone-200 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="font-bold text-xs text-stone-900 block">¿Hubo producción en marmita?</span>
+                <span class="text-[11px] text-stone-500">Desactiva esta opción si fue semana parada / inactiva</span>
+              </div>
+              <input type="checkbox" formControlName="isActiveProduction" class="w-5 h-5 text-stone-900 rounded" />
+            </div>
+
+            @if (!newWeekForm.controls.isActiveProduction.value) {
+              <div class="pt-2 border-t border-stone-200">
+                <label class="block text-xs font-semibold text-rose-800 mb-1">Motivo de Inactividad (Costo Fijo)</label>
+                <select formControlName="inactivityReason" class="w-full bg-white border border-rose-200 rounded-lg px-3 py-2 text-sm text-stone-900">
+                  <option value="mantenimiento_preventivo">Mantenimiento Preventivo de Marmitas & Pailas</option>
+                  <option value="escasez_fruta">Veda / Escasez de Fruta por Lluvias</option>
+                  <option value="acumulacion_stock">Acumulación Temporal de Inventario en Bodega</option>
+                  <option value="vacaciones_colectivas">Vacaciones Colectivas de Planta</option>
+                  <option value="temporada_baja">Temporada Baja Comercial</option>
+                </select>
+              </div>
+            }
+          </div>
+
+          @if (newWeekForm.controls.isActiveProduction.value) {
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Bono por Rendimiento / Lote ($ por operario)</label>
+              <input type="number" step="1" formControlName="bonusPerEmployee" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+            </div>
+          }
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Observaciones Operacionales</label>
+            <input type="text" placeholder="Detalle de tareas realizadas o contingencias" formControlName="notes" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+            <button type="button" (click)="closeNewWeekModal()" class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="newWeekForm.invalid" class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800">
+              Registrar Semana
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: NUEVO EMPLEADO -->
+  @if (isNewEmployeeModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-stone-800">badge</mat-icon>
+            <h3 class="text-lg font-bold text-stone-900">Registrar Operario de Apoyo</h3>
+          </div>
+          <button (click)="closeNewEmployeeModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="newEmployeeForm" (ngSubmit)="submitNewEmployee()" class="space-y-4 mt-4">
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Nombre Completo</label>
+            <input type="text" placeholder="ej: Ramón Eduardo Pérez" formControlName="fullName" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Cédula / Documento Identidad</label>
+              <input type="text" formControlName="nationalId" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Salario Semanal Base ($)</label>
+              <input type="number" formControlName="weeklyBaseSalary" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Cargo / Puesto Operativo</label>
+            <input type="text" formControlName="roleTitle" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+            <button type="button" (click)="closeNewEmployeeModal()" class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="newEmployeeForm.invalid" class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50">
+              Guardar Operario
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</div>

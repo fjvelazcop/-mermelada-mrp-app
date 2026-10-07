@@ -1,0 +1,517 @@
+<div class="space-y-8">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+    <div>
+      <h1 class="text-2xl font-bold text-stone-900 tracking-tight">Análisis Técnico & Arquitectura de Software</h1>
+      <p class="text-sm text-stone-500 mt-1">
+        Especificación formal para Sistema ERP/MRP Make-to-Order de Producción de Mermeladas Artesanales/Industriales
+      </p>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="flex items-center gap-1 p-1 bg-stone-100 rounded-lg text-xs font-medium">
+      <button
+        (click)="activeTab.set('requirements')"
+        class="px-3.5 py-1.5 rounded-md transition-colors"
+        [class.bg-white]="activeTab() === 'requirements'"
+        [class.shadow-xs]="activeTab() === 'requirements'"
+        [class.text-stone-900]="activeTab() === 'requirements'"
+        [class.text-stone-600]="activeTab() !== 'requirements'"
+      >
+        1. Análisis de Requerimientos
+      </button>
+      <button
+        (click)="activeTab.set('database')"
+        class="px-3.5 py-1.5 rounded-md transition-colors"
+        [class.bg-white]="activeTab() === 'database'"
+        [class.shadow-xs]="activeTab() === 'database'"
+        [class.text-stone-900]="activeTab() === 'database'"
+        [class.text-stone-600]="activeTab() !== 'database'"
+      >
+        2. Estructura de Base de Datos (ERD)
+      </button>
+      <button
+        (click)="activeTab.set('architecture')"
+        class="px-3.5 py-1.5 rounded-md transition-colors"
+        [class.bg-white]="activeTab() === 'architecture'"
+        [class.shadow-xs]="activeTab() === 'architecture'"
+        [class.text-stone-900]="activeTab() === 'architecture'"
+        [class.text-stone-600]="activeTab() !== 'architecture'"
+      >
+        3. Propuesta Arquitectónica
+      </button>
+    </div>
+  </div>
+
+  <!-- TAB 1: ANÁLISIS DE REQUERIMIENTOS -->
+  @if (activeTab() === 'requirements') {
+    <div class="space-y-6">
+      <!-- Context & Problem Statement -->
+      <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+        <h2 class="text-lg font-bold text-stone-900 mb-2">Contexto del Negocio & Problemática Make-to-Order (MTO)</h2>
+        <p class="text-sm text-stone-600 leading-relaxed">
+          Una microempresa de producción de mermeladas de fruta (ej. guayaba roja criolla, fresa silvestre) enfrenta restricciones críticas: <strong>materia prima altamente perecedera</strong> sujeta a estacionalidad o clima, <strong>costo financiero elevado en empaques de vidrio y tapas</strong>, y un canal de distribución enfocado en el sector B2B (panaderías, pastelerías y fabricantes de bocadillos). Producir a ciegas para almacenar genera mermas por vencimiento de fruta fresca y encarece el capital de trabajo.
+        </p>
+        <p class="text-sm text-stone-600 leading-relaxed mt-2">
+          El modelo <strong>Make-to-Order (MTO)</strong> resuelve esto iniciando la cocción en marmitas únicamente cuando un pedido de cliente ha sido pactado o cuando el stock de seguridad cae por debajo de su umbral mínimo.
+        </p>
+      </div>
+
+      <!-- Functional Requirements Table -->
+      <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+        <h2 class="text-lg font-bold text-stone-900 mb-4">Requerimientos Funcionales (RF)</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-stone-200 bg-stone-50 text-stone-600">
+                <th class="py-2.5 px-3 font-bold w-20">ID</th>
+                <th class="py-2.5 px-3 font-bold w-48">Módulo</th>
+                <th class="py-2.5 px-3 font-bold">Descripción Funcional</th>
+                <th class="py-2.5 px-3 font-bold w-32">Criterio de Aceptación</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100 text-stone-700">
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-01</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Inventario Materia Prima</td>
+                <td class="py-2.5 px-3">Registro de materias primas categorizadas: Fruta fresca, Químicos/Aditivos (Pectina cítrica HM, Ácido cítrico, Benzoato de sodio) y Empaques (Frascos 250g, Frascos 1000g, Tapas twist-off, Etiquetas).</td>
+                <td class="py-2.5 px-3">Stock actualizado en tiempo real con alertas si cae por debajo del mínimo de seguridad.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-02</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Inventario Producto Terminado</td>
+                <td class="py-2.5 px-3">Control de existencias de mermelada terminada según presentación: Pequeña (250g) e Institucional Grande (1000g). Discriminación entre stock físico, reservado para pedidos y libre despacho.</td>
+                <td class="py-2.5 px-3">Trazabilidad por número de lote único asignado al envasar.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-03</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Recetas & BOM</td>
+                <td class="py-2.5 px-3">Definición de fórmulas maestras (Bill of Materials) indicando cantidades exactas de insumos requeridas por lote (ej. lote de 50 frascos de 250g o lote de 20 frascos de 1kg), minutos de cocción y costo de servicios.</td>
+                <td class="py-2.5 px-3">Comprobación automática de viabilidad de insumos antes de autorizar cocción.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-04</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Descuento Atómico en Cocción</td>
+                <td class="py-2.5 px-3">Al procesar una Orden de Producción, descontar automáticamente las cantidades exactas de materia prima del almacén e ingresar el producto terminado correspondiente.</td>
+                <td class="py-2.5 px-3">Operación transaccional ACID: no descuenta materias primas si falla el registro del lote.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-05</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Estructura de Costeo Dinámico</td>
+                <td class="py-2.5 px-3">Cálculo de costo unitario por presentación segregando: Materiales directos + Empaques directos + Mano de obra en paila + Costos Indirectos (CIF) + Prorrateo de semanas inactivas.</td>
+                <td class="py-2.5 px-3">Sugerencia de Precios Mayorista (30-40% margen) y Minorista (45-55% margen).</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-06</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Gestión de Semanas Inactivas</td>
+                <td class="py-2.5 px-3">Registro de periodos sin producción (causas: mantenimiento preventivo, veda/escasez de fruta, acumulación de inventario) contabilizando la nómina pagada como costo fijo no absorbido.</td>
+                <td class="py-2.5 px-3">Visualización del impacto directo en el margen bruto anual acumulado.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-07</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Ventas & Despacho MTO</td>
+                <td class="py-2.5 px-3">Registro de pedidos de clientes comerciales. Si no hay suficiente stock libre en almacén, generar con un clic la Orden de Producción correspondiente ligada al pedido.</td>
+                <td class="py-2.5 px-3">Trazabilidad desde el pedido comercial hasta la orden de cocción.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-08</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Emisión de Notas de Entrega</td>
+                <td class="py-2.5 px-3">Generación e impresión formal de Notas de Entrega con membrete de la empresa, RIF, número consecutivo, desglose de ítems, lotes despachados y espacios de firma de recibido.</td>
+                <td class="py-2.5 px-3">Descuenta el producto terminado del almacén al emitir la nota física.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-09</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Preparación Fiscal</td>
+                <td class="py-2.5 px-3">Estructura base para Facturación Fiscal: número de control, alícuotas de IVA parametrizables, prefijo fiscal y datos de imprenta digital para homologación tributaria.</td>
+                <td class="py-2.5 px-3">Diseño modular desacoplado listo para conexión con impresoras o APIs fiscales.</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-10</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Reportes & Dashboard</td>
+                <td class="py-2.5 px-3">Comparativo mensual de ventas (Agosto, Septiembre, Octubre), rotación de inventario por presentación (Pequeña 250g vs Grande 1000g) y reporte de rentabilidad por lote.</td>
+                <td class="py-2.5 px-3">Cálculo de margen neto y ratios de rentabilidad en tiempo real.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Non-Functional Requirements -->
+      <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+        <h2 class="text-lg font-bold text-stone-900 mb-4">Requerimientos No Funcionales (RNF)</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div class="p-4 bg-stone-50 rounded-lg border border-stone-200">
+            <span class="font-bold text-stone-900 block text-sm mb-1">RNF-01: Rendimiento & Latencia</span>
+            <p class="text-stone-600">Tiempo de respuesta inferior a 200ms en consultas de stock y recálculo de fórmulas en cliente. Renderizado instantáneo con Signals reactivos.</p>
+          </div>
+          <div class="p-4 bg-stone-50 rounded-lg border border-stone-200">
+            <span class="font-bold text-stone-900 block text-sm mb-1">RNF-02: Integridad Transaccional ACID</span>
+            <p class="text-stone-600">Garantía estricta de consistencia en el descuento de inventario al procesar cocción: si no hay stock de un aditivo, la orden no puede ser procesada parcialmente.</p>
+          </div>
+          <div class="p-4 bg-stone-50 rounded-lg border border-stone-200">
+            <span class="font-bold text-stone-900 block text-sm mb-1">RNF-03: Trazabilidad Sanitaria (BPM / HACCP)</span>
+            <p class="text-stone-600">Cada frasco vendido debe estar vinculado a un número de lote de producción, y este a su vez a los lotes y fechas de recepción de materias primas consumidas.</p>
+          </div>
+          <div class="p-4 bg-stone-50 rounded-lg border border-stone-200">
+            <span class="font-bold text-stone-900 block text-sm mb-1">RNF-04: Control de Acceso Basado en Roles (RBAC)</span>
+            <p class="text-stone-600">Separación estricta entre Administrador (gestión de precios, costos, nómina y configuración fiscal) y Operador de Planta (ejecución de cocción y preparación de despachos).</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 2: ESTRUCTURA DE BASE DE DATOS (ERD & DICCIONARIO) -->
+  @if (activeTab() === 'database') {
+    <div class="space-y-6">
+      <!-- Diagrama Relacional Textual / Arquitectura de Datos -->
+      <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+        <h2 class="text-lg font-bold text-stone-900 mb-2">Diagrama Entidad-Relación (ERD) Conceptual</h2>
+        <p class="text-xs text-stone-500 mb-4">
+          Modelo relacional normalizado en 3FN diseñado para PostgreSQL / Cloud SQL con claves primarias UUID, claves foráneas e integridad referencial estricta.
+        </p>
+
+        <div class="bg-stone-900 text-stone-100 p-4 rounded-lg font-mono text-xs overflow-x-auto leading-relaxed">
+<pre>
+┌────────────────────────┐         1:N         ┌────────────────────────┐
+│     raw_materials      │────────────────────&lt;│  inventory_movements  │
+└────────────────────────┘                     └────────────────────────┘
+            │ 1:N                                          
+            │ (BOM items)                                  
+            ▼                                              
+┌────────────────────────┐         1:N         ┌────────────────────────┐
+│    bom_recipe_items    │&gt;────────────────────│       bom_recipes      │
+└────────────────────────┘                     └────────────────────────┘
+                                                           │ 1:N
+                                                           ▼
+┌────────────────────────┐         1:N         ┌────────────────────────┐
+│ production_consumed_it │&gt;────────────────────│   production_orders    │
+└────────────────────────┘                     └────────────────────────┘
+                                                           │ N:1 (Opcional)
+                                                           ▼
+┌────────────────────────┐         1:N         ┌────────────────────────┐
+│   sales_order_items    │&gt;────────────────────│      sales_orders      │
+└────────────────────────┘                     └────────────────────────┘
+            │ N:1                                          │ 1:1
+            ▼                                              ▼
+┌────────────────────────┐         1:N         ┌────────────────────────┐
+│     finished_goods     │                     │     delivery_notes     │
+└────────────────────────┘                     └────────────────────────┘
+                                                           │ 1:N
+                                                           ▼
+                                               ┌────────────────────────┐
+                                               │  delivery_note_items   │
+                                               └────────────────────────┘
+
+┌────────────────────────┐         1:N         ┌────────────────────────┐
+│       employees        │────────────────────&lt;│    payroll_payments    │
+└────────────────────────┘                     └────────────────────────┘
+                                                           │ N:1
+                                                           ▼
+                                               ┌────────────────────────┐
+                                               │     payroll_weeks      │ (Con flag isActiveProduction)
+                                               └────────────────────────┘
+</pre>
+        </div>
+      </div>
+
+      <!-- Tablas y Diccionario de Datos -->
+      <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs space-y-6">
+        <div>
+          <h2 class="text-lg font-bold text-stone-900 mb-2">Diccionario de Datos: Modelos Relacionales Clave</h2>
+          <p class="text-xs text-stone-500">
+            Definición de tablas físicas, tipos de datos, restricciones e índices recomendados para producción.
+          </p>
+        </div>
+
+        <!-- Tabla 1: raw_materials -->
+        <div class="border border-stone-200 rounded-lg overflow-hidden">
+          <div class="bg-stone-100 px-4 py-2 border-b border-stone-200 flex justify-between items-center text-xs">
+            <span class="font-bold text-stone-900 font-mono">Tabla: raw_materials</span>
+            <span class="text-stone-500">Insumos y materias primas</span>
+          </div>
+          <table class="w-full text-left text-xs">
+            <thead class="bg-stone-50 text-stone-600 border-b border-stone-200">
+              <tr>
+                <th class="py-2 px-3">Columna</th>
+                <th class="py-2 px-3">Tipo de Dato</th>
+                <th class="py-2 px-3">Restricciones</th>
+                <th class="py-2 px-3">Descripción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100 font-mono">
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">id</td>
+                <td class="py-1.5 px-3 text-stone-600">UUID / VARCHAR(36)</td>
+                <td class="py-1.5 px-3 text-rose-700 font-semibold">PRIMARY KEY</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Identificador único</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">code</td>
+                <td class="py-1.5 px-3 text-stone-600">VARCHAR(30)</td>
+                <td class="py-1.5 px-3 text-stone-700">UNIQUE NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Código SKU de materia prima (ej. MP-FRU-01)</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">category</td>
+                <td class="py-1.5 px-3 text-stone-600">ENUM / VARCHAR(20)</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">'fruta', 'aditivo', 'quimico', 'empaque'</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">current_stock</td>
+                <td class="py-1.5 px-3 text-stone-600">NUMERIC(12,3)</td>
+                <td class="py-1.5 px-3 text-stone-700">DEFAULT 0 CHECK (>= 0)</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Stock físico actual en bodega</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">min_stock</td>
+                <td class="py-1.5 px-3 text-stone-600">NUMERIC(12,3)</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Punto de reorden / alerta de nivel mínimo</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">cost_per_unit</td>
+                <td class="py-1.5 px-3 text-stone-600">NUMERIC(10,4)</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Costo promedio ponderado de compra</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tabla 2: finished_goods -->
+        <div class="border border-stone-200 rounded-lg overflow-hidden">
+          <div class="bg-stone-100 px-4 py-2 border-b border-stone-200 flex justify-between items-center text-xs">
+            <span class="font-bold text-stone-900 font-mono">Tabla: finished_goods</span>
+            <span class="text-stone-500">Mermeladas envasadas según presentación</span>
+          </div>
+          <table class="w-full text-left text-xs">
+            <thead class="bg-stone-50 text-stone-600 border-b border-stone-200">
+              <tr>
+                <th class="py-2 px-3">Columna</th>
+                <th class="py-2 px-3">Tipo de Dato</th>
+                <th class="py-2 px-3">Restricciones</th>
+                <th class="py-2 px-3">Descripción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100 font-mono">
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">id</td>
+                <td class="py-1.5 px-3 text-stone-600">UUID / VARCHAR(36)</td>
+                <td class="py-1.5 px-3 text-rose-700 font-semibold">PRIMARY KEY</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Identificador del producto</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">presentation</td>
+                <td class="py-1.5 px-3 text-stone-600">VARCHAR(30)</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">'pequena_250g' o 'grande_1000g'</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">stock_units</td>
+                <td class="py-1.5 px-3 text-stone-600">INTEGER</td>
+                <td class="py-1.5 px-3 text-stone-700">DEFAULT 0</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Total unidades físicas terminadas</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">reserved_units</td>
+                <td class="py-1.5 px-3 text-stone-600">INTEGER</td>
+                <td class="py-1.5 px-3 text-stone-700">DEFAULT 0</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Unidades comprometidas en pedidos MTO</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">base_cost</td>
+                <td class="py-1.5 px-3 text-stone-600">NUMERIC(10,2)</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Costo real de fabricación unitario</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tabla 3: production_orders -->
+        <div class="border border-stone-200 rounded-lg overflow-hidden">
+          <div class="bg-stone-100 px-4 py-2 border-b border-stone-200 flex justify-between items-center text-xs">
+            <span class="font-bold text-stone-900 font-mono">Tabla: production_orders</span>
+            <span class="text-stone-500">Órdenes de producción y lotes de marmita</span>
+          </div>
+          <table class="w-full text-left text-xs">
+            <thead class="bg-stone-50 text-stone-600 border-b border-stone-200">
+              <tr>
+                <th class="py-2 px-3">Columna</th>
+                <th class="py-2 px-3">Tipo de Dato</th>
+                <th class="py-2 px-3">Restricciones</th>
+                <th class="py-2 px-3">Descripción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100 font-mono">
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">id</td>
+                <td class="py-1.5 px-3 text-stone-600">UUID / VARCHAR(36)</td>
+                <td class="py-1.5 px-3 text-rose-700 font-semibold">PRIMARY KEY</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Identificador de la orden</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">recipe_id</td>
+                <td class="py-1.5 px-3 text-stone-600">UUID / VARCHAR(36)</td>
+                <td class="py-1.5 px-3 text-stone-700">FOREIGN KEY (bom_recipes.id)</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Fórmula maestra utilizada</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">sales_order_id</td>
+                <td class="py-1.5 px-3 text-stone-600">UUID / VARCHAR(36)</td>
+                <td class="py-1.5 px-3 text-stone-700">FOREIGN KEY (sales_orders.id) NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Pedido MTO vinculado (opcional)</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">lot_number</td>
+                <td class="py-1.5 px-3 text-stone-600">VARCHAR(50)</td>
+                <td class="py-1.5 px-3 text-stone-700">UNIQUE NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Trazabilidad sanitaria de cocción</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">status</td>
+                <td class="py-1.5 px-3 text-stone-600">ENUM</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">'planificada', 'en_proceso', 'completada'</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">total_cost</td>
+                <td class="py-1.5 px-3 text-stone-600">NUMERIC(10,2)</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Materiales + M.O. + CIF de este lote</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tabla 4: payroll_weeks -->
+        <div class="border border-stone-200 rounded-lg overflow-hidden">
+          <div class="bg-stone-100 px-4 py-2 border-b border-stone-200 flex justify-between items-center text-xs">
+            <span class="font-bold text-stone-900 font-mono">Tabla: payroll_weeks</span>
+            <span class="text-stone-500">Semanas de nómina y control de inactividad</span>
+          </div>
+          <table class="w-full text-left text-xs">
+            <thead class="bg-stone-50 text-stone-600 border-b border-stone-200">
+              <tr>
+                <th class="py-2 px-3">Columna</th>
+                <th class="py-2 px-3">Tipo de Dato</th>
+                <th class="py-2 px-3">Restricciones</th>
+                <th class="py-2 px-3">Descripción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100 font-mono">
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">id</td>
+                <td class="py-1.5 px-3 text-stone-600">UUID / VARCHAR(36)</td>
+                <td class="py-1.5 px-3 text-rose-700 font-semibold">PRIMARY KEY</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Identificador de semana</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">week_number</td>
+                <td class="py-1.5 px-3 text-stone-600">SMALLINT</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL CHECK (1-52)</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Semana del año calendario</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">is_active_production</td>
+                <td class="py-1.5 px-3 text-stone-600">BOOLEAN</td>
+                <td class="py-1.5 px-3 text-stone-700">NOT NULL DEFAULT TRUE</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">TRUE: Cocción activa; FALSE: Semana parada</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">inactivity_reason</td>
+                <td class="py-1.5 px-3 text-stone-600">VARCHAR(50)</td>
+                <td class="py-1.5 px-3 text-stone-700">NULL</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">'mantenimiento_preventivo', 'escasez_fruta', etc.</td>
+              </tr>
+              <tr>
+                <td class="py-1.5 px-3 font-bold text-stone-900">fixed_absorption_cost</td>
+                <td class="py-1.5 px-3 text-stone-600">NUMERIC(10,2)</td>
+                <td class="py-1.5 px-3 text-stone-700">DEFAULT 0</td>
+                <td class="py-1.5 px-3 font-sans text-stone-700">Costo fijo devengado sin producir mermelada</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 3: PROPUESTA ARQUITECTÓNICA COMPLETA -->
+  @if (activeTab() === 'architecture') {
+    <div class="space-y-6">
+      <!-- Arquitectura de Capas -->
+      <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+        <h2 class="text-lg font-bold text-stone-900 mb-2">Propuesta de Arquitectura Tecnológica Modular</h2>
+        <p class="text-xs text-stone-500 mb-6">
+          Diseño limpio en 3 capas (Frontend SPA + Backend API RESTful / Micro-módulos + Base de Datos Relacional) optimizado para microempresas agroalimentarias.
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <!-- Layer 1: Client -->
+          <div class="border border-stone-200 rounded-xl p-5 bg-stone-50/50">
+            <div class="flex items-center gap-2 mb-3">
+              <mat-icon class="text-amber-700">laptop_chromebook</mat-icon>
+              <h3 class="font-bold text-stone-900 text-sm">1. Frontend Reactivo</h3>
+            </div>
+            <ul class="text-xs text-stone-600 space-y-2 list-disc list-inside">
+              <li><strong>Angular 21 Standalone:</strong> Zoneless OnPush change detection con Signals de baja latencia.</li>
+              <li><strong>Diseño Anti-Slop:</strong> Tailwind CSS 4 con disciplina tipográfica estricta y cifras tabulares (<code class="font-mono">tabular-nums</code>).</li>
+              <li><strong>Modularidad de Vistas:</strong> Submódulos independientes (Inventario, Producción, Costos, Ventas, Nómina).</li>
+              <li><strong>Impresión Nativa:</strong> Estilos de impresión (<code class="font-mono">print:hidden</code> / <code class="font-mono">print:block</code>) para Notas de Entrega físicas inmediatas.</li>
+            </ul>
+          </div>
+
+          <!-- Layer 2: API -->
+          <div class="border border-stone-200 rounded-xl p-5 bg-stone-50/50">
+            <div class="flex items-center gap-2 mb-3">
+              <mat-icon class="text-stone-800">dns</mat-icon>
+              <h3 class="font-bold text-stone-900 text-sm">2. Backend API RESTful</h3>
+            </div>
+            <ul class="text-xs text-stone-600 space-y-2 list-disc list-inside">
+              <li><strong>Node.js & Express:</strong> Enrutamiento limpio, validación de esquemas y middleware de seguridad.</li>
+              <li><strong>Motor de Lógica MRP:</strong> Módulo matemático que descuenta BOM atómicamente y calcula absorción de costos.</li>
+              <li><strong>RBAC (Control de Acceso):</strong> Filtrado de privilegios entre Administrador y Operario de Marmita.</li>
+              <li><strong>Capa Fiscal Abstraída:</strong> Adaptador modular preparado para acoplar proveedores de timbrado/facturación electrónica.</li>
+            </ul>
+          </div>
+
+          <!-- Layer 3: Database -->
+          <div class="border border-stone-200 rounded-xl p-5 bg-stone-50/50">
+            <div class="flex items-center gap-2 mb-3">
+              <mat-icon class="text-emerald-700">storage</mat-icon>
+              <h3 class="font-bold text-stone-900 text-sm">3. Base de Datos Relacional</h3>
+            </div>
+            <ul class="text-xs text-stone-600 space-y-2 list-disc list-inside">
+              <li><strong>PostgreSQL / Relacional:</strong> Transacciones ACID para garantizar que descontar 15kg de guayaba y sumar 100 frascos ocurra en una sola transacción segura.</li>
+              <li><strong>Integridad Referencial:</strong> Restricciones de clave foránea que impiden borrar materias primas usadas en lotes históricos.</li>
+              <li><strong>Auditoría & Trazabilidad:</strong> Marcas temporales (<code class="font-mono">created_at</code>) y registro del operario responsable de cada movimiento.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Estrategia de Costeo y Semanas Inactivas -->
+      <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
+        <h3 class="text-base font-bold text-stone-900 mb-2">
+          Innovación Financiera: Manejo del Costo Fijo en Semanas sin Producción
+        </h3>
+        <p class="text-xs text-stone-600 leading-relaxed">
+          Los ERP tradicionales asumen una producción continua uniforme de lunes a viernes los 365 días del año. En la industria de mermeladas artesanales e industriales de pequeña escala, <strong>las semanas de inactividad son una realidad estructural</strong>. PulpaCraft resuelve esto a través de dos mecanismos simultáneos:
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 text-xs">
+          <div class="p-4 bg-stone-50 rounded-lg border border-stone-200">
+            <span class="font-bold text-stone-900 block mb-1">Mecanismo 1: Absorción Prorrateada en Recetas</span>
+            <p class="text-stone-600">El costo unitario sugerido incorpora una alícuota de penalización calculada dividiendo la nómina proyectada de semanas inactivas entre los lotes esperados del año, asegurando que el precio cubra la nómina anual completa.</p>
+          </div>
+          <div class="p-4 bg-stone-50 rounded-lg border border-stone-200">
+            <span class="font-bold text-stone-900 block mb-1">Mecanismo 2: Auditoría de Margen Real en Dashboard</span>
+            <p class="text-stone-600">Al analizar meses específicos (como Septiembre), el sistema resta el costo de nómina inactiva directamente del margen bruto, mostrando al dueño de la empresa la rentabilidad real de su dinero sin autoengaños contables.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+</div>

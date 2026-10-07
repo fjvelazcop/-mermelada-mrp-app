@@ -1,0 +1,6 @@
+{
+  "name": "PulpaCraft MRP - Sistema de Gestión de Mermeladas",
+  "description": "Sistema ERP y MRP Make-to-Order para microempresas de mermeladas: inventario, recetas BOM, costeo dinámico, nómina semanal y notas de entrega.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
