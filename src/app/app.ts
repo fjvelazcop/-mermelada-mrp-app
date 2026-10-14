@@ -8,6 +8,7 @@ import {CostingComponent} from './features/costing/costing';
 import {SalesComponent} from './features/sales/sales';
 import {PayrollComponent} from './features/payroll/payroll';
 import {ArchitectureDocsComponent} from './features/architecture-docs/architecture-docs';
+import {VeCurrencyPipe} from './core/pipes/ve-currency.pipe';
 
 export type MainNavigationTab =
   | 'dashboard'
@@ -30,6 +31,7 @@ export type MainNavigationTab =
     SalesComponent,
     PayrollComponent,
     ArchitectureDocsComponent,
+    VeCurrencyPipe,
   ],
   templateUrl: './app.html',
   styleUrl: './app.css',

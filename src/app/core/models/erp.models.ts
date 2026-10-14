@@ -28,6 +28,9 @@ export interface InventoryMovement {
   quantity: number;
   costPerUnit: number;
   totalCost: number;
+  exchangeRateUsed: number; // Tasa del día (USD en Bs.)
+  costPerUnitBs?: number; // Costo unitario en Bs.
+  totalCostBs?: number; // Total en Bs.
   referenceDoc?: string; // ej: Lote L-2026-10, Factura F-442
   date: string;
   performedBy: string;
@@ -87,6 +90,8 @@ export interface ProductionOrder {
   customerName?: string;
   startDate: string;
   completionDate?: string;
+  createdAt?: string; // Fecha de creación
+  exchangeRateUsed?: number; // Tasa del día USD/Bs al momento de la orden
   consumedMaterials: {
     materialId: string;
     materialName: string;
@@ -99,7 +104,10 @@ export interface ProductionOrder {
   directLaborCost: number;
   indirectCost: number;
   totalProductionCost: number;
+  totalCost?: number; // Alias totalProductionCost
   unitCost: number;
+  totalProductionCostBs?: number;
+  unitCostBs?: number;
   operatorNotes?: string;
 }
 
@@ -126,6 +134,8 @@ export interface SalesOrderItem {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+  unitPriceBs?: number;
+  subtotalBs?: number;
 }
 
 export interface SalesOrder {
@@ -137,10 +147,14 @@ export interface SalesOrder {
   orderDate: string;
   deliveryDate: string;
   status: SalesOrderStatus;
+  exchangeRateUsed: number; // Tasa del día USD aplicada (Bs./USD)
   items: SalesOrderItem[];
   subtotal: number;
   taxAmount: number;
   total: number;
+  subtotalBs?: number;
+  taxAmountBs?: number;
+  totalBs?: number;
   hasDeliveryNote: boolean;
   deliveryNoteNumber?: string;
   productionOrderId?: string;
@@ -157,6 +171,7 @@ export interface DeliveryNote {
   customerAddress: string;
   customerPhone: string;
   dispatchDate: string;
+  exchangeRateUsed: number; // Tasa del día USD en Bs. al momento del despacho
   items: {
     description: string;
     presentationLabel: string;
@@ -164,11 +179,16 @@ export interface DeliveryNote {
     lotNumber?: string;
     unitPrice: number;
     subtotal: number;
+    unitPriceBs?: number;
+    subtotalBs?: number;
   }[];
   subtotal: number;
   taxIncluded: boolean;
   taxAmount: number;
   total: number;
+  subtotalBs?: number;
+  taxAmountBs?: number;
+  totalBs?: number;
   transporter?: string;
   receivedByName?: string;
   receivedById?: string;
@@ -251,3 +271,27 @@ export interface MonthlySalesStat {
   grossMargin: number;
   grossMarginPercent: number;
 }
+
+export interface ExchangeRateRecord {
+  id: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm:ss
+  usdRate: number; // Tasa USD Oficial (BCV) en Bs.
+  usdtRate: number; // Tasa USDT Paralelo/Binance en Bs.
+  source: string; // ej: 'BCV / Oficial', 'Binance P2P / Monitor', 'Ajuste Manual'
+  window: 'manana_8_10' | 'tarde_1230_15' | 'extraordinaria';
+  variationUsdPercent?: number;
+  variationUsdtPercent?: number;
+  notes?: string;
+}
+
+export interface DailyExchangeRates {
+  currentUsd: number;
+  currentUsdt: number;
+  lastUpdated: string;
+  isInActiveWindow: boolean;
+  activeWindowName: string;
+  nextScheduledCheck: string;
+  history: ExchangeRateRecord[];
+}
+

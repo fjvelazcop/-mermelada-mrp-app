@@ -3,16 +3,19 @@ import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/
 import {DecimalPipe} from '@angular/common';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
+import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
+import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
 
 @Component({
   selector: 'app-payroll',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule],
+  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe],
   templateUrl: './payroll.html',
 })
 export class PayrollComponent {
   public api = inject(ErpApiService);
 
+  public currencyMode = signal<'USD' | 'Bs'>('USD');
   public isNewWeekModalOpen = signal<boolean>(false);
   public isNewEmployeeModalOpen = signal<boolean>(false);
 
@@ -128,5 +131,99 @@ export class PayrollComponent {
       status: 'activo',
     });
     this.closeNewEmployeeModal();
+  }
+
+  // --- EXPORT FUNCTIONALITY: PAYROLL & INACTIVE WEEKS ---
+
+  public exportPayrollCsv() {
+    const isBs = this.currencyMode() === 'Bs';
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const headers = [
+      'Semana Nro.',
+      'Rango Fechas',
+      'Estado Operativo',
+      'Motivo Inactividad',
+      'Tasa del Día (Bs./USD)',
+      `Total Pagado Nómina (${isBs ? 'Bs.' : 'USD'})`,
+      `Costo Fijo No Absorbido (${isBs ? 'Bs.' : 'USD'})`,
+      'Observaciones',
+    ];
+
+    const rows = this.payrollWeeks().map(w => {
+      const mult = isBs ? rate : 1;
+      return [
+        `Semana #${w.weekNumber}`,
+        `${w.startDate} al ${w.endDate}`,
+        w.isActiveProduction ? 'Producción Activa' : 'Semana Inactiva',
+        w.inactivityReason || 'N/A',
+        formatVeNumber(rate, 2),
+        formatVeNumber(w.totalPayrollPaid * mult, 2),
+        formatVeNumber(w.fixedAbsorptionCost * mult, 2),
+        w.notes || '',
+      ];
+    });
+
+    exportToCsv(`nomina_semanal_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  }
+
+  public exportPayrollExcel() {
+    const isBs = this.currencyMode() === 'Bs';
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const headers = [
+      'Semana Nro.',
+      'Rango Fechas',
+      'Estado Operativo',
+      'Motivo Inactividad',
+      'Tasa del Día (Bs./USD)',
+      `Total Pagado Nómina (${isBs ? 'Bs.' : 'USD'})`,
+      `Costo Fijo No Absorbido (${isBs ? 'Bs.' : 'USD'})`,
+      'Observaciones',
+    ];
+
+    const rows = this.payrollWeeks().map(w => {
+      const mult = isBs ? rate : 1;
+      return [
+        `Semana #${w.weekNumber}`,
+        `${w.startDate} al ${w.endDate}`,
+        w.isActiveProduction ? 'Producción Activa' : 'Semana Inactiva',
+        w.inactivityReason || 'N/A',
+        rate,
+        Number((w.totalPayrollPaid * mult).toFixed(2)),
+        Number((w.fixedAbsorptionCost * mult).toFixed(2)),
+        w.notes || '',
+      ];
+    });
+
+    exportToExcel(`nomina_semanal_${new Date().toISOString().slice(0, 10)}.xls`, 'Nómina Semanal', headers, rows);
+  }
+
+  public exportPayrollPdf() {
+    const isBs = this.currencyMode() === 'Bs';
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const headers = [
+      'Semana',
+      'Periodo',
+      'Estado',
+      'Tasa',
+      `Nómina (${isBs ? 'Bs.' : '$'})`,
+      `Costo Inactivo (${isBs ? 'Bs.' : '$'})`,
+    ];
+
+    const mult = isBs ? rate : 1;
+    const rows = this.payrollWeeks().map(w => [
+      `#${w.weekNumber}`,
+      `${w.startDate} a ${w.endDate}`,
+      w.isActiveProduction ? 'Activa' : 'Inactiva',
+      `Bs. ${formatVeNumber(rate, 2)}`,
+      formatVeNumber(w.totalPayrollPaid * mult, 2),
+      formatVeNumber(w.fixedAbsorptionCost * mult, 2),
+    ]);
+
+    exportToPdf(
+      'Control de Nómina Semanal y Análisis de Semanas Inactivas',
+      `Moneda: ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'} | Tasa de referencia: Bs. ${formatVeNumber(rate, 2)}`,
+      headers,
+      rows
+    );
   }
 }

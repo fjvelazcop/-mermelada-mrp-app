@@ -3,16 +3,19 @@ import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/
 import {DecimalPipe} from '@angular/common';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
+import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
+import {exportToCsv, exportToExcel, downloadCostingSummaryPdf} from '../../core/utils/export.utils';
 
 @Component({
   selector: 'app-costing',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule],
+  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe],
   templateUrl: './costing.html',
 })
 export class CostingComponent {
   public api = inject(ErpApiService);
 
+  public currencyMode = signal<'USD' | 'Bs'>('USD');
   public costData = computed(() => this.api.costStructure());
 
   // Interactive Pricing and Costing Simulator
@@ -88,5 +91,94 @@ export class CostingComponent {
       });
     }
     this.runSimulation();
+  }
+
+  // --- EXPORT FUNCTIONALITY: COST STRUCTURE BY PRESENTATION ---
+
+  public exportCostingCsv() {
+    const isBs = this.currencyMode() === 'Bs';
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const headers = [
+       'Presentación',
+       'Tasa Utilizada (Bs./USD)',
+       `Materia Prima Directa (${isBs ? 'Bs.' : 'USD'})`,
+       `Empaque Directo (${isBs ? 'Bs.' : 'USD'})`,
+       `Mano de Obra Directa (${isBs ? 'Bs.' : 'USD'})`,
+       `Carga Indirecta / CIF (${isBs ? 'Bs.' : 'USD'})`,
+       `Costo Total Unitario (${isBs ? 'Bs.' : 'USD'})`,
+       `Precio Mayorista Sugerido (${isBs ? 'Bs.' : 'USD'})`,
+       `Precio Detal Sugerido (${isBs ? 'Bs.' : 'USD'})`,
+       'Margen Bruto Mayorista (%)',
+       'Margen Bruto Detal (%)',
+    ];
+
+    const items = this.costData()?.costBreakdownByPresentation || [];
+    const rows: (string | number | null | undefined)[][] = items.map(item => {
+      const mult = isBs ? rate : 1;
+      return [
+        item.label,
+        formatVeNumber(rate, 2),
+        formatVeNumber(item.directMaterial * mult, 2),
+        formatVeNumber(item.directPackaging * mult, 2),
+        formatVeNumber(item.directLabor * mult, 2),
+        formatVeNumber(item.cifAllocation * mult, 2),
+        formatVeNumber(item.totalUnitCost * mult, 2),
+        formatVeNumber(item.suggestedWholesalePrice * mult, 2),
+        formatVeNumber(item.suggestedRetailPrice * mult, 2),
+        formatVeNumber(item.marginWholesalePercent, 1) + '%',
+        formatVeNumber(item.marginRetailPercent, 1) + '%',
+      ];
+    });
+
+    exportToCsv(`estructura_costos_mermeladas_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  }
+
+  public exportCostingExcel() {
+    const isBs = this.currencyMode() === 'Bs';
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const headers = [
+       'Presentación',
+       'Tasa Utilizada (Bs./USD)',
+       `Materia Prima Directa (${isBs ? 'Bs.' : 'USD'})`,
+       `Empaque Directo (${isBs ? 'Bs.' : 'USD'})`,
+       `Mano de Obra Directa (${isBs ? 'Bs.' : 'USD'})`,
+       `Carga Indirecta / CIF (${isBs ? 'Bs.' : 'USD'})`,
+       `Costo Total Unitario (${isBs ? 'Bs.' : 'USD'})`,
+       `Precio Mayorista Sugerido (${isBs ? 'Bs.' : 'USD'})`,
+       `Precio Detal Sugerido (${isBs ? 'Bs.' : 'USD'})`,
+       'Margen Bruto Mayorista (%)',
+       'Margen Bruto Detal (%)',
+    ];
+
+    const items = this.costData()?.costBreakdownByPresentation || [];
+    const rows = items.map(item => {
+      const mult = isBs ? rate : 1;
+      return [
+        item.label,
+        rate,
+        Number((item.directMaterial * mult).toFixed(2)),
+        Number((item.directPackaging * mult).toFixed(2)),
+        Number((item.directLabor * mult).toFixed(2)),
+        Number((item.cifAllocation * mult).toFixed(2)),
+        Number((item.totalUnitCost * mult).toFixed(2)),
+        Number((item.suggestedWholesalePrice * mult).toFixed(2)),
+        Number((item.suggestedRetailPrice * mult).toFixed(2)),
+        item.marginWholesalePercent,
+        item.marginRetailPercent,
+      ];
+    });
+
+    exportToExcel(`estructura_costos_mermeladas_${new Date().toISOString().slice(0, 10)}.xls`, 'Costos por Presentación', headers, rows);
+  }
+
+  public exportCostingPdf() {
+    this.exportCostingSummaryPdf();
+  }
+
+  public exportCostingSummaryPdf() {
+    const data = this.costData();
+    if (!data) return;
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    downloadCostingSummaryPdf(data, rate, this.simulationResult(), this.currencyMode());
   }
 }

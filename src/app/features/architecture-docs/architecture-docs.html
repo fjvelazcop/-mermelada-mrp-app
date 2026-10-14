@@ -131,6 +131,12 @@
                 <td class="py-2.5 px-3">Comparativo mensual de ventas (Agosto, Septiembre, Octubre), rotación de inventario por presentación (Pequeña 250g vs Grande 1000g) y reporte de rentabilidad por lote.</td>
                 <td class="py-2.5 px-3">Cálculo de margen neto y ratios de rentabilidad en tiempo real.</td>
               </tr>
+              <tr>
+                <td class="py-2.5 px-3 font-mono font-bold text-stone-900">RF-11</td>
+                <td class="py-2.5 px-3 font-semibold text-stone-800">Monitoreo Cambiario Venezuela (USD / USDT)</td>
+                <td class="py-2.5 px-3">Registro diario y visible en dashboard de cotizaciones USD (BCV oficial) y USDT (Binance P2P / mercado). Sincronización continua y búsqueda activa durante las dos ventanas de actualización financiera en Venezuela: 8:00 AM a 10:00 AM y 12:30 PM a 3:00 PM.</td>
+                <td class="py-2.5 px-3">Almacenamiento de histórico diario, cálculo de variaciones porcentuales y calculadora rápida de conversión a Bolívares.</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -155,6 +161,10 @@
           <div class="p-4 bg-stone-50 rounded-lg border border-stone-200">
             <span class="font-bold text-stone-900 block text-sm mb-1">RNF-04: Control de Acceso Basado en Roles (RBAC)</span>
             <p class="text-stone-600">Separación estricta entre Administrador (gestión de precios, costos, nómina y configuración fiscal) y Operador de Planta (ejecución de cocción y preparación de despachos).</p>
+          </div>
+          <div class="p-4 bg-amber-50 rounded-lg border border-amber-200 md:col-span-2">
+            <span class="font-bold text-amber-900 block text-sm mb-1">RNF-05: Localización Venezolana & Formateo Numérico Estricto</span>
+            <p class="text-amber-800">Conforme al estándar venezolano, todos los montos monetarios, pesos y cantidades utilizan obligatoriamente el <strong>punto (.) como separador de miles</strong> y la <strong>coma (,) como separador decimal</strong> (ej: <code>Bs. 1.250,50</code> o <code>48,35 Bs/USD</code>), garantizando uniformidad en cotizaciones, notas de entrega y balances contables.</p>
           </div>
         </div>
       </div>

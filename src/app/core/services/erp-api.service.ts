@@ -3,6 +3,7 @@ import {HttpClient} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 import {
   RawMaterial,
+  InventoryMovement,
   FinishedGood,
   RecipeBOM,
   ProductionOrder,
@@ -14,7 +15,9 @@ import {
   FiscalSettings,
   CostStructureAnalysis,
   UserRole,
+  DailyExchangeRates,
 } from '../models/erp.models';
+import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 
 @Injectable({
   providedIn: 'root',
@@ -27,6 +30,7 @@ export class ErpApiService {
 
   // Signals for responsive application state
   public rawMaterials = signal<RawMaterial[]>([]);
+  public inventoryMovements = signal<InventoryMovement[]>([]);
   public finishedGoods = signal<FinishedGood[]>([]);
   public recipes = signal<RecipeBOM[]>([]);
   public productionOrders = signal<ProductionOrder[]>([]);
@@ -38,9 +42,18 @@ export class ErpApiService {
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
   public dashboardData = signal<any | null>(null);
+  public exchangeRates = signal<DailyExchangeRates | null>(null);
+
+  // Rate Polling Timer Handle
+  private ratePollInterval: any = null;
 
   public isLoading = signal<boolean>(false);
+  public isRefreshingRates = signal<boolean>(false);
   public toastMessage = signal<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  constructor() {
+    this.startExchangeRatePoller();
+  }
 
   public showToast(text: string, type: 'success' | 'error' | 'info' = 'success') {
     this.toastMessage.set({ text, type });
@@ -57,12 +70,31 @@ export class ErpApiService {
     );
   }
 
+  /**
+   * Poller for Venezuela exchange rate active windows:
+   * Window 1: 08:00 AM - 10:00 AM
+   * Window 2: 12:30 PM - 03:00 PM
+   */
+  private startExchangeRatePoller() {
+    if (typeof window === 'undefined') return;
+
+    // Check every 60 seconds
+    this.ratePollInterval = setInterval(async () => {
+      const rates = this.exchangeRates();
+      // If in active window or null, fetch updates
+      if (!rates || rates.isInActiveWindow) {
+        await this.refreshExchangeRates(false);
+      }
+    }, 60000);
+  }
+
   // --- REFRESH ALL DATA ---
   public async refreshAllData() {
     this.isLoading.set(true);
     try {
       const [
         materials,
+        movements,
         fGoods,
         recs,
         pOrders,
@@ -74,8 +106,10 @@ export class ErpApiService {
         costing,
         fiscal,
         dash,
+        rates,
       ] = await Promise.all([
         firstValueFrom(this.http.get<RawMaterial[]>('/api/inventory/raw-materials')),
+        firstValueFrom(this.http.get<InventoryMovement[]>('/api/inventory/movements')),
         firstValueFrom(this.http.get<FinishedGood[]>('/api/inventory/finished-goods')),
         firstValueFrom(this.http.get<RecipeBOM[]>('/api/recipes')),
         firstValueFrom(this.http.get<ProductionOrder[]>('/api/production-orders')),
@@ -87,9 +121,11 @@ export class ErpApiService {
         firstValueFrom(this.http.get<CostStructureAnalysis>('/api/costing/summary')),
         firstValueFrom(this.http.get<FiscalSettings>('/api/fiscal-settings')),
         firstValueFrom(this.http.get<any>('/api/reports/dashboard')),
+        firstValueFrom(this.http.get<DailyExchangeRates>('/api/exchange-rates')).catch(() => null),
       ]);
 
       this.rawMaterials.set(materials);
+      this.inventoryMovements.set(movements);
       this.finishedGoods.set(fGoods);
       this.recipes.set(recs);
       this.productionOrders.set(pOrders);
@@ -101,10 +137,58 @@ export class ErpApiService {
       this.costStructure.set(costing);
       this.fiscalSettings.set(fiscal);
       this.dashboardData.set(dash);
+      if (rates) {
+        this.exchangeRates.set(rates);
+      }
     } catch (err: unknown) {
       console.warn('Network sync notice - ensuring local store state:', err);
     } finally {
       this.isLoading.set(false);
+    }
+  }
+
+  // --- EXCHANGE RATES METHODS ---
+  public async refreshExchangeRates(userTriggered = true) {
+    if (this.isRefreshingRates()) return;
+    this.isRefreshingRates.set(true);
+    try {
+      const res = await firstValueFrom(this.http.post<DailyExchangeRates>('/api/exchange-rates/refresh', {}));
+      this.exchangeRates.set(res);
+      if (userTriggered) {
+        this.showToast(
+          `Tasas actualizadas: USD ${formatVeCurrency(res.currentUsd, 'Bs.')} · USDT ${formatVeCurrency(res.currentUsdt, 'Bs.')}`,
+          'success'
+        );
+      }
+    } catch {
+      if (userTriggered) {
+        this.showToast('No se pudo sincronizar automáticamente. Puedes ingresar la tasa manual.', 'error');
+      }
+    } finally {
+      this.isRefreshingRates.set(false);
+    }
+  }
+
+  public async updateExchangeRateManual(usdRate: number, usdtRate: number, notes?: string) {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<DailyExchangeRates>('/api/exchange-rates/update', {
+          usdRate,
+          usdtRate,
+          source: 'Ajuste Manual en Planta',
+          notes: notes || 'Ajuste manual por operador',
+        })
+      );
+      this.exchangeRates.set(res);
+      this.showToast(
+        `Tasa registrada con éxito: USD ${formatVeCurrency(usdRate, 'Bs.')} · USDT ${formatVeCurrency(usdtRate, 'Bs.')}`,
+        'success'
+      );
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al registrar tasa';
+      this.showToast(msg, 'error');
+      throw err;
     }
   }
 
@@ -128,20 +212,26 @@ export class ErpApiService {
     type: 'entrada' | 'salida_produccion' | 'ajuste_merma';
     quantity: number;
     costPerUnit: number;
+    exchangeRateUsed?: number;
     referenceDoc?: string;
     notes?: string;
   }) {
     try {
       const mat = this.rawMaterials().find(m => m.id === data.materialId);
+      const rate = data.exchangeRateUsed || this.exchangeRates()?.currentUsd || 48.35;
+      const totalCost = Number((data.quantity * data.costPerUnit).toFixed(2));
       const payload = {
         ...data,
         materialName: mat ? mat.name : 'Insumo',
-        totalCost: Number((data.quantity * data.costPerUnit).toFixed(2)),
+        totalCost,
+        exchangeRateUsed: rate,
+        costPerUnitBs: Number((data.costPerUnit * rate).toFixed(2)),
+        totalCostBs: Number((totalCost * rate).toFixed(2)),
         date: new Date().toISOString().slice(0, 10),
         performedBy: this.currentRole() === 'admin' ? 'Administrador' : 'Operador de Planta',
       };
       await firstValueFrom(this.http.post('/api/inventory/movements', payload));
-      this.showToast(`Movimiento de ${data.quantity} ${mat?.unit || 'uds'} registrado.`);
+      this.showToast(`Movimiento de ${data.quantity} ${mat?.unit || 'uds'} registrado (Tasa: Bs. ${rate.toFixed(2).replace('.', ',')}).`);
       await this.refreshAllData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar movimiento';

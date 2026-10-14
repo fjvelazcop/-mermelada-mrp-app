@@ -91,6 +91,20 @@
 
       <!-- Zone 3: 1-2 primary actions (Role Switcher + Reset Demo) -->
       <div class="flex items-center gap-2">
+        <!-- Live Exchange Rates Ticker -->
+        <button
+          (click)="setTab('dashboard')"
+          class="hidden xl:flex items-center gap-2 text-xs font-mono bg-stone-100 hover:bg-stone-200/80 border border-stone-200/80 px-2.5 py-1.5 rounded-lg transition-colors text-left"
+          title="Ver cotización diaria de USD y USDT en el Tablero"
+        >
+          <span class="w-1.5 h-1.5 rounded-full" [class.bg-emerald-500]="api.exchangeRates()?.isInActiveWindow" [class.bg-amber-500]="!api.exchangeRates()?.isInActiveWindow"></span>
+          <span class="text-stone-600 font-semibold font-sans">USD:</span>
+          <span class="font-bold text-stone-900">{{ api.exchangeRates()?.currentUsd | veCurrency:'Bs.':2 }}</span>
+          <span class="text-stone-300">·</span>
+          <span class="text-stone-600 font-semibold font-sans">USDT:</span>
+          <span class="font-bold text-stone-900">{{ api.exchangeRates()?.currentUsdt | veCurrency:'Bs.':2 }}</span>
+        </button>
+
         <!-- Role Switcher Button -->
         <button
           (click)="toggleUserRole()"

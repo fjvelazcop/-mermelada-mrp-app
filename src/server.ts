@@ -347,6 +347,47 @@ app.put('/api/fiscal-settings', (req, res) => {
   }
 });
 
+// --- DAILY EXCHANGE RATES (USD & USDT VENEZUELA) ---
+app.get('/api/exchange-rates', (req, res) => {
+  try {
+    const rates = dbInstance.getExchangeRates();
+    res.json(rates);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al consultar tasas del día';
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.post('/api/exchange-rates/update', (req, res) => {
+  try {
+    const { usdRate, usdtRate, source, notes } = req.body;
+    if (!usdRate || !usdtRate) {
+      res.status(400).json({ error: 'Las tasas USD y USDT son requeridas' });
+      return;
+    }
+    const rates = dbInstance.updateExchangeRate({
+      usdRate: Number(usdRate),
+      usdtRate: Number(usdtRate),
+      source,
+      notes,
+    });
+    res.json(rates);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al registrar tasa';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.post('/api/exchange-rates/refresh', async (req, res) => {
+  try {
+    const rates = await dbInstance.fetchLiveExchangeRates();
+    res.json(rates);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al sincronizar tasas';
+    res.status(500).json({ error: msg });
+  }
+});
+
 // --- DASHBOARD REPORT ---
 app.get('/api/reports/dashboard', (req, res) => {
   try {

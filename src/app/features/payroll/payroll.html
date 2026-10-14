@@ -7,7 +7,61 @@
         Pagos semanales al personal de planta y trazabilidad financiera de semanas inactivas (sin producción)
       </p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- Currency Switcher Toggle -->
+      <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
+        <button
+          type="button"
+          (click)="currencyMode.set('USD')"
+          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+          [class.bg-white]="currencyMode() === 'USD'"
+          [class.text-stone-900]="currencyMode() === 'USD'"
+          [class.shadow-xs]="currencyMode() === 'USD'"
+          [class.text-stone-500]="currencyMode() !== 'USD'"
+        >
+          <span>USD ($)</span>
+        </button>
+        <button
+          type="button"
+          (click)="currencyMode.set('Bs')"
+          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+          [class.bg-white]="currencyMode() === 'Bs'"
+          [class.text-stone-900]="currencyMode() === 'Bs'"
+          [class.shadow-xs]="currencyMode() === 'Bs'"
+          [class.text-stone-500]="currencyMode() !== 'Bs'"
+        >
+          <span>Bolívares (Bs.)</span>
+        </button>
+      </div>
+
+      <!-- Export Toolbar with Excel, CSV, PDF icons -->
+      <div class="inline-flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-xs">
+        <button
+          (click)="exportPayrollExcel()"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
+          title="Exportar nómina a Excel (.xls)"
+        >
+          <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
+          <span class="hidden sm:inline">Excel</span>
+        </button>
+        <button
+          (click)="exportPayrollCsv()"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-800 hover:bg-sky-50 rounded transition-colors"
+          title="Exportar nómina a CSV (;)"
+        >
+          <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
+          <span class="hidden sm:inline">CSV</span>
+        </button>
+        <button
+          (click)="exportPayrollPdf()"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-rose-800 hover:bg-rose-50 rounded transition-colors"
+          title="Exportar nómina a PDF / Imprimir"
+        >
+          <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+          <span class="hidden sm:inline">PDF</span>
+        </button>
+      </div>
+
       @if (api.currentRole() === 'admin') {
         <button
           (click)="openNewEmployeeModal()"
@@ -22,7 +76,7 @@
           class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg shadow-xs hover:bg-stone-800 transition-colors"
         >
           <mat-icon class="text-stone-300 text-sm">payments</mat-icon>
-          Registrar Semana de Nómina
+          Registrar Semana
         </button>
       }
     </div>
@@ -49,10 +103,10 @@
         <mat-icon class="text-amber-600 text-lg">money_off</mat-icon>
       </div>
       <div class="text-2xl font-bold text-rose-700 font-mono tabular-nums">
-        ${{ totalInactiveCostYTD() | number:'1.2-2' }}
+        {{ totalInactiveCostYTD() | veCurrency:'$':2 }}
       </div>
       <div class="text-xs text-stone-500 mt-2">
-        Nómina devengada y pagada sin generar producto
+        Nómina devengada y pagada sin generar producto ({{ (totalInactiveCostYTD() * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }})
       </div>
     </div>
 
@@ -125,16 +179,27 @@
             </div>
 
             <!-- Total Paid & Cost Absorption -->
+            @let wRate = api.exchangeRates()?.currentUsd || 48.35;
             <div class="flex items-center gap-6 border-t lg:border-t-0 pt-3 lg:pt-0 border-stone-100">
               <div class="text-right">
                 <span class="text-xs text-stone-400 block">Total Desembolsado</span>
-                <span class="text-lg font-bold font-mono text-stone-900">${{ week.totalPayrollPaid | number:'1.2-2' }}</span>
+                @if (currencyMode() === 'USD') {
+                  <span class="text-lg font-bold font-mono text-stone-900">{{ week.totalPayrollPaid | veCurrency:'$':2 }}</span>
+                  <span class="text-[11px] font-mono text-stone-400 block">≈ {{ (week.totalPayrollPaid * wRate) | veCurrency:'Bs.':2 }}</span>
+                } @else {
+                  <span class="text-lg font-bold font-mono text-amber-950">{{ (week.totalPayrollPaid * wRate) | veCurrency:'Bs.':2 }}</span>
+                  <span class="text-[11px] font-mono text-stone-400 block">≈ {{ week.totalPayrollPaid | veCurrency:'$':2 }}</span>
+                }
               </div>
 
               @if (!week.isActiveProduction) {
                 <div class="text-right bg-rose-100/70 px-3 py-1.5 rounded-lg border border-rose-200">
                   <span class="text-[10px] text-rose-700 block uppercase font-bold">Costo Fijo No Absorbido</span>
-                  <span class="text-sm font-bold font-mono text-rose-800">${{ week.fixedAbsorptionCost | number:'1.2-2' }}</span>
+                  @if (currencyMode() === 'USD') {
+                    <span class="text-sm font-bold font-mono text-rose-800">{{ week.fixedAbsorptionCost | veCurrency:'$':2 }}</span>
+                  } @else {
+                    <span class="text-sm font-bold font-mono text-rose-900">{{ (week.fixedAbsorptionCost * wRate) | veCurrency:'Bs.':2 }}</span>
+                  }
                 </div>
               }
             </div>
@@ -164,10 +229,10 @@
                       <tr>
                         <td class="py-2 px-3 font-medium text-stone-900">{{ p.employeeName }}</td>
                         <td class="py-2 px-3 text-stone-600">{{ p.roleTitle }}</td>
-                        <td class="py-2 px-3 text-right font-mono">${{ p.baseAmount | number:'1.2-2' }}</td>
-                        <td class="py-2 px-3 text-right font-mono" [class.text-emerald-700]="p.productionBonus > 0">${{ p.productionBonus | number:'1.2-2' }}</td>
-                        <td class="py-2 px-3 text-right font-mono text-rose-700">-${{ p.deductions | number:'1.2-2' }}</td>
-                        <td class="py-2 px-3 text-right font-mono font-bold text-stone-900">${{ p.netPaid | number:'1.2-2' }}</td>
+                        <td class="py-2 px-3 text-right font-mono">{{ p.baseAmount | veCurrency:'$':2 }}</td>
+                        <td class="py-2 px-3 text-right font-mono" [class.text-emerald-700]="p.productionBonus > 0">{{ p.productionBonus | veCurrency:'$':2 }}</td>
+                        <td class="py-2 px-3 text-right font-mono text-rose-700">-{{ p.deductions | veCurrency:'$':2 }}</td>
+                        <td class="py-2 px-3 text-right font-mono font-bold text-stone-900">{{ p.netPaid | veCurrency:'$':2 }}</td>
                       </tr>
                     }
                   </tbody>

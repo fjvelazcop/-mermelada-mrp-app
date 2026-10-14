@@ -7,9 +7,271 @@
         Microempresa PulpaCraft Mermeladas · Modelo Make-to-Order (MTO) · Monitoreo de Planta y Rentabilidad
       </p>
     </div>
-    <div class="flex items-center gap-2 text-xs font-medium text-stone-600 bg-white border border-stone-200 px-3 py-1.5 rounded-lg shadow-xs">
-      <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-      <span>Operaciones en línea · Ejercicio Fiscal 2026</span>
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- Currency Switcher Toggle -->
+      <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
+        <button
+          type="button"
+          (click)="currencyMode.set('USD')"
+          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+          [class.bg-white]="currencyMode() === 'USD'"
+          [class.text-stone-900]="currencyMode() === 'USD'"
+          [class.shadow-xs]="currencyMode() === 'USD'"
+          [class.text-stone-500]="currencyMode() !== 'USD'"
+        >
+          <span>USD ($)</span>
+        </button>
+        <button
+          type="button"
+          (click)="currencyMode.set('Bs')"
+          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+          [class.bg-white]="currencyMode() === 'Bs'"
+          [class.text-stone-900]="currencyMode() === 'Bs'"
+          [class.shadow-xs]="currencyMode() === 'Bs'"
+          [class.text-stone-500]="currencyMode() !== 'Bs'"
+        >
+          <span>Bolívares (Bs.)</span>
+        </button>
+      </div>
+
+      <!-- Export Executive Report PDF Button -->
+      <button
+        (click)="exportExecutiveReportPdf()"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg shadow-xs transition-colors"
+        title="Exportar informe gerencial completo en PDF"
+      >
+        <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+        <span>Informe PDF</span>
+      </button>
+
+      <div class="hidden sm:flex items-center gap-2 text-xs font-medium text-stone-600 bg-white border border-stone-200 px-3 py-1.5 rounded-lg shadow-xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span>Operaciones en línea · Ejercicio 2026</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- WIDGET DESTACADO: REGISTRO DIARIO DE TASAS USD & USDT (VENEZUELA) -->
+  <!-- ============================================================ -->
+  <div class="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-stone-100">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Monitoreo Cambiario Venezuela</span>
+          <span class="text-stone-300">·</span>
+          <span class="text-xs text-stone-500">Separador de miles (.) y decimal (,)</span>
+        </div>
+        <h2 class="text-xl font-bold text-stone-900 tracking-tight mt-0.5">
+          Registro Diario de Cotización: Dólar Oficial (USD) & USDT Cripto/P2P
+        </h2>
+        <p class="text-xs text-stone-500 mt-1">
+          Horarios de variación y búsqueda activa: <strong class="text-stone-700">8:00 AM – 10:00 AM</strong> y <strong class="text-stone-700">12:30 PM – 3:00 PM</strong>.
+        </p>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          (click)="refreshRatesNow()"
+          [disabled]="api.isRefreshingRates()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg shadow-xs hover:bg-stone-800 disabled:opacity-50 transition-colors"
+        >
+          <mat-icon class="text-sm" [class.animate-spin]="api.isRefreshingRates()">sync</mat-icon>
+          <span>{{ api.isRefreshingRates() ? 'Buscando...' : 'Buscar Tasas en Línea' }}</span>
+        </button>
+
+        <button
+          (click)="openEditRateModal()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-white text-stone-700 border border-stone-300 rounded-lg shadow-xs hover:bg-stone-50 transition-colors"
+        >
+          <mat-icon class="text-sm text-stone-500">edit</mat-icon>
+          <span>Ajustar Manual</span>
+        </button>
+
+        <button
+          (click)="openRateHistoryModal()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-stone-100 text-stone-700 hover:bg-stone-200 rounded-lg transition-colors"
+        >
+          <mat-icon class="text-sm text-stone-500">history</mat-icon>
+          <span>Historial del Día ({{ rates()?.history?.length || 0 }})</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Window Notification Banner -->
+    <div class="mt-4 p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+      [class.bg-emerald-50]="rates()?.isInActiveWindow"
+      [class.border-emerald-200]="rates()?.isInActiveWindow"
+      [class.text-emerald-900]="rates()?.isInActiveWindow"
+      [class.bg-stone-50]="!rates()?.isInActiveWindow"
+      [class.border-stone-200]="!rates()?.isInActiveWindow"
+      [class.text-stone-700]="!rates()?.isInActiveWindow">
+
+      <div class="flex items-center gap-2.5">
+        <span class="relative flex h-2.5 w-2.5">
+          @if (rates()?.isInActiveWindow) {
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          } @else {
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+          }
+        </span>
+        <div>
+          <span class="font-bold">{{ rates()?.activeWindowName }}</span>
+          <span class="hidden sm:inline text-stone-500 ml-1">· Último registro: {{ rates()?.lastUpdated }} VET</span>
+        </div>
+      </div>
+
+      <div class="font-mono text-[11px] text-stone-500">
+        Próxima revisión: <strong class="text-stone-800">{{ rates()?.nextScheduledCheck }}</strong>
+      </div>
+    </div>
+
+    <!-- The Two Primary Exchange Rate Displays & Quick Converter -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+      <!-- Card: TASA USD OFICIAL (BCV) -->
+      <div class="bg-gradient-to-br from-stone-50 to-white border border-stone-200 rounded-xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-stone-500 mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+            <span class="text-xs uppercase tracking-wider font-bold text-stone-700">Dólar BCV Oficial (USD)</span>
+          </div>
+          <span class="text-[10px] text-stone-400 font-mono">Mesas de Cambio</span>
+        </div>
+
+        <div class="mt-2">
+          <div class="text-3xl font-black text-stone-900 font-mono tabular-nums tracking-tight">
+            {{ rates()?.currentUsd | veCurrency:'Bs.':2 }}
+          </div>
+          <span class="text-xs text-stone-500 block mt-1">
+            1 USD = <strong class="font-mono text-stone-800">{{ rates()?.currentUsd | veCurrency:'Bs.':2 }}</strong>
+          </span>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-stone-200/60 flex items-center justify-between text-xs">
+          <span class="text-stone-400">Variación hoy:</span>
+          @let lastUsdVar = rates()?.history?.[0]?.variationUsdPercent || 0;
+          <span class="font-mono font-semibold"
+            [class.text-emerald-700]="lastUsdVar >= 0"
+            [class.text-rose-600]="lastUsdVar < 0">
+            {{ lastUsdVar >= 0 ? '+' : '' }}{{ lastUsdVar | veNumber:2 }}%
+          </span>
+        </div>
+      </div>
+
+      <!-- Card: TASA USDT (PARALELO / BINANCE P2P) -->
+      <div class="bg-gradient-to-br from-stone-50 to-white border border-stone-200 rounded-xl p-5 relative overflow-hidden">
+        <div class="flex items-center justify-between text-stone-500 mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+            <span class="text-xs uppercase tracking-wider font-bold text-stone-700">USDT / Paralelo (P2P)</span>
+          </div>
+          <span class="text-[10px] text-stone-400 font-mono">Binance / Mercado</span>
+        </div>
+
+        <div class="mt-2">
+          <div class="text-3xl font-black text-stone-900 font-mono tabular-nums tracking-tight">
+            {{ rates()?.currentUsdt | veCurrency:'Bs.':2 }}
+          </div>
+          <span class="text-xs text-stone-500 block mt-1">
+            1 USDT = <strong class="font-mono text-stone-800">{{ rates()?.currentUsdt | veCurrency:'Bs.':2 }}</strong>
+          </span>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-stone-200/60 flex items-center justify-between text-xs">
+          <span class="text-stone-400">Variación hoy:</span>
+          @let lastUsdtVar = rates()?.history?.[0]?.variationUsdtPercent || 0;
+          <span class="font-mono font-semibold"
+            [class.text-emerald-700]="lastUsdtVar >= 0"
+            [class.text-rose-600]="lastUsdtVar < 0">
+            {{ lastUsdtVar >= 0 ? '+' : '' }}{{ lastUsdtVar | veNumber:2 }}%
+          </span>
+        </div>
+      </div>
+
+      <!-- Card: CALCULADORA RÁPIDA DE PRECIOS EN BOLÍVARES -->
+      <div class="bg-stone-50 border border-stone-200 rounded-xl p-4 flex flex-col justify-between text-xs">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-bold text-stone-800 uppercase tracking-wider text-[11px]">Conversor Rápido a Bs.</span>
+            <span class="text-[10px] text-stone-400">En tiempo real</span>
+          </div>
+
+          <div class="flex items-center gap-2 mt-1">
+            <div class="relative flex-1">
+              <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 font-bold">$</span>
+              <input
+                type="number"
+                [value]="converterAmountUsd()"
+                (input)="updateConverterAmount($event)"
+                class="w-full bg-white border border-stone-200 rounded-lg pl-6 pr-2 py-1.5 font-mono text-stone-900 text-sm font-bold focus:outline-none focus:ring-1 focus:ring-stone-800"
+                placeholder="10"
+              />
+            </div>
+            <select
+              [value]="selectedConverterTarget()"
+              (change)="selectedConverterTarget.set($any($event.target).value)"
+              class="bg-white border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-800"
+            >
+              <option value="usd">A tasa BCV</option>
+              <option value="usdt">A tasa USDT</option>
+            </select>
+          </div>
+
+          <!-- Computed Conversion Result -->
+          <div class="mt-3 p-2.5 bg-white rounded-lg border border-stone-200/80">
+            <span class="text-[11px] text-stone-400 block">Equivalente en Bolívares:</span>
+            @let activeRate = selectedConverterTarget() === 'usd' ? (rates()?.currentUsd || 48.35) : (rates()?.currentUsdt || 54.80);
+            @let convertedTotal = converterAmountUsd() * activeRate;
+            <span class="font-mono text-lg font-black text-stone-900 block mt-0.5 tabular-nums">
+              {{ convertedTotal | veCurrency:'Bs.':2 }}
+            </span>
+          </div>
+        </div>
+
+        <div class="mt-2 text-[10px] text-stone-400">
+          * Para cotización formal a clientes según normativa venezolana.
+        </div>
+      </div>
+    </div>
+
+    <!-- PRECIOS DE PRODUCTOS EN BOLÍVARES AL DÍA -->
+    <div class="mt-5 pt-4 border-t border-stone-100">
+      <span class="text-[11px] font-bold uppercase tracking-wider text-stone-500 block mb-2.5">
+        Precios del Catálogo en Bolívares según Tasa Oficial del Día:
+      </span>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+        <div class="p-2.5 bg-stone-50 rounded-lg border border-stone-200/60 flex items-center justify-between">
+          <div>
+            <span class="font-bold text-stone-800 block">Frasco 250g (Vitrina)</span>
+            <span class="text-[11px] text-stone-500 font-mono">$ 1,65 USD</span>
+          </div>
+          <span class="font-mono font-bold text-stone-900 text-sm tabular-nums">
+            {{ (1.65 * (rates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+          </span>
+        </div>
+
+        <div class="p-2.5 bg-stone-50 rounded-lg border border-stone-200/60 flex items-center justify-between">
+          <div>
+            <span class="font-bold text-stone-800 block">Frasco 1000g (1 kg Institucional)</span>
+            <span class="text-[11px] text-stone-500 font-mono">$ 5,50 USD</span>
+          </div>
+          <span class="font-mono font-bold text-stone-900 text-sm tabular-nums">
+            {{ (5.50 * (rates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+          </span>
+        </div>
+
+        <div class="p-2.5 bg-stone-50 rounded-lg border border-stone-200/60 flex items-center justify-between">
+          <div>
+            <span class="font-bold text-stone-800 block">Lote Mayorista (50 uds 250g)</span>
+            <span class="text-[11px] text-stone-500 font-mono">$ 82,50 USD</span>
+          </div>
+          <span class="font-mono font-bold text-stone-900 text-sm tabular-nums">
+            {{ (82.50 * (rates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -22,10 +284,10 @@
         <mat-icon class="text-stone-400 text-lg">inventory_2</mat-icon>
       </div>
       <div class="text-2xl font-bold text-stone-900 font-mono tabular-nums">
-        ${{ (metrics()?.totalStockValuation || 0) | number:'1.2-2' }}
+        {{ (metrics()?.totalStockValuation || 0) | veCurrency:'$':2 }}
       </div>
       <div class="text-xs text-stone-500 mt-2 flex items-center gap-1">
-        <span>Insumos + Producto Terminado en bodega</span>
+        <span>Equiv: <strong class="font-mono text-stone-800">{{ ((metrics()?.totalStockValuation || 0) * (rates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}</strong></span>
       </div>
     </div>
 
@@ -64,7 +326,7 @@
         <mat-icon class="text-rose-600 text-lg">pause_circle</mat-icon>
       </div>
       <div class="text-2xl font-bold text-rose-700 font-mono tabular-nums">
-        ${{ (costData()?.unabsorbedFixedCostYTD || 0) | number:'1.2-2' }}
+        {{ (costData()?.unabsorbedFixedCostYTD || 0) | veCurrency:'$':2 }}
       </div>
       <div class="text-xs text-stone-500 mt-2 flex items-center gap-1">
         <span>{{ costData()?.inactiveWeeksCountYTD || 0 }} semanas inactivas (mantenimiento / veda)</span>
@@ -83,7 +345,7 @@
           Producción de Mermeladas Bajo Pedido: Trazabilidad y Control de Insumos
         </h2>
         <p class="text-sm text-stone-600 mt-3 leading-relaxed">
-          En microempresas artesanales e industriales, operar bajo pedido elimina el desperdicio de frutas perecederas y envases de vidrio costosos. El sistema calcula los requerimientos de la receta (BOM), descuenta los insumos al instante de cocinar, y absorbe la nómina fija aun durante semanas sin cosecha o de mantenimiento.
+          En microempresas artesanales e industriales en Venezuela, operar bajo pedido elimina el desperdicio de frutas perecederas y envases de vidrio costosos. El sistema calcula los requerimientos de la receta (BOM), descuenta los insumos al instante de cocinar, y absorbe la nómina fija aun durante semanas sin cosecha o de mantenimiento.
         </p>
       </div>
 
@@ -117,16 +379,46 @@
 
   <!-- COMPARATIVO MENSUAL DE VENTAS (Agosto, Septiembre, Octubre) -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3 border-b border-stone-100">
       <div>
         <h3 class="text-lg font-bold text-stone-900">Ventas Comparativas Mensuales (2026)</h3>
         <p class="text-xs text-stone-500">
           Evolución de facturación e impacto de las semanas de inactividad operativa en el margen bruto
         </p>
       </div>
-      <div class="text-xs text-stone-500 flex items-center gap-3">
-        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-xs bg-amber-500"></span> Facturación</span>
-        <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-xs bg-emerald-600"></span> Margen Bruto</span>
+      <div class="flex items-center gap-2">
+        <!-- Export Monthly Sales Toolbar -->
+        <div class="inline-flex items-center gap-1 bg-stone-50 border border-stone-200 rounded-lg p-0.5 shadow-xs">
+          <button
+            (click)="exportMonthlySalesExcel()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 rounded transition-colors"
+            title="Exportar comparativo mensual a Excel (.xls)"
+          >
+            <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
+            <span class="hidden sm:inline">Excel</span>
+          </button>
+          <button
+            (click)="exportMonthlySalesCsv()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 rounded transition-colors"
+            title="Exportar comparativo mensual a CSV (;)"
+          >
+            <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
+            <span class="hidden sm:inline">CSV</span>
+          </button>
+          <button
+            (click)="exportMonthlySalesPdf()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-100 rounded transition-colors"
+            title="Exportar comparativo mensual a PDF"
+          >
+            <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+            <span class="hidden sm:inline">PDF</span>
+          </button>
+        </div>
+
+        <div class="text-xs text-stone-500 hidden md:flex items-center gap-3 ml-2">
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-xs bg-amber-500"></span> Facturación</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-xs bg-emerald-600"></span> Margen Bruto</span>
+        </div>
       </div>
     </div>
 
@@ -136,14 +428,14 @@
         @for (stat of metrics()?.monthlySales || []; track stat.month) {
           <div class="flex-1 flex flex-col items-center h-full justify-end group">
             <div class="text-xs font-mono font-semibold text-stone-700 mb-2 opacity-90 group-hover:opacity-100">
-              ${{ stat.totalRevenue | number:'1.0-0' }}
+              {{ stat.totalRevenue | veCurrency:'$':0 }}
             </div>
             <div class="w-full max-w-[90px] flex items-end justify-center gap-2 h-40">
               <!-- Revenue Bar (Max ~1100 = 100%) -->
               <div
                 class="w-8 bg-amber-500 rounded-t-sm transition-all duration-300 relative group-hover:bg-amber-600"
                 [style.height.%]="(stat.totalRevenue / 1100) * 100"
-                title="Facturación: ${{ stat.totalRevenue | number:'1.2-2' }}"
+                title="Facturación: {{ stat.totalRevenue | veCurrency:'$':2 }}"
               ></div>
               <!-- Margin Bar -->
               <div
@@ -151,12 +443,12 @@
                 [class.bg-emerald-600]="stat.grossMargin > 150"
                 [class.bg-rose-500]="stat.grossMargin <= 150"
                 [style.height.%]="Math.max(5, (stat.grossMargin / 1100) * 100)"
-                title="Margen: ${{ stat.grossMargin | number:'1.2-2' }} ({{ stat.grossMarginPercent }}%)"
+                title="Margen: {{ stat.grossMargin | veCurrency:'$':2 }} ({{ stat.grossMarginPercent | veNumber:1 }}%)"
               ></div>
             </div>
             <div class="mt-3 text-center">
               <span class="block text-xs font-semibold text-stone-800">{{ stat.month }}</span>
-              <span class="block text-[11px] text-stone-400 font-mono">{{ stat.grossMarginPercent }}% margen</span>
+              <span class="block text-[11px] text-stone-400 font-mono">{{ stat.grossMarginPercent | veNumber:1 }}% margen</span>
             </div>
           </div>
         }
@@ -180,11 +472,11 @@
           @for (row of metrics()?.monthlySales || []; track row.month) {
             <tr class="hover:bg-stone-50 transition-colors">
               <td class="py-3 px-3 font-semibold text-stone-900">{{ row.month }} {{ row.year }}</td>
-              <td class="py-3 px-3 text-right font-mono tabular-nums">{{ row.smallUnitsSold }} uds</td>
-              <td class="py-3 px-3 text-right font-mono tabular-nums">{{ row.largeUnitsSold }} uds</td>
-              <td class="py-3 px-3 text-right font-mono font-semibold tabular-nums">${{ row.totalRevenue | number:'1.2-2' }}</td>
+              <td class="py-3 px-3 text-right font-mono tabular-nums">{{ row.smallUnitsSold | veNumber:0 }} uds</td>
+              <td class="py-3 px-3 text-right font-mono tabular-nums">{{ row.largeUnitsSold | veNumber:0 }} uds</td>
+              <td class="py-3 px-3 text-right font-mono font-semibold tabular-nums">{{ row.totalRevenue | veCurrency:'$':2 }}</td>
               <td class="py-3 px-3 text-right font-mono tabular-nums font-semibold" [class.text-rose-600]="row.grossMarginPercent < 20" [class.text-emerald-700]="row.grossMarginPercent >= 20">
-                ${{ row.grossMargin | number:'1.2-2' }} ({{ row.grossMarginPercent }}%)
+                {{ row.grossMargin | veCurrency:'$':2 }} ({{ row.grossMarginPercent | veNumber:1 }}%)
               </td>
               <td class="py-3 px-3 text-center text-xs text-stone-500">
                 @if (row.month === 'Septiembre') {
@@ -224,7 +516,7 @@
                 <span class="text-xs text-stone-500">Uso: Desayunos, repostería casera, cafeterías</span>
               </div>
               <span class="text-xs font-mono font-bold text-stone-700 bg-white px-2 py-1 rounded border border-stone-200">
-                PVP Mayorista: $1.65
+                PVP Mayorista: {{ 1.65 | veCurrency:'$':2 }}
               </span>
             </div>
             <div class="grid grid-cols-3 gap-2 mt-4 text-xs">
@@ -234,11 +526,11 @@
               </div>
               <div>
                 <span class="text-stone-400 block">Costo unitario</span>
-                <span class="font-mono font-semibold text-stone-800 text-sm">$1.11</span>
+                <span class="font-mono font-semibold text-stone-800 text-sm">{{ 1.11 | veCurrency:'$':2 }}</span>
               </div>
               <div>
                 <span class="text-stone-400 block">Margen bruto</span>
-                <span class="font-mono font-semibold text-emerald-700 text-sm">32.7%</span>
+                <span class="font-mono font-semibold text-emerald-700 text-sm">{{ 32.7 | veNumber:1 }}%</span>
               </div>
             </div>
           </div>
@@ -251,7 +543,7 @@
                 <span class="text-xs text-stone-500">Uso: Relleno de cachitos, bocadillos, pastelería industrial</span>
               </div>
               <span class="text-xs font-mono font-bold text-stone-700 bg-white px-2 py-1 rounded border border-stone-200">
-                PVP Mayorista: $5.50
+                PVP Mayorista: {{ 5.50 | veCurrency:'$':2 }}
               </span>
             </div>
             <div class="grid grid-cols-3 gap-2 mt-4 text-xs">
@@ -261,11 +553,11 @@
               </div>
               <div>
                 <span class="text-stone-400 block">Costo unitario</span>
-                <span class="font-mono font-semibold text-stone-800 text-sm">$3.34</span>
+                <span class="font-mono font-semibold text-stone-800 text-sm">{{ 3.34 | veCurrency:'$':2 }}</span>
               </div>
               <div>
                 <span class="text-stone-400 block">Margen bruto</span>
-                <span class="font-mono font-semibold text-emerald-700 text-sm">39.3%</span>
+                <span class="font-mono font-semibold text-emerald-700 text-sm">{{ 39.3 | veNumber:1 }}%</span>
               </div>
             </div>
           </div>
@@ -311,20 +603,20 @@
               <div class="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-stone-100 text-xs">
                 <div>
                   <span class="text-stone-400 block">Unidades</span>
-                  <span class="font-mono font-semibold text-stone-800">{{ order.targetUnits }}</span>
+                  <span class="font-mono font-semibold text-stone-800">{{ order.targetUnits | veNumber:0 }}</span>
                 </div>
                 <div>
                   <span class="text-stone-400 block">Costo Lote</span>
-                  <span class="font-mono font-semibold text-stone-800">${{ order.totalProductionCost | number:'1.2-2' }}</span>
+                  <span class="font-mono font-semibold text-stone-800">{{ order.totalProductionCost | veCurrency:'$':2 }}</span>
                 </div>
                 <div>
                   <span class="text-stone-400 block">Costo / Ud</span>
-                  <span class="font-mono font-semibold text-stone-800">${{ order.unitCost | number:'1.2-2' }}</span>
+                  <span class="font-mono font-semibold text-stone-800">{{ order.unitCost | veCurrency:'$':2 }}</span>
                 </div>
                 <div>
                   <span class="text-stone-400 block">Facturación Estim.</span>
                   <span class="font-mono font-semibold text-emerald-700">
-                    ${{ (order.targetUnits * (order.presentation === 'pequena_250g' ? 1.65 : 5.50)) | number:'1.2-2' }}
+                    {{ (order.targetUnits * (order.presentation === 'pequena_250g' ? 1.65 : 5.50)) | veCurrency:'$':2 }}
                   </span>
                 </div>
               </div>
@@ -338,4 +630,173 @@
       </div>
     </div>
   </div>
+
+  <!-- MODAL: AJUSTE MANUAL DE TASAS -->
+  @if (isEditRateModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-stone-800">price_change</mat-icon>
+            <h3 class="text-lg font-bold text-stone-900">Registrar Cotización del Día</h3>
+          </div>
+          <button (click)="closeEditRateModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="rateForm" (ngSubmit)="submitRateUpdate()" class="space-y-4 mt-4 text-xs">
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Tasa USD Oficial (BCV) en Bolívares</label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-bold">Bs.</span>
+              <input
+                type="number"
+                step="0.01"
+                formControlName="usdRate"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm text-stone-900 font-mono font-bold"
+              />
+            </div>
+            <span class="text-[11px] text-stone-400 mt-1 block">Ejemplo: 48.35 para representar Bs. 48,35</span>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Tasa USDT (Paralelo / Binance P2P) en Bolívares</label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-bold">Bs.</span>
+              <input
+                type="number"
+                step="0.01"
+                formControlName="usdtRate"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm text-stone-900 font-mono font-bold"
+              />
+            </div>
+            <span class="text-[11px] text-stone-400 mt-1 block">Ejemplo: 54.80 para representar Bs. 54,80</span>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Nota u Origen de Cotización</label>
+            <input
+              type="text"
+              placeholder="ej: Publicación oficial de la tarde"
+              formControlName="notes"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+            <button
+              type="button"
+              (click)="closeEditRateModal()"
+              class="px-4 py-2 font-medium text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="rateForm.invalid"
+              class="px-4 py-2 font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50"
+            >
+              Guardar Cotización
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: HISTORIAL DEL DÍA DE VARIACIÓN DE TASAS -->
+  @if (isRateHistoryModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-amber-800">history</mat-icon>
+            <h3 class="text-lg font-bold text-stone-900">Historial Diario de Tasas (USD & USDT)</h3>
+          </div>
+          <div class="flex items-center gap-2">
+            <!-- Export buttons for Rates history -->
+            <div class="inline-flex items-center gap-1 bg-stone-50 border border-stone-200 rounded-lg p-0.5 shadow-xs">
+              <button
+                (click)="exportRatesExcel()"
+                class="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 rounded transition-colors"
+                title="Descargar historial de tasas en Excel (.xls)"
+              >
+                <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
+                <span>Excel</span>
+              </button>
+              <button
+                (click)="exportRatesCsv()"
+                class="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 rounded transition-colors"
+                title="Descargar historial de tasas en CSV (;)"
+              >
+                <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
+                <span>CSV</span>
+              </button>
+              <button
+                (click)="exportRatesPdf()"
+                class="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-100 rounded transition-colors"
+                title="Imprimir o exportar tasas en PDF"
+              >
+                <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+                <span>PDF</span>
+              </button>
+            </div>
+
+            <button (click)="closeRateHistoryModal()" class="text-stone-400 hover:text-stone-700">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-4 overflow-x-auto text-xs">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-stone-50 text-stone-600 border-b border-stone-200">
+                <th class="py-2.5 px-3">Fecha y Hora</th>
+                <th class="py-2.5 px-3">Tasa USD (BCV)</th>
+                <th class="py-2.5 px-3">Tasa USDT</th>
+                <th class="py-2.5 px-3">Ventana / Fuente</th>
+                <th class="py-2.5 px-3">Observación</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100">
+              @for (rec of rates()?.history || []; track rec.id) {
+                <tr class="hover:bg-stone-50">
+                  <td class="py-2.5 px-3 font-mono text-stone-700">{{ rec.date }} {{ rec.time }}</td>
+                  <td class="py-2.5 px-3 font-mono font-bold text-stone-900">
+                    {{ rec.usdRate | veCurrency:'Bs.':2 }}
+                    @if (rec.variationUsdPercent) {
+                      <span class="text-[10px] ml-1 font-normal" [class.text-emerald-700]="rec.variationUsdPercent >= 0" [class.text-rose-600]="rec.variationUsdPercent < 0">
+                        ({{ rec.variationUsdPercent >= 0 ? '+' : '' }}{{ rec.variationUsdPercent | veNumber:2 }}%)
+                      </span>
+                    }
+                  </td>
+                  <td class="py-2.5 px-3 font-mono font-bold text-stone-900">
+                    {{ rec.usdtRate | veCurrency:'Bs.':2 }}
+                    @if (rec.variationUsdtPercent) {
+                      <span class="text-[10px] ml-1 font-normal" [class.text-emerald-700]="rec.variationUsdtPercent >= 0" [class.text-rose-600]="rec.variationUsdtPercent < 0">
+                        ({{ rec.variationUsdtPercent >= 0 ? '+' : '' }}{{ rec.variationUsdtPercent | veNumber:2 }}%)
+                      </span>
+                    }
+                  </td>
+                  <td class="py-2.5 px-3 text-stone-600">{{ rec.source }}</td>
+                  <td class="py-2.5 px-3 text-stone-500 italic">{{ rec.notes || 'Registro regular' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex justify-end pt-4 mt-4 border-t border-stone-100">
+          <button
+            (click)="closeRateHistoryModal()"
+            class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800"
+          >
+            Cerrar Historial
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 </div>

@@ -7,7 +7,61 @@
         Cálculo de costos directos, indirectos (CIF) y absorción de nómina fija durante semanas inactivas
       </p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- Currency Switcher Toggle -->
+      <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
+        <button
+          type="button"
+          (click)="currencyMode.set('USD')"
+          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+          [class.bg-white]="currencyMode() === 'USD'"
+          [class.text-stone-900]="currencyMode() === 'USD'"
+          [class.shadow-xs]="currencyMode() === 'USD'"
+          [class.text-stone-500]="currencyMode() !== 'USD'"
+        >
+          <span>USD ($)</span>
+        </button>
+        <button
+          type="button"
+          (click)="currencyMode.set('Bs')"
+          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+          [class.bg-white]="currencyMode() === 'Bs'"
+          [class.text-stone-900]="currencyMode() === 'Bs'"
+          [class.shadow-xs]="currencyMode() === 'Bs'"
+          [class.text-stone-500]="currencyMode() !== 'Bs'"
+        >
+          <span>Bolívares (Bs.)</span>
+        </button>
+      </div>
+
+      <!-- Export Toolbar with Excel, CSV, PDF icons -->
+      <div class="inline-flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-xs">
+        <button
+          (click)="exportCostingExcel()"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
+          title="Exportar estructura de costos a Excel (.xls)"
+        >
+          <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
+          <span class="hidden sm:inline">Excel</span>
+        </button>
+        <button
+          (click)="exportCostingCsv()"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-800 hover:bg-sky-50 rounded transition-colors"
+          title="Exportar estructura de costos a CSV (;)"
+        >
+          <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
+          <span class="hidden sm:inline">CSV</span>
+        </button>
+        <button
+          (click)="exportCostingSummaryPdf()"
+          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-50 rounded transition-colors"
+          title="Descargar Resumen de Costos en archivo PDF"
+        >
+          <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+          <span class="hidden sm:inline">Descargar PDF</span>
+        </button>
+      </div>
+
       <span class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
         Costeo por Absorción Parcial MTO
       </span>
@@ -16,15 +70,25 @@
 
   <!-- SECCIÓN 1: COSTO UNITARIO Y ESTRUCTURA POR PRESENTACIÓN -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
       <div>
         <h2 class="text-lg font-bold text-stone-900">Estructura de Costos por Presentación</h2>
         <p class="text-xs text-stone-500">
           Desglose analítico por unidad: Materia Prima + Empaque + Mano de Obra + CIF + Semanas Inactivas
         </p>
       </div>
-      <div class="text-xs text-stone-500">
-        Nómina semanal promedio: <strong class="font-mono text-stone-900">${{ costData()?.directLaborWeeklyAverage | number:'1.2-2' }}</strong>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="text-xs text-stone-500">
+          Nómina semanal promedio: <strong class="font-mono text-stone-900">{{ costData()?.directLaborWeeklyAverage | veCurrency:'$':2 }}</strong>
+        </div>
+        <button
+          (click)="exportCostingSummaryPdf()"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200 rounded-lg shadow-xs transition-colors"
+          title="Descargar Resumen Ejecutivo de Costos en archivo PDF"
+        >
+          <mat-icon class="text-xs text-rose-600">picture_as_pdf</mat-icon>
+          Descargar Resumen PDF
+        </button>
       </div>
     </div>
 
@@ -39,7 +103,10 @@
               </div>
               <div class="text-right">
                 <span class="text-xs text-stone-400 block">Costo Total Unitario</span>
-                <span class="text-xl font-mono font-bold text-stone-900">${{ item.totalUnitCost | number:'1.2-2' }}</span>
+                <span class="text-xl font-mono font-bold text-stone-900">{{ item.totalUnitCost | veCurrency:'$':2 }}</span>
+                <span class="text-[11px] font-mono text-stone-400 block mt-0.5">
+                  ≈ {{ (item.totalUnitCost * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+                </span>
               </div>
             </div>
 
@@ -47,19 +114,19 @@
             <div class="mt-4 space-y-2.5 text-xs">
               <div class="flex items-center justify-between py-1 border-b border-stone-100">
                 <span class="text-stone-600">1. Materia Prima Directa (Pulpa, Azúcar, Químicos)</span>
-                <span class="font-mono font-semibold text-stone-900">${{ item.directMaterial | number:'1.2-2' }}</span>
+                <span class="font-mono font-semibold text-stone-900">{{ item.directMaterial | veCurrency:'$':2 }}</span>
               </div>
               <div class="flex items-center justify-between py-1 border-b border-stone-100">
                 <span class="text-stone-600">2. Empaque Directo (Frasco de Vidrio, Tapa, Etiqueta)</span>
-                <span class="font-mono font-semibold text-stone-900">${{ item.directPackaging | number:'1.2-2' }}</span>
+                <span class="font-mono font-semibold text-stone-900">{{ item.directPackaging | veCurrency:'$':2 }}</span>
               </div>
               <div class="flex items-center justify-between py-1 border-b border-stone-100">
                 <span class="text-stone-600">3. Mano de Obra Directa en Paila / Cocción</span>
-                <span class="font-mono font-semibold text-stone-900">${{ item.directLabor | number:'1.2-2' }}</span>
+                <span class="font-mono font-semibold text-stone-900">{{ item.directLabor | veCurrency:'$':2 }}</span>
               </div>
               <div class="flex items-center justify-between py-1 border-b border-stone-100">
                 <span class="text-stone-600">4. Costos Indirectos (Gas, Agua, Luz, Depreciación)</span>
-                <span class="font-mono font-semibold text-stone-900">${{ item.cifAllocation | number:'1.2-2' }}</span>
+                <span class="font-mono font-semibold text-stone-900">{{ item.cifAllocation | veCurrency:'$':2 }}</span>
               </div>
             </div>
           </div>
@@ -70,13 +137,15 @@
             <div class="grid grid-cols-2 gap-3 text-xs">
               <div class="bg-stone-50 p-3 rounded border border-stone-200/60">
                 <span class="text-stone-500 block text-[11px]">Canal Mayorista (Panaderías)</span>
-                <span class="font-mono font-bold text-stone-900 text-base block mt-0.5">${{ item.suggestedWholesalePrice | number:'1.2-2' }}</span>
-                <span class="text-emerald-700 font-semibold block text-[11px] mt-1">Margen: {{ item.marginWholesalePercent }}%</span>
+                <span class="font-mono font-bold text-stone-900 text-base block mt-0.5">{{ item.suggestedWholesalePrice | veCurrency:'$':2 }}</span>
+                <span class="text-[11px] font-mono text-stone-500 block">≈ {{ (item.suggestedWholesalePrice * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}</span>
+                <span class="text-emerald-700 font-semibold block text-[11px] mt-1">Margen: {{ item.marginWholesalePercent | veNumber:1 }}%</span>
               </div>
               <div class="bg-stone-50 p-3 rounded border border-stone-200/60">
                 <span class="text-stone-500 block text-[11px]">PVP Detal / Consumidor Final</span>
-                <span class="font-mono font-bold text-stone-900 text-base block mt-0.5">${{ item.suggestedRetailPrice | number:'1.2-2' }}</span>
-                <span class="text-emerald-700 font-semibold block text-[11px] mt-1">Margen: {{ item.marginRetailPercent }}%</span>
+                <span class="font-mono font-bold text-stone-900 text-base block mt-0.5">{{ item.suggestedRetailPrice | veCurrency:'$':2 }}</span>
+                <span class="text-[11px] font-mono text-stone-500 block">≈ {{ (item.suggestedRetailPrice * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}</span>
+                <span class="text-emerald-700 font-semibold block text-[11px] mt-1">Margen: {{ item.marginRetailPercent | veNumber:1 }}%</span>
               </div>
             </div>
           </div>
@@ -275,8 +344,17 @@
           </div>
         </div>
 
-        <div class="mt-4 pt-3 border-t border-stone-200 text-[11px] text-stone-500">
-          Fórmula: Precio = Costo Total / (1 - Margen %). Protege contra devaluación y garantiza absorción de costos fijos de planta.
+        <div class="mt-4 pt-3 border-t border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px] text-stone-500">
+          <span>Fórmula: Precio = Costo Total / (1 - Margen %). Protege contra devaluación y garantiza absorción de costos fijos de planta.</span>
+          <button
+            type="button"
+            (click)="exportCostingSummaryPdf()"
+            class="shrink-0 inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-white hover:bg-stone-100 text-rose-800 border border-stone-300 rounded-lg shadow-2xs transition-colors"
+            title="Descargar Resumen Completo y Simulación en formato PDF"
+          >
+            <mat-icon class="text-xs text-rose-600">picture_as_pdf</mat-icon>
+            Descargar Resumen PDF
+          </button>
         </div>
       </div>
     </div>
