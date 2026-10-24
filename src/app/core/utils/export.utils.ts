@@ -6,7 +6,15 @@
 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { DeliveryNote, CostStructureAnalysis, FiscalSettings } from '../models/erp.models';
+import {
+  DeliveryNote,
+  CostStructureAnalysis,
+  FiscalSettings,
+  RawMaterialCostItem,
+  PackagingCostItem,
+  FixedExpenseItem,
+  WorkerPayrollItem,
+} from '../models/erp.models';
 import { formatVeNumber } from '../pipes/ve-currency.pipe';
 
 export function downloadFile(content: string, filename: string, mimeType: string) {
@@ -988,3 +996,442 @@ export function downloadCostingSummaryPdf(
   const filename = `Resumen_Estructura_Costos_${currencyMode}_${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(filename);
 }
+
+export interface DetailedCostReportExportData {
+  productionKilosBase: number;
+  workDays: number;
+  customMarginPercent: number;
+  exchangeRate: number;
+  currencyMode: 'USD' | 'Bs';
+  rawMaterials: RawMaterialCostItem[];
+  packaging20k: PackagingCostItem[];
+  packagingCaja20k: PackagingCostItem[];
+  packagingGalon: PackagingCostItem[];
+  fixedExpenses: FixedExpenseItem[];
+  workers: WorkerPayrollItem[];
+  totalRawMaterialsCost: number;
+  rawMaterialCostPerKg: number;
+  rawMaterialCost20kg: number;
+  rawMaterialCost5kg: number;
+  totalPackaging20k: number;
+  totalPackagingCaja20k: number;
+  totalPackagingGalon: number;
+  totalFixedMonthly: number;
+  totalFixedDaily: number;
+  totalFixedPerKg: number;
+  fixedCost20kg: number;
+  fixedCost5kg: number;
+  costPer1kg: number;
+  cost20kgWithoutPackaging: number;
+  cuneteFinalCost: number;
+  cajaFinalCost: number;
+  galonFinalCost: number;
+  cunetePrices: { margin30: number; margin25: number; margin20: number; custom: number };
+  cajaPrices: { margin30: number; margin25: number; margin20: number; custom: number };
+  galonPrices: { margin30: number; margin25: number; margin20: number; custom: number };
+}
+
+/**
+ * Generates an executive, highly formatted Cost Estimation Report & Client Quotation PDF
+ * based on the Excel calculation sheet (Image 2) and MTO production batches.
+ */
+export function downloadDetailedCostEstimationPdf(data: DetailedCostReportExportData) {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'pt',
+    format: 'letter',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 36;
+  const contentWidth = pageWidth - margin * 2;
+  const rate = data.exchangeRate || 48.35;
+  const isBs = data.currencyMode === 'Bs';
+  const mult = isBs ? rate : 1;
+  const curr = isBs ? 'Bs.' : '$';
+
+  // --- PAGE 1: HEADER & PRICING STRUCTURE ---
+  // Top Banner
+  doc.setFillColor(30, 27, 24);
+  doc.rect(0, 0, pageWidth, 75, 'F');
+  doc.setFillColor(217, 119, 6);
+  doc.rect(0, 75, pageWidth, 5, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text('PULPACRAFT MRP · REPORTE DE ESTIMACIÓN DE COSTOS & PRECIOS', margin, 32);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(214, 211, 209);
+  doc.text('Mermeladas Artesanales del Valle C.A. · RIF: J-40899231-0 · Zona Ind. El Valle, Miranda', margin, 48);
+  doc.text(`Tasa Oficial BCV: Bs. ${formatVeNumber(rate, 2)} / USD  |  Fecha: ${new Date().toLocaleDateString('es-VE')}  |  Moneda: ${data.currencyMode}`, margin, 60);
+
+  // Badge on the right
+  doc.setFillColor(217, 119, 6);
+  doc.roundedRect(pageWidth - margin - 150, 14, 150, 50, 4, 4, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('ESTIMACIÓN MTO', pageWidth - margin - 75, 28, { align: 'center' });
+  doc.setFont('courier', 'bold');
+  doc.setFontSize(11);
+  doc.text(`TANDA ${data.productionKilosBase} KG`, pageWidth - margin - 75, 42, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text('HOJA EXCEL OFICIAL', pageWidth - margin - 75, 54, { align: 'center' });
+
+  let y = 95;
+
+  // Key Metric Highlights
+  const kpiWidth = (contentWidth - 16) / 3;
+
+  doc.setFillColor(245, 245, 244);
+  doc.roundedRect(margin, y, kpiWidth, 48, 4, 4, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 113, 108);
+  doc.text('COSTO MP POR 1 KG', margin + 8, y + 16);
+  doc.setFont('courier', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(28, 25, 23);
+  doc.text(`${curr} ${formatVeNumber(data.rawMaterialCostPerKg * mult, 2)}`, margin + 8, y + 36);
+
+  doc.setFillColor(245, 245, 244);
+  doc.roundedRect(margin + kpiWidth + 8, y, kpiWidth, 48, 4, 4, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(120, 113, 108);
+  doc.text('GASTOS FIJOS POR 1 KG', margin + kpiWidth + 16, y + 16);
+  doc.setFont('courier', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(28, 25, 23);
+  doc.text(`${curr} ${formatVeNumber(data.totalFixedPerKg * mult, 2)}`, margin + kpiWidth + 16, y + 36);
+
+  doc.setFillColor(254, 243, 199);
+  doc.roundedRect(margin + (kpiWidth + 8) * 2, y, kpiWidth, 48, 4, 4, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(146, 64, 14);
+  doc.text('COSTO BASE UNITARIO (1 KG)', margin + (kpiWidth + 8) * 2 + 8, y + 16);
+  doc.setFont('courier', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(180, 83, 9);
+  doc.text(`${curr} ${formatVeNumber(data.costPer1kg * mult, 2)}`, margin + (kpiWidth + 8) * 2 + 8, y + 36);
+
+  y += 60;
+
+  // SECTION 1: PRECIOS FINALES SUGERIDOS POR PRESENTACIÓN
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(28, 25, 23);
+  doc.text('1. PRECIOS DE VENTA SUGERIDOS POR PRESENTACIÓN & MARGEN COMERCIAL', margin, y);
+  y += 8;
+
+  const pricesHeaders = [
+    'Presentación',
+    `Costo Final (${curr})`,
+    `Margen 20% (${curr})`,
+    `Margen 25% (${curr})`,
+    `Margen 30% (${curr})`,
+    `Margen ${data.customMarginPercent}% (${curr})`,
+  ];
+
+  const pricesRows = [
+    [
+      'Cuñete 20kg (Envase Pote Plástico $5.90)',
+      formatVeNumber(data.cuneteFinalCost * mult, 2),
+      formatVeNumber(data.cunetePrices.margin20 * mult, 2),
+      formatVeNumber(data.cunetePrices.margin25 * mult, 2),
+      formatVeNumber(data.cunetePrices.margin30 * mult, 2),
+      formatVeNumber(data.cunetePrices.custom * mult, 2),
+    ],
+    [
+      'Caja 20kg (Cartón, Bolsa, Tirro $3.37)',
+      formatVeNumber(data.cajaFinalCost * mult, 2),
+      formatVeNumber(data.cajaPrices.margin20 * mult, 2),
+      formatVeNumber(data.cajaPrices.margin25 * mult, 2),
+      formatVeNumber(data.cajaPrices.margin30 * mult, 2),
+      formatVeNumber(data.cajaPrices.custom * mult, 2),
+    ],
+    [
+      'Galón 5kg (Envase Galón Plástico $2.61)',
+      formatVeNumber(data.galonFinalCost * mult, 2),
+      formatVeNumber(data.galonPrices.margin20 * mult, 2),
+      formatVeNumber(data.galonPrices.margin25 * mult, 2),
+      formatVeNumber(data.galonPrices.margin30 * mult, 2),
+      formatVeNumber(data.galonPrices.custom * mult, 2),
+    ],
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    head: [pricesHeaders],
+    body: pricesRows,
+    theme: 'grid',
+    styles: { fontSize: 8.5, cellPadding: 5, textColor: [41, 37, 36], lineColor: [214, 211, 209] },
+    headStyles: { fillColor: [41, 37, 36], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [250, 250, 249] },
+    columnStyles: {
+      0: { cellWidth: 160 },
+      1: { halign: 'right', fontStyle: 'bold' },
+      2: { halign: 'right' },
+      3: { halign: 'right', fillColor: [254, 243, 199] },
+      4: { halign: 'right', fontStyle: 'bold' },
+      5: { halign: 'right' },
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 18;
+
+  // SECTION 2: MATERIA PRIMA (EXCEL IMAGEN 2)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(28, 25, 23);
+  doc.text('2. DETALLE DE MATERIA PRIMA DIRECTA (TANDA DE PRODUCCIÓN)', margin, y);
+  y += 8;
+
+  const matHeaders = [
+    'Descripción Insumo',
+    `Costo Compra (${curr})`,
+    'Presentación',
+    `Costo/kg (${curr})`,
+    `Costo/g (${curr})`,
+    'Cant. Usada',
+    `Costo Producción (${curr})`,
+  ];
+
+  const matRows = data.rawMaterials.map(rm => [
+    rm.description,
+    formatVeNumber(rm.costBcv * mult, 2),
+    `${rm.presentation} ${rm.presentationUnit}`,
+    formatVeNumber(rm.unitCost * mult, 4),
+    formatVeNumber(rm.costPerGram * mult, 5),
+    `${rm.cantProduction}`,
+    formatVeNumber(rm.costPerProduction * mult, 2),
+  ]);
+
+  matRows.push([
+    `TOTAL MATERIA PRIMA (${data.productionKilosBase} KG PRODUCCIÓN)`,
+    '-',
+    '-',
+    formatVeNumber(data.rawMaterialCostPerKg * mult, 4),
+    '-',
+    `${data.productionKilosBase} kg`,
+    formatVeNumber(data.totalRawMaterialsCost * mult, 2),
+  ]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [matHeaders],
+    body: matRows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 4, textColor: [41, 37, 36], lineColor: [214, 211, 209] },
+    headStyles: { fillColor: [41, 37, 36], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [250, 250, 249] },
+    columnStyles: {
+      0: { cellWidth: 140 },
+      1: { halign: 'right' },
+      2: { halign: 'center' },
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right' },
+      6: { halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  // --- PAGE 2: PACKAGING, FIXED EXPENSES, PAYROLL & FORMAL APPROVAL ---
+  doc.addPage();
+  let y2 = 40;
+
+  doc.setFillColor(30, 27, 24);
+  doc.rect(0, 0, pageWidth, 28, 'F');
+  doc.setFillColor(217, 119, 6);
+  doc.rect(0, 28, pageWidth, 3, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('PULPACRAFT MRP · DESGLOSE DE ENVASES, GASTOS FIJOS Y NÓMINA', margin, 18);
+
+  y2 = 45;
+
+  // SECTION 3: ENVASES Y EMPAQUES
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(28, 25, 23);
+  doc.text('3. COSTOS DE ENVASES Y EMPAQUES (CUÑETE & CAJA 20KG)', margin, y2);
+  y2 += 8;
+
+  const pkgHeaders = ['Tipo de Empaque', 'Componentes del Envase', `Costo Unitario (${curr})`, `Total Empaque (${curr})`];
+  const pkgRows = [
+    ['Cuñete 20kg', 'Pote 20kg ($5.28) + Etiquetas lote ($0.62)', formatVeNumber(data.totalPackaging20k * mult, 2), formatVeNumber(data.totalPackaging20k * mult, 2)],
+    ['Caja 20kg', 'Caja ($2.28) + Tirro ($0.17) + Bolsa ($0.85) + Tirraje ($0.07)', formatVeNumber(data.totalPackagingCaja20k * mult, 2), formatVeNumber(data.totalPackagingCaja20k * mult, 2)],
+    ['Galón 5kg', 'Envase plástico galón 5kg con tapa y etiqueta', formatVeNumber(data.totalPackagingGalon * mult, 2), formatVeNumber(data.totalPackagingGalon * mult, 2)],
+  ];
+
+  autoTable(doc, {
+    startY: y2,
+    head: [pkgHeaders],
+    body: pkgRows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 4, textColor: [41, 37, 36], lineColor: [214, 211, 209] },
+    headStyles: { fillColor: [41, 37, 36], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [250, 250, 249] },
+    columnStyles: {
+      0: { cellWidth: 100, fontStyle: 'bold' },
+      1: { cellWidth: 260 },
+      2: { halign: 'right' },
+      3: { halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  y2 = (doc as any).lastAutoTable.finalY + 16;
+
+  // SECTION 4: GASTOS FIJOS & NÓMINA (10 TRABAJADORES)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(28, 25, 23);
+  doc.text('4. GASTOS FIJOS MENSUALES & PRORRATEO OPERATIVO', margin, y2);
+  y2 += 8;
+
+  const feHeaders = ['Concepto Gasto', `Monto Mensual (${curr})`, 'Días Mes', `Costo Diario (${curr})`, `Costo por 1 KG (${curr})`];
+  const feRows = data.fixedExpenses.map(fe => [
+    fe.concept,
+    formatVeNumber(fe.monthlyAmount * mult, 2),
+    fe.workDays,
+    formatVeNumber(fe.dailyAmount * mult, 2),
+    formatVeNumber(fe.costPerKg * mult, 4),
+  ]);
+
+  feRows.push([
+    'TOTAL GASTOS FIJOS',
+    formatVeNumber(data.totalFixedMonthly * mult, 2),
+    data.workDays,
+    formatVeNumber(data.totalFixedDaily * mult, 2),
+    formatVeNumber(data.totalFixedPerKg * mult, 4),
+  ]);
+
+  autoTable(doc, {
+    startY: y2,
+    head: [feHeaders],
+    body: feRows,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 4, textColor: [41, 37, 36], lineColor: [214, 211, 209] },
+    headStyles: { fillColor: [41, 37, 36], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [250, 250, 249] },
+    columnStyles: {
+      0: { cellWidth: 180, fontStyle: 'bold' },
+      1: { halign: 'right' },
+      2: { halign: 'center' },
+      3: { halign: 'right' },
+      4: { halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: margin, right: margin },
+  });
+
+  y2 = (doc as any).lastAutoTable.finalY + 14;
+
+  // SECTION 5: NÓMINA DE 10 TRABAJADORES
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(28, 25, 23);
+  doc.text('Desglose de Mano de Obra Directa (10 Trabajadores de la Hoja)', margin, y2);
+  y2 += 6;
+
+  const workerCols = [
+    'Hermes ($100)',
+    'Denis ($93.35)',
+    'Daniela ($100)',
+    'JEREMY ($93.35)',
+    'JACOB ($93.35)',
+    'VIGILANTE 1 ($60)',
+    'VIGILANTE 2 ($60)',
+    'Jose Alberto ($93.35)',
+    'Luis ($110)',
+    'Xavi ($100)',
+  ];
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(87, 83, 78);
+  doc.text(
+    `Personal: ${workerCols.join(' · ')} | Total Semanal: $903.40 | Proyección Mensual (4 sem): $3,613.60`,
+    margin,
+    y2 + 8,
+    { maxWidth: contentWidth }
+  );
+
+  y2 += 24;
+
+  // Commercial Terms & Conditions Box
+  doc.setFillColor(245, 245, 244);
+  doc.setDrawColor(231, 229, 228);
+  doc.roundedRect(margin, y2, contentWidth, 54, 4, 4, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(68, 64, 60);
+  doc.text('CONDICIONES COMERCIALES & POLÍTICA DE DESPACHO MAKE-TO-ORDER (MTO):', margin + 10, y2 + 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(87, 83, 78);
+  doc.text(
+    '• Producción contra pedido: tiempo de entrega estimado de 3 a 5 días hábiles a partir de la confirmación de la orden.',
+    margin + 10,
+    y2 + 26
+  );
+  doc.text(
+    '• Validez de la cotización: 15 días continuos. Precios pagaderos en USD o en Bolívares convertidos a la tasa oficial BCV del día de facturación/pago.',
+    margin + 10,
+    y2 + 37
+  );
+  doc.text(
+    '• Calidad garantizada: Grados Brix 78° controlados en paila, pulpa criolla seleccionada y registro sanitario vigente.',
+    margin + 10,
+    y2 + 48
+  );
+
+  y2 += 68;
+
+  // Signatures / Acceptance Block
+  const sigW = (contentWidth - 24) / 2;
+  doc.setDrawColor(168, 162, 158);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y2 + 38, margin + sigW, y2 + 38);
+  doc.line(margin + sigW + 24, y2 + 38, margin + sigW * 2 + 24, y2 + 38);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(41, 37, 36);
+  doc.text('ELABORADO POR GERENCIA DE COSTOS', margin + sigW / 2, y2 + 48, { align: 'center' });
+  doc.text('ACEPTACIÓN CONFORME / CLIENTE', margin + sigW + 24 + sigW / 2, y2 + 48, { align: 'center' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(120, 113, 108);
+  doc.text('PulpaCraft MRP · Mermeladas Artesanales del Valle C.A.', margin + sigW / 2, y2 + 58, { align: 'center' });
+  doc.text('Firma, Sello de la Empresa y RIF', margin + sigW + 24 + sigW / 2, y2 + 58, { align: 'center' });
+
+  // Footers on both pages
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(231, 229, 228);
+    doc.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(168, 162, 158);
+    doc.text('PulpaCraft MRP · Reporte Oficial de Estimación de Costos & Precios MTO', margin, pageHeight - 10);
+    doc.text(`Página ${i} de ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+  }
+
+  const filename = `Estimacion_Costos_Mermeladas_${data.currencyMode}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  doc.save(filename);
+}
+

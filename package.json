@@ -28,6 +28,9 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "motion": "^12.23.24",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
@@ -38,6 +41,8 @@
     "@tailwindcss/postcss": "^4.1.12",
     "@types/express": "^5.0.1",
     "@types/node": "^20.17.19",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "angular-eslint": "21.1.0",
     "cross-env": "^10.1.0",
     "eslint": "^9.39.1",

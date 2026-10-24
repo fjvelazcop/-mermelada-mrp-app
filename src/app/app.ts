@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, inject, signal, OnInit} from '@angular/core';
+import {ChangeDetectionStrategy, Component, inject, signal, OnInit, effect} from '@angular/core';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from './core/services/erp-api.service';
 import {DashboardComponent} from './features/dashboard/dashboard';
@@ -7,6 +7,7 @@ import {ProductionComponent} from './features/production/production';
 import {CostingComponent} from './features/costing/costing';
 import {SalesComponent} from './features/sales/sales';
 import {PayrollComponent} from './features/payroll/payroll';
+import {Settings} from './features/settings/settings';
 import {ArchitectureDocsComponent} from './features/architecture-docs/architecture-docs';
 import {VeCurrencyPipe} from './core/pipes/ve-currency.pipe';
 
@@ -17,6 +18,7 @@ export type MainNavigationTab =
   | 'costing'
   | 'sales'
   | 'payroll'
+  | 'settings'
   | 'architecture';
 
 @Component({
@@ -30,6 +32,7 @@ export type MainNavigationTab =
     CostingComponent,
     SalesComponent,
     PayrollComponent,
+    Settings,
     ArchitectureDocsComponent,
     VeCurrencyPipe,
   ],
@@ -40,17 +43,51 @@ export class App implements OnInit {
   public api = inject(ErpApiService);
 
   public currentTab = signal<MainNavigationTab>('dashboard');
+  public mobileMenuOpen = signal<boolean>(false);
+
+  constructor() {
+    effect(() => {
+      const requested = this.api.requestedTab();
+      if (requested) {
+        this.setTab(requested as MainNavigationTab);
+        this.api.requestedTab.set(null);
+      }
+    });
+  }
 
   public ngOnInit() {
     this.api.refreshAllData();
   }
 
   public setTab(tab: MainNavigationTab) {
+    if (!this.api.canViewModule(tab)) {
+      this.api.showToast(`Acceso restringido: Tu rol actual no tiene permisos para el módulo de ${tab}.`, 'error');
+      return;
+    }
     this.currentTab.set(tab);
+    this.mobileMenuOpen.set(false);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+  }
+
+  public onSimulateUser(userId: string) {
+    this.api.setActiveUser(userId);
+    // If the new role cannot view the active tab, fallback to production or dashboard
+    if (!this.api.canViewModule(this.currentTab())) {
+      this.currentTab.set(this.api.canViewModule('production') ? 'production' : 'dashboard');
+    }
+  }
+
+  public toggleMobileMenu() {
+    this.mobileMenuOpen.update(v => !v);
   }
 
   public toggleUserRole() {
     this.api.toggleRole();
+    if (!this.api.canViewModule(this.currentTab())) {
+      this.currentTab.set(this.api.canViewModule('production') ? 'production' : 'dashboard');
+    }
   }
 
   public resetDemoData() {

@@ -1,0 +1,852 @@
+<div class="space-y-6">
+  <!-- Module Header -->
+  <div class="bg-white rounded-2xl border border-stone-200/80 p-5 sm:p-6 shadow-xs">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1">
+          <mat-icon class="text-sm">admin_panel_settings</mat-icon>
+          <span>Seguridad, Usuarios & Control de Accesos</span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-stone-900 tracking-tight">
+          Configuración & Permisología
+        </h1>
+        <p class="text-xs sm:text-sm text-stone-500 mt-1">
+          Gestione los usuarios de la fábrica de mermeladas y defina los privilegios de visualización y acción por rol (RBAC).
+        </p>
+      </div>
+
+      <!-- Quick Active User Simulator Indicator in Header -->
+      <div class="flex items-center gap-3 bg-stone-50 border border-stone-200 rounded-xl p-2.5 sm:px-4">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs" [class]="api.currentUser().avatarBg || 'bg-stone-900'">
+          {{ getInitials(api.currentUser().fullName) }}
+        </div>
+        <div class="text-xs">
+          <div class="text-stone-400 text-[10px] uppercase font-bold tracking-wider">Usuario Simulado Actual</div>
+          <div class="font-bold text-stone-900 flex items-center gap-1.5">
+            <span>{{ api.currentUser().fullName }}</span>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-200">
+              {{ api.currentUser().roleName }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sub-navigation tabs (Mobile horizontal scroll friendly) -->
+    <div class="flex items-center overflow-x-auto gap-2 border-t border-stone-100 pt-4 mt-4 no-scrollbar">
+      <button
+        (click)="setSection('users')"
+        class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+        [class.bg-stone-900]="activeSection() === 'users'"
+        [class.text-white]="activeSection() === 'users'"
+        [class.shadow-xs]="activeSection() === 'users'"
+        [class.bg-stone-100]="activeSection() !== 'users'"
+        [class.text-stone-700]="activeSection() !== 'users'"
+      >
+        <mat-icon class="text-sm">people</mat-icon>
+        <span>Usuarios del Sistema ({{ api.systemUsers().length }})</span>
+      </button>
+
+      <button
+        (click)="setSection('roles')"
+        class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+        [class.bg-stone-900]="activeSection() === 'roles'"
+        [class.text-white]="activeSection() === 'roles'"
+        [class.shadow-xs]="activeSection() === 'roles'"
+        [class.bg-stone-100]="activeSection() !== 'roles'"
+        [class.text-stone-700]="activeSection() !== 'roles'"
+      >
+        <mat-icon class="text-sm">security</mat-icon>
+        <span>Matriz de Permisología por Rol</span>
+      </button>
+
+      <button
+        (click)="setSection('simulator')"
+        class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+        [class.bg-amber-600]="activeSection() === 'simulator'"
+        [class.text-white]="activeSection() === 'simulator'"
+        [class.shadow-xs]="activeSection() === 'simulator'"
+        [class.bg-amber-50]="activeSection() !== 'simulator'"
+        [class.text-amber-900]="activeSection() !== 'simulator'"
+        [class.border]="activeSection() !== 'simulator'"
+        [class.border-amber-200]="activeSection() !== 'simulator'"
+      >
+        <mat-icon class="text-sm">visibility</mat-icon>
+        <span>Simulador de Accesos en Vivo</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- SECTION 1: GESTIÓN DE USUARIOS -->
+  @if (activeSection() === 'users') {
+    <div class="space-y-4">
+      <!-- Action Bar -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-stone-200">
+        <div>
+          <h2 class="text-base font-bold text-stone-900">Directorio de Usuarios</h2>
+          <p class="text-xs text-stone-500">
+            Cree y configure las cuentas del personal operativo, supervisores y analistas financieros.
+          </p>
+        </div>
+        <button
+          (click)="openCreateUserModal()"
+          class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs transition-colors min-h-[44px]"
+        >
+          <mat-icon class="text-sm">person_add</mat-icon>
+          <span>Nuevo Usuario</span>
+        </button>
+      </div>
+
+      <!-- Desktop & Tablet Table View -->
+      <div class="hidden md:block bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-stone-50/80 border-b border-stone-200 text-stone-600 uppercase tracking-wider font-semibold text-[11px]">
+                <th class="py-3 px-4">Usuario & Cédula</th>
+                <th class="py-3 px-4">Rol Asignado</th>
+                <th class="py-3 px-4">Departamento</th>
+                <th class="py-3 px-4">Estado</th>
+                <th class="py-3 px-4">Simular Sesión</th>
+                <th class="py-3 px-4 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100">
+              @for (user of api.systemUsers(); track user.id) {
+                <tr class="hover:bg-stone-50/60 transition-colors" [class.bg-amber-50/40]="api.activeUserId() === user.id">
+                  <!-- User Info -->
+                  <td class="py-3.5 px-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0" [class]="user.avatarBg || 'bg-stone-900'">
+                        {{ getInitials(user.fullName) }}
+                      </div>
+                      <div>
+                        <div class="font-bold text-stone-900 flex items-center gap-2">
+                          <span>{{ user.fullName }}</span>
+                          @if (api.activeUserId() === user.id) {
+                            <span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500 text-white">ACTIVO</span>
+                          }
+                        </div>
+                        <div class="text-[11px] text-stone-400 font-mono">
+                          &#64;{{ user.username }} · {{ user.nationalId }} · {{ user.email }}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+
+                  <!-- Role Badge -->
+                  <td class="py-3.5 px-4">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-stone-100 text-stone-800 border border-stone-200">
+                      <mat-icon class="text-xs">badge</mat-icon>
+                      <span>{{ user.roleName }}</span>
+                    </span>
+                  </td>
+
+                  <!-- Department -->
+                  <td class="py-3.5 px-4 text-stone-600 font-medium">
+                    {{ user.department }}
+                  </td>
+
+                  <!-- Status Toggle -->
+                  <td class="py-3.5 px-4">
+                    <button
+                      (click)="toggleUserStatus(user)"
+                      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-colors"
+                      [class.bg-emerald-50]="user.status === 'activo'"
+                      [class.text-emerald-700]="user.status === 'activo'"
+                      [class.border]="user.status === 'activo'"
+                      [class.border-emerald-200]="user.status === 'activo'"
+                      [class.bg-rose-50]="user.status === 'inactivo'"
+                      [class.text-rose-700]="user.status === 'inactivo'"
+                      [class.border-rose-200]="user.status === 'inactivo'"
+                    >
+                      <span class="w-1.5 h-1.5 rounded-full" [class.bg-emerald-500]="user.status === 'activo'" [class.bg-rose-500]="user.status === 'inactivo'"></span>
+                      <span>{{ user.status === 'activo' ? 'Activo' : 'Inactivo' }}</span>
+                    </button>
+                  </td>
+
+                  <!-- Quick Simulation Switch -->
+                  <td class="py-3.5 px-4">
+                    @if (api.activeUserId() === user.id) {
+                      <span class="text-xs font-bold text-amber-700 flex items-center gap-1">
+                        <mat-icon class="text-xs">check_circle</mat-icon>
+                        <span>Sesión Simulada</span>
+                      </span>
+                    } @else {
+                      <button
+                        (click)="simulateUser(user)"
+                        class="px-2.5 py-1 rounded-lg text-xs font-medium border border-stone-200 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-900 transition-colors text-stone-600 flex items-center gap-1"
+                        title="Probar el sistema como este usuario"
+                      >
+                        <mat-icon class="text-xs">login</mat-icon>
+                        <span>Simular</span>
+                      </button>
+                    }
+                  </td>
+
+                  <!-- Actions -->
+                  <td class="py-3.5 px-4 text-right">
+                    <div class="inline-flex items-center gap-1">
+                      <button
+                        (click)="openEditUserModal(user)"
+                        class="p-1.5 text-stone-400 hover:text-stone-800 hover:bg-stone-100 rounded-lg transition-colors"
+                        title="Editar usuario"
+                      >
+                        <mat-icon class="text-xs">edit</mat-icon>
+                      </button>
+                      @if (user.id !== 'usr-admin') {
+                        <button
+                          (click)="deleteUser(user)"
+                          class="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Eliminar usuario"
+                        >
+                          <mat-icon class="text-xs">delete</mat-icon>
+                        </button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Mobile Cards View -->
+      <div class="grid grid-cols-1 gap-3 md:hidden">
+        @for (user of api.systemUsers(); track user.id) {
+          <div
+            class="bg-white rounded-xl border p-4 space-y-3 transition-colors shadow-xs"
+            [class.border-amber-400]="api.activeUserId() === user.id"
+            [class.border-stone-200]="api.activeUserId() !== user.id"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0" [class]="user.avatarBg || 'bg-stone-900'">
+                  {{ getInitials(user.fullName) }}
+                </div>
+                <div>
+                  <div class="font-bold text-stone-900 text-sm flex items-center gap-1.5">
+                    <span>{{ user.fullName }}</span>
+                    @if (api.activeUserId() === user.id) {
+                      <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500 text-white">SIMULADO</span>
+                    }
+                  </div>
+                  <div class="text-xs text-stone-400 font-mono">&#64;{{ user.username }} · {{ user.nationalId }}</div>
+                </div>
+              </div>
+              <button
+                (click)="toggleUserStatus(user)"
+                class="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                [class.bg-emerald-100]="user.status === 'activo'"
+                [class.text-emerald-800]="user.status === 'activo'"
+                [class.bg-rose-100]="user.status === 'inactivo'"
+                [class.text-rose-800]="user.status === 'inactivo'"
+              >
+                {{ user.status === 'activo' ? 'Activo' : 'Inactivo' }}
+              </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 text-xs bg-stone-50 p-2.5 rounded-lg border border-stone-100">
+              <div>
+                <span class="text-stone-400 block text-[10px]">Rol:</span>
+                <span class="font-semibold text-stone-800">{{ user.roleName }}</span>
+              </div>
+              <div>
+                <span class="text-stone-400 block text-[10px]">Área:</span>
+                <span class="font-medium text-stone-700">{{ user.department }}</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-2 border-t border-stone-100 gap-2">
+              <button
+                (click)="simulateUser(user)"
+                class="flex-1 py-2 px-3 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1.5 transition-colors min-h-[44px]"
+                [class.bg-amber-600]="api.activeUserId() === user.id"
+                [class.text-white]="api.activeUserId() === user.id"
+                [class.border-amber-600]="api.activeUserId() === user.id"
+                [class.bg-stone-50]="api.activeUserId() !== user.id"
+                [class.text-stone-700]="api.activeUserId() !== user.id"
+                [class.border-stone-200]="api.activeUserId() !== user.id"
+              >
+                <mat-icon class="text-xs">{{ api.activeUserId() === user.id ? 'check' : 'login' }}</mat-icon>
+                <span>{{ api.activeUserId() === user.id ? 'Usuario Actual' : 'Simular este Usuario' }}</span>
+              </button>
+
+              <button
+                (click)="openEditUserModal(user)"
+                class="p-2.5 text-stone-600 hover:bg-stone-100 border border-stone-200 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+                aria-label="Editar usuario"
+              >
+                <mat-icon class="text-sm">edit</mat-icon>
+              </button>
+
+              @if (user.id !== 'usr-admin') {
+                <button
+                  (click)="deleteUser(user)"
+                  class="p-2.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Eliminar usuario"
+                >
+                  <mat-icon class="text-sm">delete</mat-icon>
+                </button>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- SECTION 2: MATRIZ DE PERMISOLOGÍA POR ROL -->
+  @if (activeSection() === 'roles') {
+    <div class="space-y-5">
+      <!-- Role Selector and Actions -->
+      <div class="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-stone-900">Configuración de Privilegios por Rol (RBAC)</h2>
+            <p class="text-xs text-stone-500">
+              Habilite o restrinja los módulos que cada rol puede ver y las acciones que puede ejecutar (crear, modificar, eliminar o exportar).
+            </p>
+          </div>
+          <button
+            (click)="openCreateRoleModal()"
+            class="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold transition-colors min-h-[44px]"
+          >
+            <mat-icon class="text-xs">add_moderator</mat-icon>
+            <span>Crear Nuevo Rol</span>
+          </button>
+        </div>
+
+        <!-- Role Pill Switcher (Horizontal scroll) -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          @for (role of api.systemRoles(); track role.id) {
+            <button
+              (click)="selectedRoleIdForMatrix.set(role.id)"
+              class="px-3.5 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap border flex items-center gap-2 min-h-[44px]"
+              [class.bg-amber-600]="selectedRoleIdForMatrix() === role.id"
+              [class.text-white]="selectedRoleIdForMatrix() === role.id"
+              [class.border-amber-600]="selectedRoleIdForMatrix() === role.id"
+              [class.bg-stone-50]="selectedRoleIdForMatrix() !== role.id"
+              [class.text-stone-700]="selectedRoleIdForMatrix() !== role.id"
+              [class.border-stone-200]="selectedRoleIdForMatrix() !== role.id"
+            >
+              <mat-icon class="text-xs">{{ role.id === 'admin' ? 'admin_panel_settings' : 'shield' }}</mat-icon>
+              <span>{{ role.name }}</span>
+              @if (role.id === 'admin') {
+                <span class="text-[9px] px-1 py-0.2 bg-white/20 rounded font-mono">ROOT</span>
+              }
+            </button>
+          }
+        </div>
+
+        <!-- Selected Role Summary Card -->
+        @if (selectedRoleForMatrix()) {
+          @let curRole = selectedRoleForMatrix()!;
+          <div class="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div>
+              <div class="font-bold text-stone-900 flex items-center gap-2">
+                <span>{{ curRole.name }}</span>
+                @if (curRole.id === 'admin') {
+                  <span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Acceso Completo Sin Restricciones</span>
+                }
+              </div>
+              <div class="text-stone-500 mt-0.5">{{ curRole.description }}</div>
+            </div>
+            @if (curRole.id === 'admin') {
+              <div class="text-[11px] text-stone-400 italic">
+                * Las reglas de superusuario no pueden revocarse para garantizar la continuidad del sistema.
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Permissions Matrix Table -->
+      @if (selectedRoleForMatrix()) {
+        @let targetRole = selectedRoleForMatrix()!;
+        <div class="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs">
+          <div class="p-4 border-b border-stone-200 flex items-center justify-between">
+            <h3 class="text-xs sm:text-sm font-bold text-stone-900 flex items-center gap-2">
+              <mat-icon class="text-xs text-amber-600">tune</mat-icon>
+              <span>Matriz de Permisos para: {{ targetRole.name }}</span>
+            </h3>
+            <span class="text-[11px] text-stone-500">
+              Los cambios se aplican automáticamente en tiempo real.
+            </span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-stone-50 border-b border-stone-200 text-stone-600 uppercase font-semibold text-[11px]">
+                  <th class="py-3 px-4 min-w-[200px]">Módulo del Sistema</th>
+                  <th class="py-3 px-3 text-center min-w-[90px]" title="Acceso al menú y vista del módulo">
+                    <div class="flex flex-col items-center">
+                      <mat-icon class="text-xs mb-0.5">visibility</mat-icon>
+                      <span>Ver Módulo</span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3 text-center min-w-[90px]" title="Crear nuevas órdenes, fórmulas o registros">
+                    <div class="flex flex-col items-center">
+                      <mat-icon class="text-xs mb-0.5">add_circle</mat-icon>
+                      <span>Crear</span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3 text-center min-w-[90px]" title="Modificar cantidades, costos o estados">
+                    <div class="flex flex-col items-center">
+                      <mat-icon class="text-xs mb-0.5">edit</mat-icon>
+                      <span>Editar</span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3 text-center min-w-[90px]" title="Eliminar registros existentes">
+                    <div class="flex flex-col items-center">
+                      <mat-icon class="text-xs mb-0.5">delete</mat-icon>
+                      <span>Eliminar</span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3 text-center min-w-[90px]" title="Exportar reportes PDF, hojas Excel y notas">
+                    <div class="flex flex-col items-center">
+                      <mat-icon class="text-xs mb-0.5">download</mat-icon>
+                      <span>Exportar</span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-4 text-right">Acción Rápida</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-stone-100">
+                @for (mod of modulesList; track mod.id) {
+                  @let p = targetRole.permissions[mod.id] || { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false };
+                  <tr class="hover:bg-stone-50/50 transition-colors" [class.opacity-60]="!p.canView && targetRole.id !== 'admin'">
+                    <!-- Module name & info -->
+                    <td class="py-3.5 px-4">
+                      <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-stone-100 flex items-center justify-center text-stone-700 shrink-0">
+                          <mat-icon class="text-sm">{{ mod.icon }}</mat-icon>
+                        </div>
+                        <div>
+                          <div class="font-bold text-stone-900">{{ mod.name }}</div>
+                          <div class="text-[11px] text-stone-400 line-clamp-1">{{ mod.description }}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <!-- Can View Checkbox -->
+                    <td class="py-3.5 px-3 text-center">
+                      <label class="inline-flex items-center justify-center cursor-pointer p-2">
+                        <input
+                          type="checkbox"
+                          class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
+                          [checked]="p.canView || targetRole.id === 'admin'"
+                          [disabled]="targetRole.id === 'admin'"
+                          (change)="togglePermission(targetRole.id, mod.id, 'canView')"
+                        />
+                      </label>
+                    </td>
+
+                    <!-- Can Create Checkbox -->
+                    <td class="py-3.5 px-3 text-center">
+                      <label class="inline-flex items-center justify-center cursor-pointer p-2">
+                        <input
+                          type="checkbox"
+                          class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
+                          [checked]="p.canCreate || targetRole.id === 'admin'"
+                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          (change)="togglePermission(targetRole.id, mod.id, 'canCreate')"
+                        />
+                      </label>
+                    </td>
+
+                    <!-- Can Edit Checkbox -->
+                    <td class="py-3.5 px-3 text-center">
+                      <label class="inline-flex items-center justify-center cursor-pointer p-2">
+                        <input
+                          type="checkbox"
+                          class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
+                          [checked]="p.canEdit || targetRole.id === 'admin'"
+                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          (change)="togglePermission(targetRole.id, mod.id, 'canEdit')"
+                        />
+                      </label>
+                    </td>
+
+                    <!-- Can Delete Checkbox -->
+                    <td class="py-3.5 px-3 text-center">
+                      <label class="inline-flex items-center justify-center cursor-pointer p-2">
+                        <input
+                          type="checkbox"
+                          class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
+                          [checked]="p.canDelete || targetRole.id === 'admin'"
+                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          (change)="togglePermission(targetRole.id, mod.id, 'canDelete')"
+                        />
+                      </label>
+                    </td>
+
+                    <!-- Can Export Checkbox -->
+                    <td class="py-3.5 px-3 text-center">
+                      <label class="inline-flex items-center justify-center cursor-pointer p-2">
+                        <input
+                          type="checkbox"
+                          class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
+                          [checked]="p.canExport || targetRole.id === 'admin'"
+                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          (change)="togglePermission(targetRole.id, mod.id, 'canExport')"
+                        />
+                      </label>
+                    </td>
+
+                    <!-- Quick Enable / Disable All for this module -->
+                    <td class="py-3.5 px-4 text-right">
+                      @if (targetRole.id !== 'admin') {
+                        <div class="inline-flex items-center gap-1">
+                          <button
+                            (click)="toggleAllModulePermissions(targetRole.id, mod.id, true)"
+                            class="px-2 py-1 text-[10px] font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 rounded transition-colors"
+                            title="Habilitar todos los permisos de este módulo"
+                          >
+                            Todo
+                          </button>
+                          <button
+                            (click)="toggleAllModulePermissions(targetRole.id, mod.id, false)"
+                            class="px-2 py-1 text-[10px] font-semibold bg-stone-100 hover:bg-rose-100 hover:text-rose-700 text-stone-700 rounded transition-colors"
+                            title="Revocar todos los permisos de este módulo"
+                          >
+                            Nada
+                          </button>
+                        </div>
+                      } @else {
+                        <span class="text-[11px] text-stone-400 font-mono">TOTAL</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- SECTION 3: SIMULADOR DE ACCESO EN VIVO -->
+  @if (activeSection() === 'simulator') {
+    <div class="space-y-5">
+      <div class="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-stone-900 flex items-center gap-2">
+            <mat-icon class="text-amber-600">visibility</mat-icon>
+            <span>Simulador de Experiencia de Usuario & Permisos Activos</span>
+          </h2>
+          <p class="text-xs sm:text-sm text-stone-500 mt-1">
+            Permite alternar instantáneamente la identidad activa del sistema para verificar qué pestañas, botones y acciones estarán disponibles o bloqueadas para cada colaborador, sin necesidad de cerrar sesión ni introducir contraseñas.
+          </p>
+        </div>
+
+        <!-- User Quick Switch Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          @for (user of api.systemUsers(); track user.id) {
+            <button
+              (click)="simulateUser(user)"
+              class="p-4 rounded-xl border text-left transition-all relative flex flex-col justify-between gap-3 min-h-[90px]"
+              [class.border-amber-500]="api.activeUserId() === user.id"
+              [class.bg-amber-50/60]="api.activeUserId() === user.id"
+              [class.shadow-xs]="api.activeUserId() === user.id"
+              [class.border-stone-200]="api.activeUserId() !== user.id"
+              [class.bg-white]="api.activeUserId() !== user.id"
+              [class.hover:border-stone-300]="api.activeUserId() !== user.id"
+            >
+              <div class="flex items-start justify-between w-full">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0" [class]="user.avatarBg || 'bg-stone-900'">
+                    {{ getInitials(user.fullName) }}
+                  </div>
+                  <div>
+                    <div class="font-bold text-stone-900 text-sm">{{ user.fullName }}</div>
+                    <div class="text-[11px] text-stone-500 font-mono">&#64;{{ user.username }}</div>
+                  </div>
+                </div>
+                @if (api.activeUserId() === user.id) {
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                }
+              </div>
+
+              <div class="flex items-center justify-between text-xs pt-2 border-t border-stone-100">
+                <span class="font-semibold text-stone-700">{{ user.roleName }}</span>
+                <span class="text-[10px] text-stone-400">{{ user.department }}</span>
+              </div>
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- Live Diagnosis Matrix for the Active User -->
+      @let currentRole = api.currentRoleObject();
+      <div class="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs">
+        <div class="p-4 bg-stone-50 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-bold text-stone-900">
+              Diagnóstico de Acceso en Vivo: <span class="text-amber-800">{{ api.currentUser().fullName }}</span>
+            </h3>
+            <p class="text-xs text-stone-500">
+              Evaluación en caliente de visibilidad de menús y permisos de ejecución según el rol: <span class="font-semibold">{{ currentRole.name }}</span>
+            </p>
+          </div>
+          <div class="text-xs font-mono bg-white px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600">
+            Rol ID: {{ currentRole.id }}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 p-4">
+          @for (mod of modulesList; track mod.id) {
+            @let canView = api.canViewModule(mod.id);
+            <div
+              class="p-3.5 rounded-xl border transition-colors flex flex-col justify-between gap-3 text-xs"
+              [class.border-emerald-200]="canView"
+              [class.bg-emerald-50/30]="canView"
+              [class.border-stone-200]="!canView"
+              [class.bg-stone-50/60]="!canView"
+              [class.opacity-60]="!canView"
+            >
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <div class="w-7 h-7 rounded-lg flex items-center justify-center" [class.bg-emerald-100]="canView" [class.text-emerald-800]="canView" [class.bg-stone-200]="!canView" [class.text-stone-500]="!canView">
+                    <mat-icon class="text-xs">{{ mod.icon }}</mat-icon>
+                  </div>
+                  <span
+                    class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                    [class.bg-emerald-100]="canView"
+                    [class.text-emerald-800]="canView"
+                    [class.bg-rose-100]="!canView"
+                    [class.text-rose-800]="!canView"
+                  >
+                    {{ canView ? 'Visible' : 'Bloqueado' }}
+                  </span>
+                </div>
+                <div class="font-bold text-stone-900 text-sm">{{ mod.name }}</div>
+                <div class="text-[11px] text-stone-500 mt-0.5 line-clamp-1">{{ mod.description }}</div>
+              </div>
+
+              <!-- Action badges for this module -->
+              <div class="pt-2 border-t border-stone-200/60 flex flex-wrap gap-1 text-[10px]">
+                <span class="px-1.5 py-0.5 rounded font-mono" [class.bg-emerald-100]="api.hasPermission(mod.id, 'canCreate')" [class.text-emerald-800]="api.hasPermission(mod.id, 'canCreate')" [class.bg-stone-100]="!api.hasPermission(mod.id, 'canCreate')" [class.text-stone-400]="!api.hasPermission(mod.id, 'canCreate')">
+                  +Crear
+                </span>
+                <span class="px-1.5 py-0.5 rounded font-mono" [class.bg-emerald-100]="api.hasPermission(mod.id, 'canEdit')" [class.text-emerald-800]="api.hasPermission(mod.id, 'canEdit')" [class.bg-stone-100]="!api.hasPermission(mod.id, 'canEdit')" [class.text-stone-400]="!api.hasPermission(mod.id, 'canEdit')">
+                  ✎Editar
+                </span>
+                <span class="px-1.5 py-0.5 rounded font-mono" [class.bg-emerald-100]="api.hasPermission(mod.id, 'canDelete')" [class.text-emerald-800]="api.hasPermission(mod.id, 'canDelete')" [class.bg-stone-100]="!api.hasPermission(mod.id, 'canDelete')" [class.text-stone-400]="!api.hasPermission(mod.id, 'canDelete')">
+                  ✕Eliminar
+                </span>
+                <span class="px-1.5 py-0.5 rounded font-mono" [class.bg-emerald-100]="api.hasPermission(mod.id, 'canExport')" [class.text-emerald-800]="api.hasPermission(mod.id, 'canExport')" [class.bg-stone-100]="!api.hasPermission(mod.id, 'canExport')" [class.text-stone-400]="!api.hasPermission(mod.id, 'canExport')">
+                  📥PDF
+                </span>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- USER MODAL (Create / Edit) -->
+  @if (showUserModal()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-stone-200 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-3 border-b border-stone-200 mb-4">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-amber-600">person</mat-icon>
+            <h3 class="font-bold text-stone-900 text-base">
+              {{ editingUserId() ? 'Editar Usuario' : 'Nuevo Usuario del Sistema' }}
+            </h3>
+          </div>
+          <button (click)="closeUserModal()" class="p-1 text-stone-400 hover:text-stone-700 rounded-lg">
+            <mat-icon class="text-base">close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="userForm" (ngSubmit)="saveUser()" class="space-y-4 text-xs">
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Nombre Completo *</label>
+            <input
+              type="text"
+              formControlName="fullName"
+              placeholder="Ej: Carlos Mendoza"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs min-h-[44px]"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Usuario (Username) *</label>
+              <input
+                type="text"
+                formControlName="username"
+                placeholder="cmendoza"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs font-mono min-h-[44px]"
+              />
+            </div>
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Cédula de Identidad *</label>
+              <input
+                type="text"
+                formControlName="nationalId"
+                placeholder="V-19.876.543"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs font-mono min-h-[44px]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Correo Electrónico *</label>
+            <input
+              type="email"
+              formControlName="email"
+              placeholder="cmendoza@pulpacraft.com"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs min-h-[44px]"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Rol Asignado *</label>
+              <select
+                formControlName="roleId"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+              >
+                @for (role of api.systemRoles(); track role.id) {
+                  <option [value]="role.id">{{ role.name }}</option>
+                }
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Departamento / Área *</label>
+              <select
+                formControlName="department"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+              >
+                <option value="Dirección General">Dirección General</option>
+                <option value="Planta de Elaboración">Planta de Elaboración</option>
+                <option value="Producción & Cocción">Producción & Cocción</option>
+                <option value="Finanzas & Costos">Finanzas & Costos</option>
+                <option value="Logística & Almacén">Logística & Almacén</option>
+                <option value="Control de Calidad">Control de Calidad</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Estado de la Cuenta *</label>
+              <select
+                formControlName="status"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+              >
+                <option value="activo">Activo (Acceso permitido)</option>
+                <option value="inactivo">Inactivo (Suspendido)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Color de Avatar</label>
+              <select
+                formControlName="avatarBg"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+              >
+                @for (col of avatarColors; track col.value) {
+                  <option [value]="col.value">{{ col.label }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-200 mt-4">
+            <button
+              type="button"
+              (click)="closeUserModal()"
+              class="px-4 py-2 border border-stone-300 text-stone-700 hover:bg-stone-50 rounded-xl font-medium min-h-[44px]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="userForm.invalid"
+              class="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-semibold shadow-xs transition-colors min-h-[44px]"
+            >
+              {{ editingUserId() ? 'Guardar Cambios' : 'Crear Usuario' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- ROLE MODAL (Create New Role) -->
+  @if (showRoleModal()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-stone-200 animate-in fade-in zoom-in-95 duration-150">
+        <div class="flex items-center justify-between pb-3 border-b border-stone-200 mb-4">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-amber-600">shield</mat-icon>
+            <h3 class="font-bold text-stone-900 text-base">Crear Nuevo Rol de Usuario</h3>
+          </div>
+          <button (click)="closeRoleModal()" class="p-1 text-stone-400 hover:text-stone-700 rounded-lg">
+            <mat-icon class="text-base">close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="roleForm" (ngSubmit)="saveRole()" class="space-y-4 text-xs">
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Nombre del Rol *</label>
+            <input
+              type="text"
+              formControlName="name"
+              placeholder="Ej: Inspector de Calidad HACCP"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs min-h-[44px]"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Descripción de Responsabilidades *</label>
+            <textarea
+              formControlName="description"
+              rows="3"
+              placeholder="Describe las funciones y límites de este cargo dentro de la planta..."
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs resize-none"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Identificador de Color</label>
+            <select
+              formControlName="color"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            >
+              @for (rc of roleColors; track rc.value) {
+                <option [value]="rc.value">{{ rc.label }}</option>
+              }
+            </select>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-200 mt-4">
+            <button
+              type="button"
+              (click)="closeRoleModal()"
+              class="px-4 py-2 border border-stone-300 text-stone-700 hover:bg-stone-50 rounded-xl font-medium min-h-[44px]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="roleForm.invalid"
+              class="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-semibold shadow-xs transition-colors min-h-[44px]"
+            >
+              Guardar Rol
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</div>

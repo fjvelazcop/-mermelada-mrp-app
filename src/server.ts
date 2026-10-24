@@ -73,6 +73,27 @@ app.get('/api/inventory/movements', (req, res) => {
   }
 });
 
+// --- AUDIT LOGS & TRACEABILITY ---
+app.get('/api/audit-logs', (req, res) => {
+  try {
+    const moduleFilter = req.query['module'] as string | undefined;
+    res.json(dbInstance.getAuditLogs(moduleFilter));
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al consultar logs de auditoría';
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.post('/api/audit-logs', (req, res) => {
+  try {
+    const entry = dbInstance.addAuditLog(req.body);
+    res.status(201).json(entry);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al registrar log de auditoría';
+    res.status(400).json({ error: msg });
+  }
+});
+
 // --- INVENTORY: FINISHED GOODS ---
 app.get('/api/inventory/finished-goods', (req, res) => {
   try {

@@ -1,4 +1,46 @@
-export type UserRole = 'admin' | 'operator';
+export type UserRole = 'admin' | 'operator' | 'operador_produccion' | string;
+
+export type AppModuleId =
+  | 'dashboard'
+  | 'inventory'
+  | 'production'
+  | 'costing'
+  | 'sales'
+  | 'payroll'
+  | 'expenses'
+  | 'settings'
+  | 'architecture';
+
+export interface ModulePermissions {
+  canView: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canExport: boolean;
+}
+
+export interface SystemRole {
+  id: string;
+  name: string;
+  description: string;
+  isSystem?: boolean;
+  color: string;
+  permissions: Record<AppModuleId, ModulePermissions>;
+}
+
+export interface SystemUser {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  nationalId: string;
+  roleId: string;
+  roleName: string;
+  department: string;
+  status: 'activo' | 'inactivo';
+  avatarBg?: string;
+  createdAt: string;
+}
 
 export type UnitOfMeasure = 'kg' | 'g' | 'l' | 'ml' | 'unidades' | 'cajas' | 'paquetes';
 
@@ -36,6 +78,9 @@ export interface InventoryMovement {
   performedBy: string;
 }
 
+export type BasePriceTier = 'mayorista' | 'detal' | 'especial';
+export type PriceTierType = BasePriceTier | 'personalizado';
+
 export interface FinishedGood {
   id: string;
   code: string;
@@ -47,8 +92,9 @@ export interface FinishedGood {
   reservedUnits: number;
   availableUnits: number;
   baseCost: number;
-  suggestedWholesalePrice: number; // Precio mayorista (panaderías, etc.)
-  suggestedRetailPrice: number; // Precio al por menor
+  suggestedWholesalePrice: number; // Precio Mayorista (panaderías, distribuidores)
+  suggestedRetailPrice: number; // Precio Detal / Minorista (venta directa al público)
+  suggestedSpecialPrice: number; // Precio Especial / Institucional (gran volumen / convenios)
   minStock: number;
 }
 
@@ -136,6 +182,9 @@ export interface SalesOrderItem {
   subtotal: number;
   unitPriceBs?: number;
   subtotalBs?: number;
+  priceTier?: PriceTierType;
+  profitMarginPercent?: number;
+  baseCost?: number;
 }
 
 export interface SalesOrder {
@@ -295,3 +344,253 @@ export interface DailyExchangeRates {
   history: ExchangeRateRecord[];
 }
 
+export interface WeeklySalesStat {
+  week: string; // ej: 'Sem 36', 'Sem 37'
+  label: string; // ej: 'Semana 36 (31 Ago - 06 Sep)'
+  startDate: string;
+  endDate: string;
+  revenue: number; // Ingresos brutos en USD
+  cost: number; // Costos operacionales directos en USD
+  margin: number; // Margen bruto en USD
+  marginPercent: number; // Margen %
+  smallUnitsSold: number; // Frasco 250g
+  largeUnitsSold: number; // Frasco 1000g
+  totalUnits: number; // Total unidades vendidas
+  status: 'activa' | 'inactiva';
+}
+
+export interface InventoryTurnoverStat {
+  period: string; // ej: 'Sem 36', 'Sem 37'
+  label: string;
+  turnoverRatio: number; // Veces de rotación anualizada (COGS / Inventario promedio)
+  daysOfSupply: number; // Días de inventario en almacén
+  rawMaterialsTurnover: number; // Rotación insumos y pulpa
+  finishedGoodsTurnover: number; // Rotación producto terminado
+  packagingTurnover: number; // Rotación envases de vidrio y tapas
+  holdingCost: number; // Costo estimado de inmovilización en almacén USD
+  status: 'activa' | 'inactiva';
+}
+
+export interface InventoryTurnoverCategory {
+  category: string;
+  turnoverRatio: number;
+  inventoryValueUsd: number;
+  averageDaysInWarehouse: number;
+  turnoverClassification: 'Alta Rotación' | 'Rotación Media' | 'Baja Rotación';
+  description: string;
+}
+
+export interface ProductionStockAlert {
+  id: string;
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  category: MaterialCategory;
+  unit: UnitOfMeasure;
+  currentStock: number;
+  minStock: number;
+  isBelowMinStock: boolean;
+  requiredForActiveOrders: number;
+  insufficientForProduction: boolean;
+  productionShortage: number; // Max(0, requiredForActiveOrders - currentStock)
+  severity: 'critical' | 'warning' | 'caution';
+  affectedOrders: {
+    orderId: string;
+    orderNumber: string;
+    recipeName: string;
+    required: number;
+    batchCount: number;
+    status: ProductionOrderStatus;
+  }[];
+  affectedRecipes: {
+    recipeId: string;
+    recipeName: string;
+    quantityPerBatch: number;
+    maxBatchesPossible: number;
+  }[];
+  estimatedReplenishCostUsd: number;
+  estimatedReplenishCostBs: number;
+  recommendation: string;
+}
+
+export interface RecipeFeasibilityResult {
+  recipeId: string;
+  recipeName: string;
+  batchCount: number;
+  targetUnits: number;
+  canProduce: boolean;
+  totalMissingCount: number;
+  missingMaterials: {
+    materialId: string;
+    materialName: string;
+    category: MaterialCategory;
+    unit: UnitOfMeasure;
+    required: number;
+    available: number;
+    deficit: number;
+    estimatedCostToCoverUsd: number;
+    estimatedCostToCoverBs: number;
+  }[];
+  sufficientMaterials: {
+    materialId: string;
+    materialName: string;
+    unit: UnitOfMeasure;
+    required: number;
+    available: number;
+    remainingAfter: number;
+  }[];
+}
+
+// --- ESTRUCTURA DE COSTOS DETALLADA (HOJA EXCEL IMAGEN 2) ---
+export interface RawMaterialCostItem {
+  id: string;
+  description: string;
+  costBcv: number; // Costo compra (saco, cesta, litro)
+  presentation: number; // Kilos o unidades por empaque
+  presentationUnit: string; // 'cesta', 'saco 50kg', 'saco 25kg', 'litro'
+  unitCost: number; // Costo por kg o por litro
+  costPerGram: number; // Costo por gramo
+  cantProduction: number; // Cantidad consumida en la producción
+  costPerProduction: number; // Costo total consumido
+}
+
+export interface PackagingCostItem {
+  id: string;
+  presentation: string; // Potes 20kg, Etiquetas, CAJA, TIRRO, BOLSA, TIRRAJE
+  quantity?: number;
+  totalAmount?: number;
+  rate?: number;
+  unitCost: number;
+}
+
+export interface SampleCostItem {
+  id: string;
+  description: string;
+  bulkCost?: number;
+  unitCost: number;
+}
+
+export interface FixedExpenseItem {
+  id: string;
+  concept: string;
+  monthlyAmount: number;
+  workDays: number;
+  dailyAmount: number;
+  costPerKg: number;
+}
+
+export interface WorkerPayrollItem {
+  id: string;
+  name: string;
+  weeklySalary: number;
+  role?: string;
+}
+
+export interface FinishedPresentationCost {
+  id: string;
+  name: string;
+  weightKg: number;
+  packagingCost: number;
+  rawMaterialPerKg: number;
+  fixedCostPerKg: number;
+  rawMaterialTotal: number;
+  fixedCostTotal: number;
+  costWithoutPackaging: number;
+  totalUnitCost: number;
+  marginPrices: {
+    margin20: number;
+    margin25: number;
+    margin30: number;
+    customMarginPercent: number;
+    customPrice: number;
+  };
+}
+
+export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas';
+export type AuditSeverity = 'info' | 'success' | 'warning' | 'critical';
+
+export interface AuditLogDetails {
+  targetId?: string;
+  targetCode?: string;
+  itemName?: string;
+  quantity?: number;
+  unit?: string;
+  costUsd?: number;
+  lotNumber?: string;
+  brix?: number;
+  wasteKg?: number;
+  previousStock?: number;
+  newStock?: number;
+  referenceDoc?: string;
+  salesOrderId?: string;
+  operatorNotes?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string; // ISO-8601
+  module: AuditModule;
+  actionType:
+    | 'entrada_materia_prima'
+    | 'salida_produccion'
+    | 'ajuste_merma'
+    | 'reabastecimiento_alerta'
+    | 'orden_produccion_creada'
+    | 'orden_produccion_procesada'
+    | 'receta_bom_creada'
+    | 'alerta_stock_critico';
+  title: string;
+  description: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  severity: AuditSeverity;
+  details?: AuditLogDetails;
+}
+
+// --- MÓDULO DE GASTOS & EGRESOS OPERATIVOS ---
+export type ExpenseCategory =
+  | 'alquiler_instalaciones'
+  | 'viajes_viaticos'
+  | 'gastos_personales_socios'
+  | 'servicios_basicos'
+  | 'mantenimiento_reparacion'
+  | 'ventas_fletes_marketing'
+  | 'honorarios_profesionales'
+  | 'suministros_oficina_planta'
+  | 'otros';
+
+export type ExpenseTaxCategory =
+  | 'con_factura_iva' // Con crédito fiscal para futuro Libro de Compras (Art. 56 Ley IVA)
+  | 'exento' // Factura/Recibo exento de IVA
+  | 'no_sujeto' // Gasto personal / Viático sin factura fiscal / No deducible
+  | 'retencion_aplicada'; // Sujeto a retención de IVA o ISLR
+
+export interface Expense {
+  id: string;
+  expenseNumber: string; // ej: GTO-2026-0042
+  date: string; // YYYY-MM-DD
+  concept: string; // Concepto o descripción del egreso
+  category: ExpenseCategory;
+  categoryLabel: string;
+  amountUsd: number;
+  exchangeRateUsed: number;
+  amountBs: number;
+  supplierOrBeneficiary: string; // Razón social del proveedor o nombre del beneficiario
+  taxId?: string; // RIF o Cédula (J-..., V-...)
+  documentType: 'factura_fiscal' | 'recibo_pago' | 'nota_debito' | 'vale_caja' | 'otro';
+  documentNumber?: string; // Nro. de Factura / Control / Recibo
+  paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+  paymentReference?: string;
+  notes?: string;
+  registeredBy: string;
+
+  // Mapeo contable y fiscal para futuro desarrollo (Libro de Compras, Libro Diario, Libro Mayor)
+  taxCategory: ExpenseTaxCategory;
+  taxRatePercent?: number; // ej: 16.0
+  taxAmountUsd?: number;
+  taxAmountBs?: number;
+  accountingAccountCode?: string; // ej: 5.1.01.01 (Alquileres), 5.1.02.04 (Viáticos), 5.2.01 (Gastos Personales/Socios)
+  accountingAccountName?: string;
+  fiscalBookEligible: boolean; // True si califica para el Libro de Compras formal SENIAT
+}

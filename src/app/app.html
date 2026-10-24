@@ -16,115 +16,168 @@
         </a>
       </div>
 
-      <!-- Zone 2: 4-6 clean text navigation links / segmented controls -->
+      <!-- Zone 2: Clean text navigation links guarded by RBAC permissions -->
       <nav class="hidden md:flex items-center gap-1 text-xs font-medium text-stone-600">
-        <button
-          (click)="setTab('dashboard')"
-          class="px-3 py-1.5 rounded-lg transition-colors"
-          [class.bg-stone-100]="currentTab() === 'dashboard'"
-          [class.text-stone-900]="currentTab() === 'dashboard'"
-          [class.font-semibold]="currentTab() === 'dashboard'"
-        >
-          Tablero
-        </button>
+        @if (api.canViewModule('dashboard')) {
+          <button
+            (click)="setTab('dashboard')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors"
+            [class.bg-stone-100]="currentTab() === 'dashboard'"
+            [class.text-stone-900]="currentTab() === 'dashboard'"
+            [class.font-semibold]="currentTab() === 'dashboard'"
+          >
+            Tablero
+          </button>
+        }
 
-        <button
-          (click)="setTab('inventory')"
-          class="px-3 py-1.5 rounded-lg transition-colors"
-          [class.bg-stone-100]="currentTab() === 'inventory'"
-          [class.text-stone-900]="currentTab() === 'inventory'"
-          [class.font-semibold]="currentTab() === 'inventory'"
-        >
-          Inventario & Materia Prima
-        </button>
+        @if (api.canViewModule('costing')) {
+          <button
+            (click)="setTab('costing')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+            [class.bg-amber-100]="currentTab() === 'costing'"
+            [class.text-amber-950]="currentTab() === 'costing'"
+            [class.font-semibold]="currentTab() === 'costing'"
+          >
+            <mat-icon class="text-xs text-amber-700">calculate</mat-icon>
+            <span>Costos & Precios</span>
+          </button>
+        }
 
-        <button
-          (click)="setTab('production')"
-          class="px-3 py-1.5 rounded-lg transition-colors"
-          [class.bg-stone-100]="currentTab() === 'production'"
-          [class.text-stone-900]="currentTab() === 'production'"
-          [class.font-semibold]="currentTab() === 'production'"
-        >
-          Producción & BOM
-        </button>
+        @if (api.canViewModule('production')) {
+          <button
+            (click)="setTab('production')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors"
+            [class.bg-stone-100]="currentTab() === 'production'"
+            [class.text-stone-900]="currentTab() === 'production'"
+            [class.font-semibold]="currentTab() === 'production'"
+          >
+            Producción & BOM
+          </button>
+        }
 
-        <button
-          (click)="setTab('costing')"
-          class="px-3 py-1.5 rounded-lg transition-colors"
-          [class.bg-stone-100]="currentTab() === 'costing'"
-          [class.text-stone-900]="currentTab() === 'costing'"
-          [class.font-semibold]="currentTab() === 'costing'"
-        >
-          Costos & Precios
-        </button>
+        @if (api.canViewModule('inventory')) {
+          <button
+            (click)="setTab('inventory')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors"
+            [class.bg-stone-100]="currentTab() === 'inventory'"
+            [class.text-stone-900]="currentTab() === 'inventory'"
+            [class.font-semibold]="currentTab() === 'inventory'"
+          >
+            Inventario
+          </button>
+        }
 
-        <button
-          (click)="setTab('sales')"
-          class="px-3 py-1.5 rounded-lg transition-colors"
-          [class.bg-stone-100]="currentTab() === 'sales'"
-          [class.text-stone-900]="currentTab() === 'sales'"
-          [class.font-semibold]="currentTab() === 'sales'"
-        >
-          Ventas & Despacho
-        </button>
+        @if (api.canViewModule('sales')) {
+          <button
+            (click)="setTab('sales')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors"
+            [class.bg-stone-100]="currentTab() === 'sales'"
+            [class.text-stone-900]="currentTab() === 'sales'"
+            [class.font-semibold]="currentTab() === 'sales'"
+          >
+            Ventas & Despacho
+          </button>
+        }
 
-        <button
-          (click)="setTab('payroll')"
-          class="px-3 py-1.5 rounded-lg transition-colors"
-          [class.bg-stone-100]="currentTab() === 'payroll'"
-          [class.text-stone-900]="currentTab() === 'payroll'"
-          [class.font-semibold]="currentTab() === 'payroll'"
-        >
-          Nómina Semanal
-        </button>
+        @if (api.canViewModule('payroll')) {
+          <button
+            (click)="setTab('payroll')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors"
+            [class.bg-stone-100]="currentTab() === 'payroll'"
+            [class.text-stone-900]="currentTab() === 'payroll'"
+            [class.font-semibold]="currentTab() === 'payroll'"
+          >
+            Nómina
+          </button>
+        }
 
-        <button
-          (click)="setTab('architecture')"
-          class="px-3 py-1.5 rounded-lg transition-colors"
-          [class.bg-stone-100]="currentTab() === 'architecture'"
-          [class.text-stone-900]="currentTab() === 'architecture'"
-          [class.font-semibold]="currentTab() === 'architecture'"
-        >
-          Arquitectura & Docs
-        </button>
+        @if (api.canViewModule('settings')) {
+          <button
+            (click)="setTab('settings')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+            [class.bg-stone-100]="currentTab() === 'settings'"
+            [class.text-stone-900]="currentTab() === 'settings'"
+            [class.font-semibold]="currentTab() === 'settings'"
+          >
+            <mat-icon class="text-xs">settings</mat-icon>
+            <span>Configuración</span>
+          </button>
+        }
+
+        @if (api.canViewModule('architecture')) {
+          <button
+            (click)="setTab('architecture')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors"
+            [class.bg-stone-100]="currentTab() === 'architecture'"
+            [class.text-stone-900]="currentTab() === 'architecture'"
+            [class.font-semibold]="currentTab() === 'architecture'"
+          >
+            Docs
+          </button>
+        }
       </nav>
 
-      <!-- Zone 3: 1-2 primary actions (Role Switcher + Reset Demo) -->
+      <!-- Zone 3: Actions + User Simulator Switcher -->
       <div class="flex items-center gap-2">
-        <!-- Live Exchange Rates Ticker -->
-        <button
-          (click)="setTab('dashboard')"
-          class="hidden xl:flex items-center gap-2 text-xs font-mono bg-stone-100 hover:bg-stone-200/80 border border-stone-200/80 px-2.5 py-1.5 rounded-lg transition-colors text-left"
-          title="Ver cotización diaria de USD y USDT en el Tablero"
-        >
-          <span class="w-1.5 h-1.5 rounded-full" [class.bg-emerald-500]="api.exchangeRates()?.isInActiveWindow" [class.bg-amber-500]="!api.exchangeRates()?.isInActiveWindow"></span>
-          <span class="text-stone-600 font-semibold font-sans">USD:</span>
-          <span class="font-bold text-stone-900">{{ api.exchangeRates()?.currentUsd | veCurrency:'Bs.':2 }}</span>
-          <span class="text-stone-300">·</span>
-          <span class="text-stone-600 font-semibold font-sans">USDT:</span>
-          <span class="font-bold text-stone-900">{{ api.exchangeRates()?.currentUsdt | veCurrency:'Bs.':2 }}</span>
-        </button>
+        <!-- Live Exchange Rates Ticker (Hidden for operator who cannot view prices) -->
+        @if (api.canViewPrices()) {
+          <button
+            (click)="setTab('dashboard')"
+            class="hidden xl:flex items-center gap-2 text-xs font-mono bg-stone-100 hover:bg-stone-200/80 border border-stone-200/80 px-2.5 py-1.5 rounded-lg transition-colors text-left"
+            title="Ver cotización diaria de USD y USDT en el Tablero"
+          >
+            <span class="w-1.5 h-1.5 rounded-full" [class.bg-emerald-500]="api.exchangeRates()?.isInActiveWindow" [class.bg-amber-500]="!api.exchangeRates()?.isInActiveWindow"></span>
+            <span class="text-stone-600 font-semibold font-sans">USD:</span>
+            <span class="font-bold text-stone-900">{{ api.exchangeRates()?.currentUsd | veCurrency:'Bs.':2 }}</span>
+          </button>
+        }
 
-        <!-- Role Switcher Button -->
+        <!-- Active User Simulator Selector (Allows testing all roles without login barriers) -->
+        <div class="hidden sm:flex items-center gap-1.5 bg-stone-100 border border-stone-200 rounded-lg px-2 py-1 text-xs">
+          <mat-icon class="text-xs text-amber-600">account_circle</mat-icon>
+          <select
+            [value]="api.activeUserId()"
+            (change)="onSimulateUser($any($event.target).value)"
+            class="bg-transparent border-none text-xs font-semibold text-stone-800 focus:outline-none cursor-pointer pr-1"
+            title="Simulador de usuario: cambiar identidad y rol para probar permisos en caliente"
+          >
+            @for (user of api.systemUsers(); track user.id) {
+              <option [value]="user.id">
+                {{ user.fullName }} ({{ user.roleName }})
+              </option>
+            }
+          </select>
+        </div>
+
+        <!-- Role Badge Indicator / Direct Quick Toggle -->
         <button
           (click)="toggleUserRole()"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors shadow-xs"
+          class="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors shadow-xs"
           [class.bg-stone-900]="api.currentRole() === 'admin'"
           [class.text-white]="api.currentRole() === 'admin'"
           [class.border-stone-900]="api.currentRole() === 'admin'"
-          [class.bg-amber-50]="api.currentRole() === 'operator'"
-          [class.text-amber-900]="api.currentRole() === 'operator'"
-          [class.border-amber-300]="api.currentRole() === 'operator'"
-          title="Alternar entre rol Administrador y Operario de Planta"
+          [class.bg-blue-50]="api.currentRole() !== 'admin'"
+          [class.text-blue-900]="api.currentRole() !== 'admin'"
+          [class.border-blue-300]="api.currentRole() !== 'admin'"
+          title="Alternar entre rol Administrador y Operador de Producción"
         >
           <mat-icon class="text-xs">{{ api.currentRole() === 'admin' ? 'admin_panel_settings' : 'engineering' }}</mat-icon>
-          <span>{{ api.currentRole() === 'admin' ? 'Rol: Administrador' : 'Rol: Operador Planta' }}</span>
+          <span class="hidden md:inline">{{ api.currentRole() === 'admin' ? 'Admin' : 'Operador' }}</span>
         </button>
 
-        <!-- Reset Demo Action -->
+        <!-- Mobile Drawer Hamburger Toggle Button -->
+        <button
+          (click)="toggleMobileMenu()"
+          class="md:hidden p-2 text-stone-700 hover:bg-stone-100 rounded-lg transition-colors flex items-center justify-center min-h-[44px] min-w-[44px]"
+          aria-label="Abrir menú de navegación"
+        >
+          <mat-icon class="text-base">{{ mobileMenuOpen() ? 'close' : 'menu' }}</mat-icon>
+        </button>
+
+        <!-- Reset Demo Action (Desktop) -->
         <button
           (click)="resetDemoData()"
-          class="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors"
+          class="hidden sm:inline-flex p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors"
           title="Restaurar datos de prueba originales"
         >
           <mat-icon class="text-sm">restart_alt</mat-icon>
@@ -132,17 +185,236 @@
       </div>
     </div>
 
-    <!-- Mobile Nav Bar (below header on small screens) -->
-    <div class="md:hidden flex items-center overflow-x-auto gap-2 pt-3 pb-1 border-t border-stone-100 mt-2 text-xs">
-      <button (click)="setTab('dashboard')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'dashboard'" [class.text-white]="currentTab() === 'dashboard'">Tablero</button>
-      <button (click)="setTab('inventory')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'inventory'" [class.text-white]="currentTab() === 'inventory'">Inventario</button>
-      <button (click)="setTab('production')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'production'" [class.text-white]="currentTab() === 'production'">Producción BOM</button>
-      <button (click)="setTab('costing')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'costing'" [class.text-white]="currentTab() === 'costing'">Costos & Precios</button>
-      <button (click)="setTab('sales')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'sales'" [class.text-white]="currentTab() === 'sales'">Ventas</button>
-      <button (click)="setTab('payroll')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'payroll'" [class.text-white]="currentTab() === 'payroll'">Nómina</button>
-      <button (click)="setTab('architecture')" class="px-2.5 py-1 whitespace-nowrap rounded" [class.bg-stone-900]="currentTab() === 'architecture'" [class.text-white]="currentTab() === 'architecture'">Arquitectura</button>
+    <!-- Mobile Top Tab Pills (Quick horizontal scroll guarded by active role permissions) -->
+    <div class="md:hidden flex items-center overflow-x-auto gap-1.5 pt-2.5 pb-1 border-t border-stone-100 mt-2 text-xs no-scrollbar">
+      @if (api.canViewModule('dashboard')) {
+        <button (click)="setTab('dashboard')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors" [class.bg-amber-600]="currentTab() === 'dashboard'" [class.text-white]="currentTab() === 'dashboard'" [class.bg-stone-100]="currentTab() !== 'dashboard'" [class.text-stone-700]="currentTab() !== 'dashboard'">Tablero</button>
+      }
+      @if (api.canViewModule('costing')) {
+        <button (click)="setTab('costing')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-amber-600]="currentTab() === 'costing'" [class.text-white]="currentTab() === 'costing'" [class.bg-amber-50]="currentTab() !== 'costing'" [class.text-amber-900]="currentTab() !== 'costing'" [class.border]="currentTab() !== 'costing'" [class.border-amber-200]="currentTab() !== 'costing'">
+          <mat-icon class="text-xs">calculate</mat-icon>
+          <span>Costos</span>
+        </button>
+      }
+      @if (api.canViewModule('production')) {
+        <button (click)="setTab('production')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors" [class.bg-amber-600]="currentTab() === 'production'" [class.text-white]="currentTab() === 'production'" [class.bg-stone-100]="currentTab() !== 'production'" [class.text-stone-700]="currentTab() !== 'production'">Producción</button>
+      }
+      @if (api.canViewModule('inventory')) {
+        <button (click)="setTab('inventory')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors" [class.bg-amber-600]="currentTab() === 'inventory'" [class.text-white]="currentTab() === 'inventory'" [class.bg-stone-100]="currentTab() !== 'inventory'" [class.text-stone-700]="currentTab() !== 'inventory'">Inventario</button>
+      }
+      @if (api.canViewModule('sales')) {
+        <button (click)="setTab('sales')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors" [class.bg-amber-600]="currentTab() === 'sales'" [class.text-white]="currentTab() === 'sales'" [class.bg-stone-100]="currentTab() !== 'sales'" [class.text-stone-700]="currentTab() !== 'sales'">Ventas</button>
+      }
+      @if (api.canViewModule('payroll')) {
+        <button (click)="setTab('payroll')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors" [class.bg-amber-600]="currentTab() === 'payroll'" [class.text-white]="currentTab() === 'payroll'" [class.bg-stone-100]="currentTab() !== 'payroll'" [class.text-stone-700]="currentTab() !== 'payroll'">Nómina</button>
+      }
+      @if (api.canViewModule('settings')) {
+        <button (click)="setTab('settings')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-amber-600]="currentTab() === 'settings'" [class.text-white]="currentTab() === 'settings'" [class.bg-stone-100]="currentTab() !== 'settings'" [class.text-stone-700]="currentTab() !== 'settings'">
+          <mat-icon class="text-xs">settings</mat-icon>
+          <span>Config</span>
+        </button>
+      }
     </div>
   </header>
+
+  <!-- Mobile Full Drawer Backdrop & Panel -->
+  @if (mobileMenuOpen()) {
+    <button
+      type="button"
+      class="fixed inset-0 z-50 md:hidden bg-stone-900/60 backdrop-blur-xs transition-opacity w-full h-full cursor-default border-0"
+      (click)="mobileMenuOpen.set(false)"
+      aria-label="Cerrar menú de navegación móvil"
+    ></button>
+    <div class="fixed inset-y-0 right-0 z-50 w-full max-w-xs bg-white shadow-2xl p-5 flex flex-col justify-between md:hidden animate-in slide-in-from-right duration-200 overflow-y-auto">
+      <div>
+        <div class="flex items-center justify-between pb-4 border-b border-stone-200">
+          <div class="flex items-center gap-2">
+            <span class="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center font-black text-sm">
+              P
+            </span>
+            <span class="font-bold text-stone-900 text-sm">PulpaCraft MRP</span>
+          </div>
+          <button (click)="mobileMenuOpen.set(false)" class="p-1 text-stone-500 hover:text-stone-800 rounded min-h-[44px] min-w-[44px] flex items-center justify-center">
+            <mat-icon class="text-base">close</mat-icon>
+          </button>
+        </div>
+
+        <!-- Active User Simulator Selector Mobile -->
+        <div class="my-3 p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs space-y-1.5">
+          <div class="flex items-center justify-between text-stone-500">
+            <span class="font-bold uppercase tracking-wider text-[10px]">Simulador de Usuario</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          </div>
+          <select
+            [value]="api.activeUserId()"
+            (change)="onSimulateUser($any($event.target).value)"
+            class="w-full bg-white border border-stone-300 rounded-lg p-2 text-xs font-semibold text-stone-800 focus:outline-none min-h-[44px]"
+          >
+            @for (user of api.systemUsers(); track user.id) {
+              <option [value]="user.id">
+                {{ user.fullName }} ({{ user.roleName }})
+              </option>
+            }
+          </select>
+          <div class="text-[11px] text-stone-500 flex items-center justify-between">
+            <span>Rol: {{ api.currentUser().roleName }}</span>
+            <span class="font-mono text-stone-400">&#64;{{ api.currentUser().username }}</span>
+          </div>
+        </div>
+
+        <!-- Tasa BCV Info Mobile -->
+        <div class="mb-4 p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs">
+          <div class="flex items-center justify-between text-stone-500 mb-1">
+            <span>Tasa Oficial BCV</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          </div>
+          <div class="flex items-baseline justify-between font-mono">
+            <span class="font-bold text-stone-900 text-base">{{ api.exchangeRates()?.currentUsd | veCurrency:'Bs.':2 }}</span>
+            <span class="text-stone-400 text-[11px]">/ 1 USD</span>
+          </div>
+        </div>
+
+        <nav class="space-y-1">
+          @if (api.canViewModule('dashboard')) {
+            <button
+              (click)="setTab('dashboard')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'dashboard'"
+              [class.text-amber-900]="currentTab() === 'dashboard'"
+              [class.font-semibold]="currentTab() === 'dashboard'"
+              [class.text-stone-700]="currentTab() !== 'dashboard'"
+            >
+              <mat-icon class="text-sm text-stone-500">dashboard</mat-icon>
+              <span>Tablero Principal</span>
+            </button>
+          }
+
+          @if (api.canViewModule('costing')) {
+            <button
+              (click)="setTab('costing')"
+              class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-100]="currentTab() === 'costing'"
+              [class.text-amber-950]="currentTab() === 'costing'"
+              [class.font-bold]="currentTab() === 'costing'"
+              [class.text-stone-700]="currentTab() !== 'costing'"
+            >
+              <div class="flex items-center gap-3">
+                <mat-icon class="text-sm text-amber-700">calculate</mat-icon>
+                <span>Costos & Precios (Excel)</span>
+              </div>
+              <span class="text-[10px] bg-amber-600 text-white font-bold px-1.5 py-0.5 rounded">20KG</span>
+            </button>
+          }
+
+          @if (api.canViewModule('production')) {
+            <button
+              (click)="setTab('production')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'production'"
+              [class.text-amber-900]="currentTab() === 'production'"
+              [class.font-semibold]="currentTab() === 'production'"
+              [class.text-stone-700]="currentTab() !== 'production'"
+            >
+              <mat-icon class="text-sm text-stone-500">precision_manufacturing</mat-icon>
+              <span>Producción & BOM (Marmitas)</span>
+            </button>
+          }
+
+          @if (api.canViewModule('inventory')) {
+            <button
+              (click)="setTab('inventory')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'inventory'"
+              [class.text-amber-900]="currentTab() === 'inventory'"
+              [class.font-semibold]="currentTab() === 'inventory'"
+              [class.text-stone-700]="currentTab() !== 'inventory'"
+            >
+              <mat-icon class="text-sm text-stone-500">inventory_2</mat-icon>
+              <span>Inventario & Almacén</span>
+            </button>
+          }
+
+          @if (api.canViewModule('sales')) {
+            <button
+              (click)="setTab('sales')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'sales'"
+              [class.text-amber-900]="currentTab() === 'sales'"
+              [class.font-semibold]="currentTab() === 'sales'"
+              [class.text-stone-700]="currentTab() !== 'sales'"
+            >
+              <mat-icon class="text-sm text-stone-500">point_of_sale</mat-icon>
+              <span>Ventas & Despacho</span>
+            </button>
+          }
+
+          @if (api.canViewModule('payroll')) {
+            <button
+              (click)="setTab('payroll')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'payroll'"
+              [class.text-amber-900]="currentTab() === 'payroll'"
+              [class.font-semibold]="currentTab() === 'payroll'"
+              [class.text-stone-700]="currentTab() !== 'payroll'"
+            >
+              <mat-icon class="text-sm text-stone-500">groups</mat-icon>
+              <span>Nómina Semanal</span>
+            </button>
+          }
+
+          @if (api.canViewModule('settings')) {
+            <button
+              (click)="setTab('settings')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'settings'"
+              [class.text-amber-900]="currentTab() === 'settings'"
+              [class.font-semibold]="currentTab() === 'settings'"
+              [class.text-stone-700]="currentTab() !== 'settings'"
+            >
+              <mat-icon class="text-sm text-amber-700">settings</mat-icon>
+              <span>Configuración & Permisología</span>
+            </button>
+          }
+
+          @if (api.canViewModule('architecture')) {
+            <button
+              (click)="setTab('architecture')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-stone-100]="currentTab() === 'architecture'"
+              [class.text-stone-900]="currentTab() === 'architecture'"
+              [class.font-semibold]="currentTab() === 'architecture'"
+              [class.text-stone-700]="currentTab() !== 'architecture'"
+            >
+              <mat-icon class="text-sm text-stone-500">menu_book</mat-icon>
+              <span>Documentación & Guía</span>
+            </button>
+          }
+        </nav>
+      </div>
+
+      <div class="space-y-3 pt-4 border-t border-stone-200">
+        <button
+          (click)="toggleUserRole()"
+          class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-semibold shadow-xs min-h-[44px]"
+          [class.bg-stone-900]="api.currentRole() === 'admin'"
+          [class.text-white]="api.currentRole() === 'admin'"
+          [class.bg-amber-100]="api.currentRole() !== 'admin'"
+          [class.text-amber-950]="api.currentRole() !== 'admin'"
+        >
+          <mat-icon class="text-xs">{{ api.currentRole() === 'admin' ? 'admin_panel_settings' : 'engineering' }}</mat-icon>
+          <span>Cambiar Rol: {{ api.currentRole() === 'admin' ? 'Administrador' : 'Operador' }}</span>
+        </button>
+
+        <button
+          (click)="resetDemoData()"
+          class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-medium min-h-[44px]"
+        >
+          <mat-icon class="text-xs">restart_alt</mat-icon>
+          <span>Restaurar Datos Demostración</span>
+        </button>
+      </div>
+    </div>
+  }
 
   <!-- Global Toast Feedback Message -->
   @if (api.toastMessage()) {
@@ -165,35 +437,124 @@
     </div>
   }
 
-  <!-- Main Viewport Canvas (1440px desktop baseline presence) -->
-  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-    @switch (currentTab()) {
-      @case ('dashboard') {
-        <app-dashboard />
-      }
-      @case ('inventory') {
-        <app-inventory />
-      }
-      @case ('production') {
-        <app-production />
-      }
-      @case ('costing') {
-        <app-costing />
-      }
-      @case ('sales') {
-        <app-sales />
-      }
-      @case ('payroll') {
-        <app-payroll />
-      }
-      @case ('architecture') {
-        <app-architecture-docs />
+  <!-- Main Viewport Canvas (1440px desktop baseline presence, pb-24 for mobile bottom bar clearance) -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-8 pb-24 md:pb-8">
+    @if (!api.canViewModule(currentTab())) {
+      <!-- Access Denied State when the active user lacks view permissions for the selected tab -->
+      <div class="bg-white rounded-2xl border border-rose-200 p-8 sm:p-12 text-center max-w-lg mx-auto shadow-xs">
+        <div class="w-14 h-14 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center mx-auto mb-4">
+          <mat-icon class="text-3xl">lock</mat-icon>
+        </div>
+        <h2 class="text-xl font-bold text-stone-900 mb-2">Acceso Restringido por Rol</h2>
+        <p class="text-xs sm:text-sm text-stone-500 mb-6">
+          Tu usuario actual (<span class="font-semibold text-stone-800">{{ api.currentUser().fullName }}</span>) tiene asignado el rol <span class="font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">{{ api.currentUser().roleName }}</span>, el cual no cuenta con permisos para ver este módulo.
+        </p>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            (click)="setTab('dashboard')"
+            class="w-full sm:w-auto px-4 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold transition-colors min-h-[44px]"
+          >
+            Ir al Tablero Principal
+          </button>
+          <button
+            (click)="onSimulateUser('usr-admin')"
+            class="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold transition-colors min-h-[44px]"
+          >
+            Cambiar a Administrador
+          </button>
+        </div>
+      </div>
+    } @else {
+      @switch (currentTab()) {
+        @case ('dashboard') {
+          <app-dashboard />
+        }
+        @case ('inventory') {
+          <app-inventory />
+        }
+        @case ('production') {
+          <app-production />
+        }
+        @case ('costing') {
+          <app-costing />
+        }
+        @case ('sales') {
+          <app-sales />
+        }
+        @case ('payroll') {
+          <app-payroll />
+        }
+        @case ('settings') {
+          <app-settings />
+        }
+        @case ('architecture') {
+          <app-architecture-docs />
+        }
       }
     }
   </main>
 
+  <!-- Sticky Bottom Navigation Bar for Mobile (Touch-optimized 44px+ hit targets) -->
+  <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-2 py-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] flex items-center justify-around print:hidden">
+    <button
+      (click)="setTab('dashboard')"
+      class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
+      [class.text-amber-700]="currentTab() === 'dashboard'"
+      [class.font-bold]="currentTab() === 'dashboard'"
+      [class.text-stone-500]="currentTab() !== 'dashboard'"
+    >
+      <mat-icon class="text-xl">dashboard</mat-icon>
+      <span>Tablero</span>
+    </button>
+
+    <button
+      (click)="setTab('costing')"
+      class="flex flex-col items-center justify-center py-1 px-3 rounded-lg text-[10px] font-medium transition-colors relative min-h-[44px]"
+      [class.text-amber-800]="currentTab() === 'costing'"
+      [class.font-bold]="currentTab() === 'costing'"
+      [class.bg-amber-50]="currentTab() === 'costing'"
+      [class.text-stone-600]="currentTab() !== 'costing'"
+    >
+      <span class="absolute -top-1 right-1 w-2 h-2 rounded-full bg-amber-500"></span>
+      <mat-icon class="text-xl">calculate</mat-icon>
+      <span>Costos</span>
+    </button>
+
+    <button
+      (click)="setTab('production')"
+      class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
+      [class.text-amber-700]="currentTab() === 'production'"
+      [class.font-bold]="currentTab() === 'production'"
+      [class.text-stone-500]="currentTab() !== 'production'"
+    >
+      <mat-icon class="text-xl">precision_manufacturing</mat-icon>
+      <span>BOM</span>
+    </button>
+
+    <button
+      (click)="setTab('inventory')"
+      class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
+      [class.text-amber-700]="currentTab() === 'inventory'"
+      [class.font-bold]="currentTab() === 'inventory'"
+      [class.text-stone-500]="currentTab() !== 'inventory'"
+    >
+      <mat-icon class="text-xl">inventory_2</mat-icon>
+      <span>Stock</span>
+    </button>
+
+    <button
+      (click)="toggleMobileMenu()"
+      class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
+      [class.text-amber-700]="mobileMenuOpen()"
+      [class.text-stone-500]="!mobileMenuOpen()"
+    >
+      <mat-icon class="text-xl">menu</mat-icon>
+      <span>Más</span>
+    </button>
+  </nav>
+
   <!-- Footer (Quiet, editorial, anti-slop) -->
-  <footer class="bg-white border-t border-stone-200 py-6 px-4 text-xs text-stone-500 print:hidden">
+  <footer class="bg-white border-t border-stone-200 py-6 px-4 text-xs text-stone-500 print:hidden mb-12 md:mb-0">
     <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
       <div>
         <span class="font-bold text-stone-800">PulpaCraft MRP</span> · Sistema de Gestión de Producción de Mermeladas Make-to-Order

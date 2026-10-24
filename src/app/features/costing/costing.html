@@ -1,12 +1,19 @@
-<div class="space-y-8">
-  <!-- Module Header -->
-  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+<div class="space-y-6">
+  <!-- Module Header: Mobile First with Title, Currency Toggle and Preset Buttons -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-4">
     <div>
-      <h1 class="text-2xl font-bold text-stone-900 tracking-tight">Módulo de Costos & Estructura de Precios</h1>
-      <p class="text-sm text-stone-500 mt-1">
-        Cálculo de costos directos, indirectos (CIF) y absorción de nómina fija durante semanas inactivas
+      <div class="flex items-center gap-2">
+        <h1 class="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight">Estructura de Costos & Precios</h1>
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+          Hoja de Excel
+        </span>
+      </div>
+      <p class="text-xs sm:text-sm text-stone-500 mt-1">
+        Cálculo interactivo de Materia Prima, Empaques, Nómina de 10 Trabajadores, Gastos Fijos y Precios con Margen (20%, 25%, 30%)
       </p>
     </div>
+
+    <!-- Actions & Currency Toggle -->
     <div class="flex flex-wrap items-center gap-2">
       <!-- Currency Switcher Toggle -->
       <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
@@ -34,329 +41,1272 @@
         </button>
       </div>
 
-      <!-- Export Toolbar with Excel, CSV, PDF icons -->
-      <div class="inline-flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-xs">
+      <!-- Presets Loaders -->
+      <div class="inline-flex items-center gap-1">
         <button
-          (click)="exportCostingExcel()"
-          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
-          title="Exportar estructura de costos a Excel (.xls)"
+          (click)="resetToImage2Preset()"
+          class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg transition-colors"
+          title="Cargar valores exactos de la hoja de cálculo de la Imagen 2"
         >
-          <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
-          <span class="hidden sm:inline">Excel</span>
+          <mat-icon class="text-xs text-amber-700">restore</mat-icon>
+          <span class="hidden sm:inline">Hoja Excel</span> (Img 2)
         </button>
+
         <button
-          (click)="exportCostingCsv()"
-          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-800 hover:bg-sky-50 rounded transition-colors"
-          title="Exportar estructura de costos a CSV (;)"
+          (click)="loadLote72Preset()"
+          class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-200 rounded-lg transition-colors"
+          title="Cargar lote 72 de producción de 6 marmitas (2,600 kg)"
         >
-          <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
-          <span class="hidden sm:inline">CSV</span>
-        </button>
-        <button
-          (click)="exportCostingSummaryPdf()"
-          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-50 rounded transition-colors"
-          title="Descargar Resumen de Costos en archivo PDF"
-        >
-          <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
-          <span class="hidden sm:inline">Descargar PDF</span>
+          <mat-icon class="text-xs text-stone-600">science</mat-icon>
+          <span class="hidden sm:inline">Lote 72</span> (Foto 1)
         </button>
       </div>
 
-      <span class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
-        Costeo por Absorción Parcial MTO
-      </span>
-    </div>
-  </div>
+      <!-- Export Toolbar with Excel, CSV, PDF, Print, and Email (Guarded by RBAC canExport) -->
+      @if (api.hasPermission('costing', 'canExport')) {
+        <div class="inline-flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-xs">
+          <button
+            (click)="exportDetailedCostEstimationPdf()"
+            class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-md transition-colors min-h-[36px]"
+            title="Descargar Reporte Oficial de Estimación de Costos en PDF"
+          >
+            <mat-icon class="text-xs text-rose-600">picture_as_pdf</mat-icon>
+            <span>PDF Cotización</span>
+          </button>
 
-  <!-- SECCIÓN 1: COSTO UNITARIO Y ESTRUCTURA POR PRESENTACIÓN -->
-  <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-      <div>
-        <h2 class="text-lg font-bold text-stone-900">Estructura de Costos por Presentación</h2>
-        <p class="text-xs text-stone-500">
-          Desglose analítico por unidad: Materia Prima + Empaque + Mano de Obra + CIF + Semanas Inactivas
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="text-xs text-stone-500">
-          Nómina semanal promedio: <strong class="font-mono text-stone-900">{{ costData()?.directLaborWeeklyAverage | veCurrency:'$':2 }}</strong>
-        </div>
-        <button
-          (click)="exportCostingSummaryPdf()"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200 rounded-lg shadow-xs transition-colors"
-          title="Descargar Resumen Ejecutivo de Costos en archivo PDF"
-        >
-          <mat-icon class="text-xs text-rose-600">picture_as_pdf</mat-icon>
-          Descargar Resumen PDF
-        </button>
-      </div>
-    </div>
+          <button
+            (click)="printCostEstimation()"
+            class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 rounded-md transition-colors min-h-[36px]"
+            title="Imprimir documento de estimación de costos"
+          >
+            <mat-icon class="text-xs text-stone-600">print</mat-icon>
+            <span class="hidden md:inline">Imprimir</span>
+          </button>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      @for (item of costData()?.costBreakdownByPresentation || []; track item.presentation) {
-        <div class="border border-stone-200 rounded-xl p-6 bg-stone-50/40 flex flex-col justify-between">
-          <div>
-            <div class="flex items-start justify-between pb-4 border-b border-stone-200">
-              <div>
-                <span class="text-xs font-mono text-stone-400 uppercase">Presentación</span>
-                <h3 class="text-lg font-bold text-stone-900">{{ item.label }}</h3>
-              </div>
-              <div class="text-right">
-                <span class="text-xs text-stone-400 block">Costo Total Unitario</span>
-                <span class="text-xl font-mono font-bold text-stone-900">{{ item.totalUnitCost | veCurrency:'$':2 }}</span>
-                <span class="text-[11px] font-mono text-stone-400 block mt-0.5">
-                  ≈ {{ (item.totalUnitCost * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
-                </span>
-              </div>
-            </div>
+          <button
+            (click)="emailCostEstimationToClient()"
+            class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 rounded-md transition-colors min-h-[36px]"
+            title="Preparar correo con cotización formal para cliente"
+          >
+            <mat-icon class="text-xs text-amber-700">email</mat-icon>
+            <span class="hidden md:inline">Enviar Email</span>
+          </button>
 
-            <!-- Cost Components Stack -->
-            <div class="mt-4 space-y-2.5 text-xs">
-              <div class="flex items-center justify-between py-1 border-b border-stone-100">
-                <span class="text-stone-600">1. Materia Prima Directa (Pulpa, Azúcar, Químicos)</span>
-                <span class="font-mono font-semibold text-stone-900">{{ item.directMaterial | veCurrency:'$':2 }}</span>
-              </div>
-              <div class="flex items-center justify-between py-1 border-b border-stone-100">
-                <span class="text-stone-600">2. Empaque Directo (Frasco de Vidrio, Tapa, Etiqueta)</span>
-                <span class="font-mono font-semibold text-stone-900">{{ item.directPackaging | veCurrency:'$':2 }}</span>
-              </div>
-              <div class="flex items-center justify-between py-1 border-b border-stone-100">
-                <span class="text-stone-600">3. Mano de Obra Directa en Paila / Cocción</span>
-                <span class="font-mono font-semibold text-stone-900">{{ item.directLabor | veCurrency:'$':2 }}</span>
-              </div>
-              <div class="flex items-center justify-between py-1 border-b border-stone-100">
-                <span class="text-stone-600">4. Costos Indirectos (Gas, Agua, Luz, Depreciación)</span>
-                <span class="font-mono font-semibold text-stone-900">{{ item.cifAllocation | veCurrency:'$':2 }}</span>
-              </div>
-            </div>
-          </div>
+          <button
+            (click)="exportDetailedCostExcel()"
+            class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-50 rounded-md transition-colors min-h-[36px]"
+            title="Descargar libro de cálculo en Excel (.xls)"
+          >
+            <mat-icon class="text-xs text-emerald-600">table_view</mat-icon>
+            <span class="hidden lg:inline">Excel</span>
+          </button>
 
-          <!-- Suggested Prices & Margins -->
-          <div class="mt-6 pt-4 border-t border-stone-200 bg-white rounded-lg p-4 border border-stone-100">
-            <span class="text-xs font-bold text-stone-800 uppercase tracking-wider block mb-3">Precios Sugeridos y Márgenes Comerciales</span>
-            <div class="grid grid-cols-2 gap-3 text-xs">
-              <div class="bg-stone-50 p-3 rounded border border-stone-200/60">
-                <span class="text-stone-500 block text-[11px]">Canal Mayorista (Panaderías)</span>
-                <span class="font-mono font-bold text-stone-900 text-base block mt-0.5">{{ item.suggestedWholesalePrice | veCurrency:'$':2 }}</span>
-                <span class="text-[11px] font-mono text-stone-500 block">≈ {{ (item.suggestedWholesalePrice * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}</span>
-                <span class="text-emerald-700 font-semibold block text-[11px] mt-1">Margen: {{ item.marginWholesalePercent | veNumber:1 }}%</span>
-              </div>
-              <div class="bg-stone-50 p-3 rounded border border-stone-200/60">
-                <span class="text-stone-500 block text-[11px]">PVP Detal / Consumidor Final</span>
-                <span class="font-mono font-bold text-stone-900 text-base block mt-0.5">{{ item.suggestedRetailPrice | veCurrency:'$':2 }}</span>
-                <span class="text-[11px] font-mono text-stone-500 block">≈ {{ (item.suggestedRetailPrice * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}</span>
-                <span class="text-emerald-700 font-semibold block text-[11px] mt-1">Margen: {{ item.marginRetailPercent | veNumber:1 }}%</span>
-              </div>
-            </div>
-          </div>
+          <button
+            (click)="exportDetailedCostCsv()"
+            class="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-sky-800 hover:bg-sky-50 rounded-md transition-colors min-h-[36px]"
+            title="Descargar datos en CSV"
+          >
+            <mat-icon class="text-xs text-sky-600">grid_on</mat-icon>
+            <span class="hidden lg:inline">CSV</span>
+          </button>
         </div>
       }
     </div>
   </div>
 
-  <!-- SECCIÓN 2: ANÁLISIS DE IMPACTO DE SEMANAS INACTIVAS (COSTO FIJO OPERACIONAL) -->
-  <div class="bg-stone-900 text-white rounded-xl p-6 sm:p-8 shadow-sm">
-    <div class="flex flex-col md:flex-row md:items-start justify-between gap-6">
-      <div class="max-w-2xl">
-        <div class="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-amber-400 font-semibold mb-2">
-          <mat-icon class="text-xs">info</mat-icon>
-          Fenómeno Crítico en la Industria de Mermeladas
-        </div>
-        <h3 class="text-xl font-bold text-white tracking-tight">
-          Gestión de Semanas Inactivas (Sin Producción) en el Modelo Make-to-Order
-        </h3>
-        <p class="text-xs sm:text-sm text-stone-300 mt-2 leading-relaxed">
-          En microempresas de mermelada ocurren semanas sin encender marmitas debido a: <strong>1) Veda o escasez de fruta fresca por clima</strong>, <strong>2) Mantenimiento profundo de pailas</strong>, o <strong>3) Acumulación momentánea de pedidos pendientes</strong>. Durante estas semanas, los sueldos fijos del personal de apoyo ($185/semana) continúan pagándose.
-        </p>
-        <p class="text-xs sm:text-sm text-stone-300 mt-2 leading-relaxed">
-          Si no se prorratea este costo fijo muerto sobre los lotes producidos, la empresa sufre pérdidas invisibles o cree tener un margen del 40% cuando en realidad es del 15% o negativo.
-        </p>
-      </div>
+  <!-- Mobile-First Sub-Navigation Tabs (Touch-friendly horizontal bar) -->
+  <div class="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-stone-200 no-scrollbar">
+    <button
+      (click)="activeTab.set('summary')"
+      class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors"
+      [class.bg-stone-900]="activeTab() === 'summary'"
+      [class.text-white]="activeTab() === 'summary'"
+      [class.bg-stone-100]="activeTab() !== 'summary'"
+      [class.text-stone-600]="activeTab() !== 'summary'"
+    >
+      <mat-icon class="text-xs">price_check</mat-icon>
+      <span>1. Precios & Resumen Final</span>
+      <span class="text-[10px] px-1 rounded" [class.bg-amber-600]="activeTab() === 'summary'" [class.text-white]="activeTab() === 'summary'" [class.bg-stone-200]="activeTab() !== 'summary'">Cuñete $32.55</span>
+    </button>
 
-      <div class="bg-stone-800/80 border border-stone-700 rounded-xl p-5 min-w-[240px] text-center">
-        <span class="text-xs text-stone-400 block uppercase tracking-wider">Costo Fijo Inactivo YTD</span>
-        <span class="text-2xl font-bold font-mono text-rose-400 block my-1">
-          ${{ costData()?.unabsorbedFixedCostYTD | number:'1.2-2' }}
-        </span>
-        <span class="text-xs text-stone-400 block">
-          {{ costData()?.inactiveWeeksCountYTD }} semanas registradas sin cocción
-        </span>
-      </div>
-    </div>
+    <button
+      (click)="activeTab.set('materials')"
+      class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors"
+      [class.bg-stone-900]="activeTab() === 'materials'"
+      [class.text-white]="activeTab() === 'materials'"
+      [class.bg-stone-100]="activeTab() !== 'materials'"
+      [class.text-stone-600]="activeTab() !== 'materials'"
+    >
+      <mat-icon class="text-xs">shopping_basket</mat-icon>
+      <span>2. Materia Prima ($1,526.94)</span>
+    </button>
+
+    <button
+      (click)="activeTab.set('packaging')"
+      class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors"
+      [class.bg-stone-900]="activeTab() === 'packaging'"
+      [class.text-white]="activeTab() === 'packaging'"
+      [class.bg-stone-100]="activeTab() !== 'packaging'"
+      [class.text-stone-600]="activeTab() !== 'packaging'"
+    >
+      <mat-icon class="text-xs">inventory</mat-icon>
+      <span>3. Envases & Empaques</span>
+    </button>
+
+    <button
+      (click)="activeTab.set('fixed_labor')"
+      class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors"
+      [class.bg-stone-900]="activeTab() === 'fixed_labor'"
+      [class.text-white]="activeTab() === 'fixed_labor'"
+      [class.bg-stone-100]="activeTab() !== 'fixed_labor'"
+      [class.text-stone-600]="activeTab() !== 'fixed_labor'"
+    >
+      <mat-icon class="text-xs">groups</mat-icon>
+      <span>4. Gastos Fijos & Nómina (10 Trab.)</span>
+    </button>
+
+    <button
+      (click)="activeTab.set('mto_simulator')"
+      class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors"
+      [class.bg-stone-900]="activeTab() === 'mto_simulator'"
+      [class.text-white]="activeTab() === 'mto_simulator'"
+      [class.bg-stone-100]="activeTab() !== 'mto_simulator'"
+      [class.text-stone-600]="activeTab() !== 'mto_simulator'"
+    >
+      <mat-icon class="text-xs">tune</mat-icon>
+      <span>5. Simulador MTO</span>
+    </button>
   </div>
 
-  <!-- SECCIÓN 3: SIMULADOR INTERACTIVO DE COSTEO Y MÁRGENES -->
-  <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-      <div>
-        <h2 class="text-lg font-bold text-stone-900">Simulador Dinámico de Costeo & Punto de Venta</h2>
-        <p class="text-xs text-stone-500">
-          Ajusta costos de insumos, semanas inactivas y márgenes objetivo para recalcular precios sugeridos en tiempo real
-        </p>
+  <!-- TAB 1: RESUMEN FINAL & ESTRUCTURA DE COSTOS (CUÑETE 20KG, CAJA 20KG, GALÓN 5KG) -->
+  @if (activeTab() === 'summary') {
+    <div class="space-y-6">
+      <!-- Quick KPIs Cards on Top -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="bg-white border border-stone-200 rounded-xl p-3 sm:p-4 shadow-xs">
+          <span class="text-[11px] text-stone-500 block uppercase font-medium">Costo MP por 1 kg</span>
+          <span class="text-lg sm:text-2xl font-bold font-mono text-stone-900 mt-1 block">
+            @if (currencyMode() === 'USD') {
+              {{ rawMaterialCostPerKg() | veCurrency:'$':2 }}
+            } @else {
+              {{ (rawMaterialCostPerKg() * rate()) | veCurrency:'Bs.':2 }}
+            }
+          </span>
+          <span class="text-[10px] text-stone-400 block mt-0.5">Base {{ productionKilosBase() }} kg producidos</span>
+        </div>
+
+        <div class="bg-white border border-stone-200 rounded-xl p-3 sm:p-4 shadow-xs">
+          <span class="text-[11px] text-stone-500 block uppercase font-medium">Gastos Fijos por 1 kg</span>
+          <span class="text-lg sm:text-2xl font-bold font-mono text-stone-900 mt-1 block">
+            @if (currencyMode() === 'USD') {
+              {{ totalFixedPerKg() | veCurrency:'$':2 }}
+            } @else {
+              {{ (totalFixedPerKg() * rate()) | veCurrency:'Bs.':2 }}
+            }
+          </span>
+          <span class="text-[10px] text-stone-400 block mt-0.5">24 días / 10 empleados</span>
+        </div>
+
+        <div class="bg-white border border-stone-200 rounded-xl p-3 sm:p-4 shadow-xs">
+          <span class="text-[11px] text-stone-500 block uppercase font-medium">Costo Total por 1 kg</span>
+          <span class="text-lg sm:text-2xl font-bold font-mono text-amber-800 mt-1 block">
+            @if (currencyMode() === 'USD') {
+              {{ costPer1kg() | veCurrency:'$':2 }}
+            } @else {
+              {{ (costPer1kg() * rate()) | veCurrency:'Bs.':2 }}
+            }
+          </span>
+          <span class="text-[10px] text-stone-400 block mt-0.5">MP ($1.16) + GF ($0.18)</span>
+        </div>
+
+        <div class="bg-amber-500 text-white rounded-xl p-3 sm:p-4 shadow-xs">
+          <span class="text-[11px] text-amber-100 block uppercase font-medium">Costo Cuñete 20kg</span>
+          <span class="text-lg sm:text-2xl font-bold font-mono mt-1 block">
+            @if (currencyMode() === 'USD') {
+              {{ cuneteFinalCost() | veCurrency:'$':2 }}
+            } @else {
+              {{ (cuneteFinalCost() * rate()) | veCurrency:'Bs.':2 }}
+            }
+          </span>
+          <span class="text-[10px] text-amber-100 block mt-0.5">Con Envase ($5.90) incluido</span>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-stone-400">Cargar valores típicos:</span>
-        <button
-          type="button"
-          (click)="loadPreset('pequena')"
-          class="px-2.5 py-1 text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-800 rounded transition-colors"
-        >
-          Frasco 250g
-        </button>
-        <button
-          type="button"
-          (click)="loadPreset('grande')"
-          class="px-2.5 py-1 text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-800 rounded transition-colors"
-        >
-          Frasco 1000g (1 kg)
-        </button>
+
+      <!-- MAIN COMPARISON CARDS: CUÑETE 20KG vs CAJA 20KG vs GALÓN 5KG -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Card 1: CUÑETE 20KG (Estructura Principal de la Imagen 2) -->
+        <div class="bg-white border-2 border-amber-500/40 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+              <div>
+                <span class="text-[11px] font-mono text-amber-800 uppercase font-bold tracking-wider">Presentación Principal</span>
+                <h3 class="text-xl font-bold text-stone-900 mt-0.5">Cuñete 20kg</h3>
+              </div>
+              <span class="px-2.5 py-1 text-xs font-bold rounded-lg bg-amber-100 text-amber-900 font-mono">
+                20 KG
+              </span>
+            </div>
+
+            <!-- Desglose de Costo Unitario -->
+            <div class="mt-4 space-y-2 text-xs">
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Etiquetas y envases (Pote + Etiqueta):</span>
+                <span class="font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ totalPackaging20k() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (totalPackaging20k() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Materia Prima (20 kg × $1.16/kg):</span>
+                <span class="font-mono font-semibold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ rawMaterialCost20kg() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (rawMaterialCost20kg() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Gastos Fijos (20 kg × $0.18/kg):</span>
+                <span class="font-mono font-semibold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ fixedCost20kg() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (fixedCost20kg() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-2 bg-stone-50 px-3 rounded-lg border border-stone-200">
+                <span class="font-semibold text-stone-800">Costo Base sin envase (20kg):</span>
+                <span class="font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ cost20kgWithoutPackaging() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (cost20kgWithoutPackaging() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-2 bg-amber-50 px-3 rounded-lg border border-amber-200">
+                <span class="font-bold text-amber-950">Costo Total Final (Costo F):</span>
+                <span class="font-mono font-black text-amber-900 text-base">
+                  @if (currencyMode() === 'USD') {
+                    {{ cuneteFinalCost() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (cuneteFinalCost() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+            </div>
+
+            <!-- Tabla de Precios Sugeridos por Margen -->
+            <div class="mt-5 pt-4 border-t border-stone-200">
+              <span class="text-xs font-bold text-stone-800 uppercase tracking-wider block mb-2.5">
+                Precios de Venta Sugeridos por Margen
+              </span>
+
+              <div class="space-y-2">
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">30%</span>
+                    <span class="text-xs text-stone-600">Margen Mayorista Alto</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-mono font-bold text-sm text-stone-900">
+                      @if (currencyMode() === 'USD') {
+                        {{ cunetePrices().margin30 | veCurrency:'$':2 }}
+                      } @else {
+                        {{ (cunetePrices().margin30 * rate()) | veCurrency:'Bs.':2 }}
+                      }
+                    </span>
+                    <span class="text-[10px] text-emerald-700 block">+{{ (cunetePrices().margin30 - cuneteFinalCost()) | veCurrency:'$':2 }}</span>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-amber-300 bg-amber-50/50">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">25%</span>
+                    <span class="text-xs text-stone-800 font-medium">Margen Estándar</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-mono font-bold text-sm text-stone-900">
+                      @if (currencyMode() === 'USD') {
+                        {{ cunetePrices().margin25 | veCurrency:'$':2 }}
+                      } @else {
+                        {{ (cunetePrices().margin25 * rate()) | veCurrency:'Bs.':2 }}
+                      }
+                    </span>
+                    <span class="text-[10px] text-amber-800 block">+{{ (cunetePrices().margin25 - cuneteFinalCost()) | veCurrency:'$':2 }}</span>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-stone-200 text-stone-800 font-mono">20%</span>
+                    <span class="text-xs text-stone-600">Margen Volumen / Distribuidor</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-mono font-bold text-sm text-stone-900">
+                      @if (currencyMode() === 'USD') {
+                        {{ cunetePrices().margin20 | veCurrency:'$':2 }}
+                      } @else {
+                        {{ (cunetePrices().margin20 * rate()) | veCurrency:'Bs.':2 }}
+                      }
+                    </span>
+                    <span class="text-[10px] text-stone-500 block">+{{ (cunetePrices().margin20 - cuneteFinalCost()) | veCurrency:'$':2 }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-stone-100 text-[11px] text-stone-400">
+            Fórmula: Precio = Costo / (1 - Margen %). Coincide exactamente con la hoja: $46.50 (30%), $43.40 (25%), $40.68 (20%).
+          </div>
+        </div>
+
+        <!-- Card 2: CAJA 20KG (Caja de Cartón con Tirro, Bolsa y Tirraje) -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+              <div>
+                <span class="text-[11px] font-mono text-stone-500 uppercase font-bold tracking-wider">Empaque Alternativo</span>
+                <h3 class="text-xl font-bold text-stone-900 mt-0.5">Caja 20kg</h3>
+              </div>
+              <span class="px-2.5 py-1 text-xs font-bold rounded-lg bg-stone-100 text-stone-800 font-mono">
+                20 KG
+              </span>
+            </div>
+
+            <!-- Desglose de Costo Unitario -->
+            <div class="mt-4 space-y-2 text-xs">
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Empaque Caja (Caja, Tirro, Bolsa, Tirraje):</span>
+                <span class="font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ totalPackagingCaja20k() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (totalPackagingCaja20k() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Materia Prima (20 kg × $1.16/kg):</span>
+                <span class="font-mono font-semibold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ rawMaterialCost20kg() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (rawMaterialCost20kg() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Gastos Fijos (20 kg × $0.18/kg):</span>
+                <span class="font-mono font-semibold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ fixedCost20kg() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (fixedCost20kg() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-2 bg-stone-50 px-3 rounded-lg border border-stone-200">
+                <span class="font-semibold text-stone-800">Costo Base sin empaque:</span>
+                <span class="font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ cost20kgWithoutPackaging() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (cost20kgWithoutPackaging() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-2 bg-stone-100 px-3 rounded-lg border border-stone-300">
+                <span class="font-bold text-stone-900">Costo Total Final Caja:</span>
+                <span class="font-mono font-black text-stone-900 text-base">
+                  @if (currencyMode() === 'USD') {
+                    {{ cajaFinalCost() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (cajaFinalCost() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+            </div>
+
+            <!-- Precios Sugeridos Caja -->
+            <div class="mt-5 pt-4 border-t border-stone-200">
+              <span class="text-xs font-bold text-stone-800 uppercase tracking-wider block mb-2.5">
+                Precios de Venta Sugeridos por Margen
+              </span>
+
+              <div class="space-y-2">
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">30%</span>
+                    <span class="text-xs text-stone-600">Margen Mayorista</span>
+                  </div>
+                  <span class="font-mono font-bold text-sm text-stone-900">
+                    @if (currencyMode() === 'USD') {
+                      {{ cajaPrices().margin30 | veCurrency:'$':2 }}
+                    } @else {
+                      {{ (cajaPrices().margin30 * rate()) | veCurrency:'Bs.':2 }}
+                    }
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">25%</span>
+                    <span class="text-xs text-stone-600">Margen Estándar</span>
+                  </div>
+                  <span class="font-mono font-bold text-sm text-stone-900">
+                    @if (currencyMode() === 'USD') {
+                      {{ cajaPrices().margin25 | veCurrency:'$':2 }}
+                    } @else {
+                      {{ (cajaPrices().margin25 * rate()) | veCurrency:'Bs.':2 }}
+                    }
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-stone-200 text-stone-800 font-mono">20%</span>
+                    <span class="text-xs text-stone-600">Margen Volumen</span>
+                  </div>
+                  <span class="font-mono font-bold text-sm text-stone-900">
+                    @if (currencyMode() === 'USD') {
+                      {{ cajaPrices().margin20 | veCurrency:'$':2 }}
+                    } @else {
+                      {{ (cajaPrices().margin20 * rate()) | veCurrency:'Bs.':2 }}
+                    }
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-stone-100 text-[11px] text-stone-400">
+            Ahorro de ${{ (cuneteFinalCost() - cajaFinalCost()) | number:'1.2-2' }} por unidad en comparación con el cuñete plástico.
+          </div>
+        </div>
+
+        <!-- Card 3: GALÓN 5KG / CAJA 4 GALONES -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+              <div>
+                <span class="text-[11px] font-mono text-stone-500 uppercase font-bold tracking-wider">Presentación Comercial</span>
+                <h3 class="text-xl font-bold text-stone-900 mt-0.5">Galón 5kg</h3>
+              </div>
+              <span class="px-2.5 py-1 text-xs font-bold rounded-lg bg-stone-100 text-stone-800 font-mono">
+                5 KG
+              </span>
+            </div>
+
+            <!-- Desglose de Costo Unitario -->
+            <div class="mt-4 space-y-2 text-xs">
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Envase Galón y etiquetas:</span>
+                <span class="font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ totalPackagingGalon() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (totalPackagingGalon() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Materia Prima (5 kg × $1.16/kg):</span>
+                <span class="font-mono font-semibold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ rawMaterialCost5kg() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (rawMaterialCost5kg() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-1.5 border-b border-stone-100">
+                <span class="text-stone-600">Gastos Fijos (5 kg × $0.18/kg):</span>
+                <span class="font-mono font-semibold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ fixedCost5kg() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (fixedCost5kg() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-2 bg-stone-50 px-3 rounded-lg border border-stone-200">
+                <span class="font-semibold text-stone-800">Costo Base sin envase (5kg):</span>
+                <span class="font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ cost5kgWithoutPackaging() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (cost5kgWithoutPackaging() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between py-2 bg-amber-50 px-3 rounded-lg border border-amber-200">
+                <span class="font-bold text-amber-950">Costo Final Galón 5kg:</span>
+                <span class="font-mono font-black text-amber-900 text-base">
+                  @if (currencyMode() === 'USD') {
+                    {{ galonFinalCost() | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (galonFinalCost() * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </span>
+              </div>
+            </div>
+
+            <!-- Precios Sugeridos Galón -->
+            <div class="mt-5 pt-4 border-t border-stone-200">
+              <span class="text-xs font-bold text-stone-800 uppercase tracking-wider block mb-2.5">
+                Precios de Venta Sugeridos por Margen
+              </span>
+
+              <div class="space-y-2">
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">30%</span>
+                    <span class="text-xs text-stone-600">Mayorista</span>
+                  </div>
+                  <span class="font-mono font-bold text-sm text-stone-900">
+                    @if (currencyMode() === 'USD') {
+                      {{ galonPrices().margin30 | veCurrency:'$':2 }}
+                    } @else {
+                      {{ (galonPrices().margin30 * rate()) | veCurrency:'Bs.':2 }}
+                    }
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-mono">25%</span>
+                    <span class="text-xs text-stone-600">Estándar</span>
+                  </div>
+                  <span class="font-mono font-bold text-sm text-stone-900">
+                    @if (currencyMode() === 'USD') {
+                      {{ galonPrices().margin25 | veCurrency:'$':2 }}
+                    } @else {
+                      {{ (galonPrices().margin25 * rate()) | veCurrency:'Bs.':2 }}
+                    }
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between p-2.5 rounded-lg border border-stone-200 bg-stone-50/60">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded bg-stone-200 text-stone-800 font-mono">20%</span>
+                    <span class="text-xs text-stone-600">Volumen</span>
+                  </div>
+                  <span class="font-mono font-bold text-sm text-stone-900">
+                    @if (currencyMode() === 'USD') {
+                      {{ galonPrices().margin20 | veCurrency:'$':2 }}
+                    } @else {
+                      {{ (galonPrices().margin20 * rate()) | veCurrency:'Bs.':2 }}
+                    }
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-stone-100 text-[11px] text-stone-400">
+            Una caja de 20kg contiene 4 galones de 5kg.
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE CUSTOM MARGIN CALCULATOR SLIDER -->
+      <div class="bg-stone-900 text-white rounded-2xl p-5 sm:p-6 shadow-sm">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-800">
+          <div>
+            <h4 class="text-base font-bold text-white flex items-center gap-2">
+              <mat-icon class="text-amber-400 text-sm">calculate</mat-icon>
+              Calculadora Dinámica de Margen Personalizado
+            </h4>
+            <p class="text-xs text-stone-400 mt-0.5">
+              Ajusta el margen de ganancia deseado para recalcular en tiempo real el precio de venta en USD y Bolívares
+            </p>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-stone-300">Margen Objetivo:</span>
+            <div class="inline-flex items-center gap-1 bg-stone-800 px-3 py-1.5 rounded-lg border border-stone-700">
+              <input
+                type="number"
+                [value]="customMarginPercent()"
+                (input)="customMarginPercent.set(+$any($event.target).value)"
+                min="1"
+                max="85"
+                class="w-14 bg-transparent text-amber-400 font-mono font-bold text-base text-right focus:outline-hidden"
+              />
+              <span class="text-amber-400 font-bold">%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+          <div class="bg-stone-800/80 border border-stone-700 p-4 rounded-xl text-center">
+            <span class="text-xs text-stone-400 block">PVP Cuñete 20kg ({{ customMarginPercent() }}%)</span>
+            <span class="text-2xl font-bold font-mono text-amber-400 block my-1">
+              @if (currencyMode() === 'USD') {
+                {{ cunetePrices().custom | veCurrency:'$':2 }}
+              } @else {
+                {{ (cunetePrices().custom * rate()) | veCurrency:'Bs.':2 }}
+              }
+            </span>
+            <span class="text-xs text-emerald-400 font-mono">
+              Ganancia: +{{ (cunetePrices().custom - cuneteFinalCost()) | veCurrency:'$':2 }}
+            </span>
+          </div>
+
+          <div class="bg-stone-800/80 border border-stone-700 p-4 rounded-xl text-center">
+            <span class="text-xs text-stone-400 block">PVP Caja 20kg ({{ customMarginPercent() }}%)</span>
+            <span class="text-2xl font-bold font-mono text-white block my-1">
+              @if (currencyMode() === 'USD') {
+                {{ cajaPrices().custom | veCurrency:'$':2 }}
+              } @else {
+                {{ (cajaPrices().custom * rate()) | veCurrency:'Bs.':2 }}
+              }
+            </span>
+            <span class="text-xs text-emerald-400 font-mono">
+              Ganancia: +{{ (cajaPrices().custom - cajaFinalCost()) | veCurrency:'$':2 }}
+            </span>
+          </div>
+
+          <div class="bg-stone-800/80 border border-stone-700 p-4 rounded-xl text-center">
+            <span class="text-xs text-stone-400 block">PVP Galón 5kg ({{ customMarginPercent() }}%)</span>
+            <span class="text-2xl font-bold font-mono text-white block my-1">
+              @if (currencyMode() === 'USD') {
+                {{ galonPrices().custom | veCurrency:'$':2 }}
+              } @else {
+                {{ (galonPrices().custom * rate()) | veCurrency:'Bs.':2 }}
+              }
+            </span>
+            <span class="text-xs text-emerald-400 font-mono">
+              Ganancia: +{{ (galonPrices().custom - galonFinalCost()) | veCurrency:'$':2 }}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
+  }
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-      <!-- Input Form -->
-      <form [formGroup]="simulatorForm" (input)="runSimulation()" class="lg:col-span-7 space-y-4">
-        <div class="grid grid-cols-2 gap-4">
+  <!-- TAB 2: MATERIA PRIMA 20KG (TABLA DETALLADA CON CÁLCULO DE CADA COSA) -->
+  @if (activeTab() === 'materials') {
+    <div class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-6 shadow-xs space-y-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200">
+        <div>
+          <h2 class="text-lg font-bold text-stone-900">Materia Prima 20kg - Detalle de Insumos & Fórmulas</h2>
+          <p class="text-xs text-stone-500">
+            Cada celda calcula automáticamente el costo unitario por kilo, costo por gramo y costo total consumido en la tanda.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5 text-xs text-stone-600 bg-stone-50 border border-stone-200 px-3 py-1.5 rounded-lg">
+            <span>Rendimiento Base Tanda:</span>
+            <input
+              type="number"
+              [value]="productionKilosBase()"
+              (input)="productionKilosBase.set(+$any($event.target).value)"
+              class="w-16 font-mono font-bold text-stone-900 bg-white border border-stone-300 rounded px-1.5 py-0.5 text-right"
+            />
+            <span class="font-semibold">KG</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Responsive Table with Horizontal Touch Scroll -->
+      <div class="overflow-x-auto -mx-4 sm:mx-0">
+        <table class="w-full text-left text-xs whitespace-nowrap min-w-[700px]">
+          <thead class="bg-stone-50 border-y border-stone-200 text-stone-600 font-semibold uppercase text-[11px]">
+            <tr>
+              <th class="py-3 px-3">Descripción Insumo</th>
+              <th class="py-3 px-3 text-right">Costo Compra ($)</th>
+              <th class="py-3 px-3 text-right">Presentación</th>
+              <th class="py-3 px-3 text-right">Costo Unitario ($/kg)</th>
+              <th class="py-3 px-3 text-right">Costo por Gramo ($/g)</th>
+              <th class="py-3 px-3 text-right">Cant. x Producción</th>
+              <th class="py-3 px-3 text-right">Costo x Producción ($)</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (item of rawMaterials(); track item.id) {
+              <tr class="hover:bg-stone-50/70 transition-colors">
+                <td class="py-3 px-3 font-medium text-stone-900 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full" [class.bg-rose-500]="item.id === 'rm-1'" [class.bg-amber-500]="item.id === 'rm-2'" [class.bg-blue-500]="item.id.includes('rm-3') || item.id.includes('rm-4') || item.id.includes('rm-5')" [class.bg-stone-600]="item.id === 'rm-6'"></span>
+                  <span>{{ item.description }}</span>
+                </td>
+
+                <!-- Costo Compra (Editable) -->
+                <td class="py-3 px-3 text-right">
+                  <div class="inline-flex items-center justify-end gap-1">
+                    <span class="text-stone-400">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      [value]="item.costBcv"
+                      (input)="updateRawMaterialField(item.id, 'costBcv', $any($event.target).value)"
+                      class="w-18 font-mono text-stone-900 font-semibold bg-stone-50 hover:bg-white focus:bg-white border border-stone-200 focus:border-amber-500 rounded px-1.5 py-1 text-right transition-colors"
+                    />
+                  </div>
+                </td>
+
+                <!-- Presentación Kilos/Unidad (Editable) -->
+                <td class="py-3 px-3 text-right">
+                  <div class="inline-flex items-center justify-end gap-1">
+                    <input
+                      type="number"
+                      step="0.01"
+                      [value]="item.presentation"
+                      (input)="updateRawMaterialField(item.id, 'presentation', $any($event.target).value)"
+                      class="w-16 font-mono text-stone-800 bg-stone-50 hover:bg-white focus:bg-white border border-stone-200 rounded px-1.5 py-1 text-right transition-colors"
+                    />
+                    <span class="text-[10px] text-stone-400">{{ item.id === 'rm-6' ? 'L' : 'kg' }}</span>
+                  </div>
+                </td>
+
+                <!-- Costo Unitario Calculado -->
+                <td class="py-3 px-3 text-right font-mono font-semibold text-stone-800">
+                  ${{ item.unitCost | number:'1.2-5' }}
+                </td>
+
+                <!-- Costo por Gramo Calculado -->
+                <td class="py-3 px-3 text-right font-mono text-stone-600">
+                  ${{ item.costPerGram | number:'1.2-6' }}
+                </td>
+
+                <!-- Cantidad Usada en Producción (Editable) -->
+                <td class="py-3 px-3 text-right">
+                  <div class="inline-flex items-center justify-end gap-1">
+                    <input
+                      type="number"
+                      step="0.1"
+                      [value]="item.cantProduction"
+                      (input)="updateRawMaterialField(item.id, 'cantProduction', $any($event.target).value)"
+                      class="w-20 font-mono text-stone-900 font-bold bg-amber-50/50 hover:bg-white focus:bg-white border border-amber-200 focus:border-amber-500 rounded px-1.5 py-1 text-right transition-colors"
+                    />
+                    <span class="text-[10px] text-stone-400">{{ item.id === 'rm-6' ? 'L' : 'kg' }}</span>
+                  </div>
+                </td>
+
+                <!-- Costo Total por Producción -->
+                <td class="py-3 px-3 text-right font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    {{ item.costPerProduction | veCurrency:'$':2 }}
+                  } @else {
+                    {{ (item.costPerProduction * rate()) | veCurrency:'Bs.':2 }}
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+          <tfoot class="bg-amber-50/50 font-bold text-stone-900 border-t-2 border-stone-300">
+            <tr>
+              <td class="py-3 px-3" colspan="5">
+                TOTAL MATERIA PRIMA PRODUCCIÓN (Tanda Base {{ productionKilosBase() }} kg):
+              </td>
+              <td class="py-3 px-3 text-right font-mono text-stone-600">
+                {{ productionKilosBase() }} kg
+              </td>
+              <td class="py-3 px-3 text-right font-mono text-base text-amber-900">
+                @if (currencyMode() === 'USD') {
+                  {{ totalRawMaterialsCost() | veCurrency:'$':2 }}
+                } @else {
+                  {{ (totalRawMaterialsCost() * rate()) | veCurrency:'Bs.':2 }}
+                }
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Resumen de Costo por 1kg y 20kg -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-stone-200">
+        <div class="bg-stone-50 border border-stone-200 p-4 rounded-xl flex items-center justify-between">
           <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Materia Prima Directa ($)</label>
+            <span class="text-xs font-semibold text-stone-600 block">Costo Materia Prima por 1 KG:</span>
+            <span class="text-xs text-stone-400">Total Materia Prima / {{ productionKilosBase() }} kg producidos</span>
+          </div>
+          <div class="text-right">
+            <span class="font-mono font-bold text-xl text-stone-900">
+              @if (currencyMode() === 'USD') {
+                {{ rawMaterialCostPerKg() | veCurrency:'$':2 }}
+              } @else {
+                {{ (rawMaterialCostPerKg() * rate()) | veCurrency:'Bs.':2 }}
+              }
+            </span>
+          </div>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between">
+          <div>
+            <span class="text-xs font-semibold text-amber-900 block">Costo Materia Prima para 20 KG:</span>
+            <span class="text-xs text-amber-700">Costo 1kg ($1.16) × 20 kg</span>
+          </div>
+          <div class="text-right">
+            <span class="font-mono font-black text-xl text-amber-950">
+              @if (currencyMode() === 'USD') {
+                {{ rawMaterialCost20kg() | veCurrency:'$':2 }}
+              } @else {
+                {{ (rawMaterialCost20kg() * rate()) | veCurrency:'Bs.':2 }}
+              }
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 3: ENVASES & EMPAQUES (POTES 20KG, ETIQUETAS, CAJA, TIRRO, BOLSA, TIRRAJE, MUESTRAS) -->
+  @if (activeTab() === 'packaging') {
+    <div class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Sección: Envases y Etiquetas 20k (Cuñete) -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs">
+          <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+            <div>
+              <h3 class="font-bold text-stone-900">Envases y Etiquetas 20k (Cuñete Plástico)</h3>
+              <p class="text-xs text-stone-500">Pote de 20kg y lote de etiquetas autoadhesivas</p>
+            </div>
+            <span class="font-mono font-bold text-sm text-amber-900 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+              Total: ${{ totalPackaging20k() | number:'1.2-2' }}
+            </span>
+          </div>
+
+          <div class="mt-4 space-y-3">
+            @for (item of packaging20k(); track item.id) {
+              <div class="flex items-center justify-between p-3 rounded-xl bg-stone-50 border border-stone-200/80 text-xs">
+                <div>
+                  <span class="font-semibold text-stone-900 block">{{ item.presentation }}</span>
+                  @if (item.quantity) {
+                    <span class="text-[11px] text-stone-500">Lote {{ item.quantity }} uds (Monto: ${{ item.totalAmount | number:'1.2-2' }})</span>
+                  }
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                  <span class="text-stone-400 font-mono text-[11px]">Costo Unit: $</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    [value]="item.unitCost"
+                    (input)="updatePackagingUnitCost('20k', item.id, $any($event.target).value)"
+                    class="w-20 font-mono font-bold text-stone-900 bg-white border border-stone-300 rounded-lg px-2 py-1 text-right focus:border-amber-500"
+                  />
+                </div>
+              </div>
+            }
+
+            <div class="pt-3 border-t border-stone-200 flex items-center justify-between text-xs font-bold">
+              <span class="text-stone-800">Costo Total Envase Cuñete:</span>
+              <span class="font-mono text-base text-amber-900">
+                @if (currencyMode() === 'USD') {
+                  {{ totalPackaging20k() | veCurrency:'$':2 }}
+                } @else {
+                  {{ (totalPackaging20k() * rate()) | veCurrency:'Bs.':2 }}
+                }
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sección: Caja 20kg (CAJA, TIRRO, BOLSA, TIRRAJE) -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs">
+          <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+            <div>
+              <h3 class="font-bold text-stone-900">Empaque Caja 20kg</h3>
+              <p class="text-xs text-stone-500">Desglose de Caja de Cartón, Tirro, Bolsa y Tirraje</p>
+            </div>
+            <span class="font-mono font-bold text-sm text-stone-900 bg-stone-100 px-2 py-1 rounded-lg border border-stone-200">
+              Total: ${{ totalPackagingCaja20k() | number:'1.2-2' }}
+            </span>
+          </div>
+
+          <div class="mt-4 space-y-2.5">
+            @for (item of packagingCaja20k(); track item.id) {
+              <div class="flex items-center justify-between p-2.5 rounded-xl bg-stone-50 border border-stone-200/80 text-xs">
+                <span class="font-semibold text-stone-800">{{ item.presentation }}</span>
+
+                <div class="flex items-center gap-1.5">
+                  <span class="text-stone-400 font-mono text-[11px]">Costo: $</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    [value]="item.unitCost"
+                    (input)="updatePackagingUnitCost('caja', item.id, $any($event.target).value)"
+                    class="w-20 font-mono font-bold text-stone-900 bg-white border border-stone-300 rounded-lg px-2 py-1 text-right focus:border-amber-500"
+                  />
+                </div>
+              </div>
+            }
+
+            <div class="pt-3 border-t border-stone-200 flex items-center justify-between text-xs font-bold">
+              <span class="text-stone-800">Costo Total Empaque Caja:</span>
+              <span class="font-mono text-base text-stone-900">
+                @if (currencyMode() === 'USD') {
+                  {{ totalPackagingCaja20k() | veCurrency:'$':2 }}
+                } @else {
+                  {{ (totalPackagingCaja20k() * rate()) | veCurrency:'Bs.':2 }}
+                }
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sección Galón 5kg & Muestras -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Galón 5kg -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs">
+          <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+            <div>
+              <h3 class="font-bold text-stone-900">Envase Galón 5kg</h3>
+              <p class="text-xs text-stone-500">Envase plástico 5kg y etiqueta</p>
+            </div>
+            <span class="font-mono font-bold text-sm text-stone-900 bg-stone-100 px-2 py-1 rounded-lg">
+              ${{ totalPackagingGalon() | number:'1.2-2' }}
+            </span>
+          </div>
+
+          <div class="mt-4">
+            @for (item of packagingGalon(); track item.id) {
+              <div class="flex items-center justify-between p-3 rounded-xl bg-stone-50 border border-stone-200/80 text-xs">
+                <span class="font-semibold text-stone-800">{{ item.presentation }}</span>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-stone-400 font-mono text-[11px]">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    [value]="item.unitCost"
+                    (input)="updatePackagingUnitCost('galon', item.id, $any($event.target).value)"
+                    class="w-20 font-mono font-bold text-stone-900 bg-white border border-stone-300 rounded-lg px-2 py-1 text-right"
+                  />
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Muestras Comerciales -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs">
+          <div class="flex items-center justify-between pb-3 border-b border-stone-200">
+            <div>
+              <h3 class="font-bold text-stone-900">Muestras de Degustación</h3>
+              <p class="text-xs text-stone-500">Muestras 250cc y 3kg de guayaba</p>
+            </div>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-stone-100 text-stone-600">Comercial</span>
+          </div>
+
+          <div class="mt-4 space-y-2.5">
+            @for (s of samples(); track s.id) {
+              <div class="flex items-center justify-between p-3 rounded-xl bg-stone-50 border border-stone-200/80 text-xs">
+                <div>
+                  <span class="font-semibold text-stone-800 block">{{ s.description }}</span>
+                  @if (s.bulkCost) {
+                    <span class="text-[11px] text-stone-500">Costo bulto: ${{ s.bulkCost | number:'1.2-2' }}</span>
+                  }
+                </div>
+                <div class="text-right">
+                  <span class="font-mono font-bold text-sm text-stone-900">${{ s.unitCost | number:'1.2-2' }}</span>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+
+      </div>
+    </div>
+  }
+
+  <!-- TAB 4: GASTOS FIJOS & NÓMINA DE 10 TRABAJADORES (EXCEL IMAGEN 2) -->
+  @if (activeTab() === 'fixed_labor') {
+    <div class="space-y-6">
+
+      <!-- NÓMINA DE 10 TRABAJADORES DESGLOSADA -->
+      <div class="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg font-bold text-stone-900">Nómina de Trabajadores de Planta</h2>
+              <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono">
+                {{ workers().length }} Empleados
+              </span>
+            </div>
+            <p class="text-xs text-stone-500">
+              Desglose individual semanal de la Imagen 2. La suma alimenta automáticamente el gasto mensual de personal.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <span class="text-[10px] text-stone-400 block uppercase font-medium">Total Nómina Semanal</span>
+              <span class="font-mono font-black text-lg text-stone-900">
+                ${{ totalWeeklyPayroll() | number:'1.2-2' }}
+              </span>
+            </div>
+            <button
+              (click)="addWorker()"
+              class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 rounded-lg shadow-xs transition-colors"
+            >
+              <mat-icon class="text-xs">add</mat-icon>
+              <span>Agregar</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Workers Grid (Touch-friendly cards) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          @for (w of workers(); track w.id) {
+            <div class="p-3 rounded-xl border border-stone-200 bg-stone-50/70 hover:bg-white hover:border-stone-300 transition-all flex flex-col justify-between">
+              <div>
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-stone-900 text-sm truncate">{{ w.name }}</span>
+                  <button
+                    (click)="removeWorker(w.id)"
+                    class="text-stone-400 hover:text-rose-600 p-0.5 rounded"
+                    title="Eliminar trabajador"
+                  >
+                    <mat-icon class="text-xs">close</mat-icon>
+                  </button>
+                </div>
+                <span class="text-[11px] text-stone-500 block truncate mt-0.5">{{ w.role || 'Operador de Planta' }}</span>
+              </div>
+
+              <div class="mt-3 pt-2 border-t border-stone-200/60 flex items-center justify-between">
+                <span class="text-[10px] text-stone-400">Semanal ($):</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  [value]="w.weeklySalary"
+                  (input)="updateWorkerSalary(w.id, $any($event.target).value)"
+                  class="w-20 font-mono font-bold text-stone-900 bg-white border border-stone-200 focus:border-amber-500 rounded px-1.5 py-0.5 text-right text-xs"
+                />
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- Monthly Payroll Projection Summary -->
+        <div class="p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold">
+              <mat-icon class="text-base">payments</mat-icon>
+            </div>
+            <div>
+              <span class="font-bold text-amber-950 text-sm block">Proyección Mensual de Nómina (4 semanas)</span>
+              <span class="text-xs text-amber-800">${{ totalWeeklyPayroll() | number:'1.2-2' }}/semana × 4 semanas</span>
+            </div>
+          </div>
+          <div class="text-right font-mono">
+            <span class="text-2xl font-black text-amber-950 block">
+              ${{ totalMonthlyPayroll() | number:'1.2-2' }}
+            </span>
+            <span class="text-xs text-amber-800">
+              ≈ {{ (totalMonthlyPayroll() * rate()) | veCurrency:'Bs.':2 }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- GASTOS FIJOS (AGUA, SERVICIOS, INSTAGRAM, TRABAJADOR, ALQUILER) -->
+      <div class="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-200">
+          <div>
+            <h2 class="text-lg font-bold text-stone-900">Gastos Fijos Mensuales & Diarios</h2>
+            <p class="text-xs text-stone-500">
+              Prorrateo sobre {{ workDaysPerMonth() }} días laborables y rendimiento base de {{ productionKilosBase() }} kg.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-stone-500">Días al mes:</span>
+            <input
+              type="number"
+              [value]="workDaysPerMonth()"
+              (input)="workDaysPerMonth.set(+$any($event.target).value)"
+              class="w-14 font-mono font-bold text-stone-900 bg-stone-50 border border-stone-200 rounded px-1.5 py-1 text-center"
+            />
+          </div>
+        </div>
+
+        <div class="overflow-x-auto -mx-4 sm:mx-0">
+          <table class="w-full text-left text-xs whitespace-nowrap min-w-[600px]">
+            <thead class="bg-stone-50 border-y border-stone-200 text-stone-600 font-semibold uppercase text-[11px]">
+              <tr>
+                <th class="py-3 px-3">Concepto Gasto Fijo</th>
+                <th class="py-3 px-3 text-right">Mensual ($)</th>
+                <th class="py-3 px-3 text-center">Días</th>
+                <th class="py-3 px-3 text-right">Diario ($)</th>
+                <th class="py-3 px-3 text-right">Total por Producción / 1 KG</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100">
+              @for (fe of computedFixedExpenseRows(); track fe.id) {
+                <tr class="hover:bg-stone-50/70 transition-colors">
+                  <td class="py-3 px-3 font-medium text-stone-900 flex items-center gap-2">
+                    <mat-icon class="text-xs text-stone-400">
+                      {{ fe.concept.includes('Trabajador') ? 'groups' : (fe.concept.includes('Alquiler') ? 'store' : (fe.concept.includes('Instagram') ? 'campaign' : 'water_drop')) }}
+                    </mat-icon>
+                    <span>{{ fe.concept }}</span>
+                  </td>
+
+                  <td class="py-3 px-3 text-right">
+                    @if (fe.id === 'fe-payroll') {
+                      <span class="font-mono font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        ${{ fe.monthlyAmount | number:'1.2-2' }} (Nómina)
+                      </span>
+                    } @else {
+                      <div class="inline-flex items-center justify-end gap-1">
+                        <span class="text-stone-400">$</span>
+                        <input
+                          type="number"
+                          step="1"
+                          [value]="fe.monthlyAmount"
+                          (input)="updateFixedExpenseMonthly(fe.id, $any($event.target).value)"
+                          class="w-20 font-mono font-bold text-stone-900 bg-stone-50 border border-stone-200 focus:border-amber-500 rounded px-1.5 py-1 text-right"
+                        />
+                      </div>
+                    }
+                  </td>
+
+                  <td class="py-3 px-3 text-center font-mono text-stone-600">
+                    {{ fe.workDays }}
+                  </td>
+
+                  <td class="py-3 px-3 text-right font-mono font-semibold text-stone-800">
+                    ${{ fe.dailyAmount | number:'1.2-2' }}
+                  </td>
+
+                  <td class="py-3 px-3 text-right font-mono font-bold text-stone-900">
+                    ${{ fe.costPerKg | number:'1.2-4' }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+            <tfoot class="bg-stone-100 font-bold text-stone-900 border-t-2 border-stone-300">
+              <tr>
+                <td class="py-3 px-3">
+                  TOTALES GASTOS FIJOS:
+                </td>
+                <td class="py-3 px-3 text-right font-mono text-base">
+                  ${{ totalFixedMonthly() | number:'1.2-2' }}
+                </td>
+                <td class="py-3 px-3 text-center font-mono">
+                  {{ workDaysPerMonth() }}
+                </td>
+                <td class="py-3 px-3 text-right font-mono text-base">
+                  ${{ totalFixedDaily() | number:'1.2-2' }}
+                </td>
+                <td class="py-3 px-3 text-right font-mono text-base text-amber-900">
+                  ${{ totalFixedPerKg() | number:'1.2-2' }} (≈ $0.18/kg)
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 5: SIMULADOR MTO Y GESTIÓN DE SEMANAS INACTIVAS -->
+  @if (activeTab() === 'mto_simulator') {
+    <div class="space-y-6">
+      <div class="bg-stone-900 text-white rounded-2xl p-6 sm:p-8 shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-start justify-between gap-6">
+          <div class="max-w-2xl">
+            <div class="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-amber-400 font-semibold mb-2">
+              <mat-icon class="text-xs">info</mat-icon>
+              Modelo Make-to-Order & Absorción Parcial
+            </div>
+            <h3 class="text-xl font-bold text-white tracking-tight">
+              Absorción de Semanas Inactivas (Sin Cocción) en Mermeladas
+            </h3>
+            <p class="text-xs sm:text-sm text-stone-300 mt-2 leading-relaxed">
+              En temporadas con escasez de guayaba o mantenimiento de pailas, los sueldos del personal continúan pagándose.
+              Si no se absorbe este costo fijo sobre los lotes producidos, la empresa sufre pérdidas no advertidas.
+            </p>
+          </div>
+
+          <div class="bg-stone-800/80 border border-stone-700 rounded-xl p-5 min-w-[240px] text-center">
+            <span class="text-xs text-stone-400 block uppercase tracking-wider">Costo Fijo Inactivo YTD</span>
+            <span class="text-2xl font-bold font-mono text-rose-400 block my-1">
+              ${{ api.costStructure()?.unabsorbedFixedCostYTD | number:'1.2-2' }}
+            </span>
+            <span class="text-xs text-stone-400 block">
+              {{ api.costStructure()?.inactiveWeeksCountYTD }} semanas registradas sin cocción
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Simulador de Costeo Dinámico -->
+      <div class="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
+        <h3 class="text-lg font-bold text-stone-900 mb-4">Simulador Dinámico de Absorción de Costos Fijos</h3>
+        <form [formGroup]="simulatorForm" (input)="runSimulation()" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Materia Prima ($/ud)</label>
             <input
               type="number"
               step="0.01"
               formControlName="directMaterial"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono font-bold"
             />
-            <span class="text-[10px] text-stone-400">Pulpa fruta, azúcar, químicos</span>
           </div>
-
           <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Empaque Directo ($)</label>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Empaque Directo ($/ud)</label>
             <input
               type="number"
               step="0.01"
               formControlName="directPackaging"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
-            />
-            <span class="text-[10px] text-stone-400">Frasco de vidrio, tapa dorada, etiqueta</span>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-3">
-          <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Mano de Obra ($/ud)</label>
-            <input
-              type="number"
-              step="0.01"
-              formControlName="directLabor"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono font-bold"
             />
           </div>
           <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Servicios CIF ($/ud)</label>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Semanas Inactivas a Prorratear</label>
             <input
               type="number"
-              step="0.01"
-              formControlName="utilityCost"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Semanas Inactivas Año</label>
-            <input
-              type="number"
-              min="0"
-              max="20"
               formControlName="inactiveWeeksCount"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono font-bold"
             />
           </div>
-        </div>
+        </form>
 
-        <div class="grid grid-cols-2 gap-4 pt-2">
+        <div class="mt-6 p-4 rounded-xl bg-stone-50 border border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Margen Deseado Mayorista (%)</label>
-            <input
-              type="number"
-              min="5"
-              max="80"
-              formControlName="targetMarginWholesale"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
-            />
-            <span class="text-[10px] text-stone-400">Para panaderías y dulcerías (30% - 40%)</span>
+            <span class="text-xs text-stone-500 block">Costo Unitario Real Absorbiendo Inactividad:</span>
+            <span class="text-2xl font-bold font-mono text-stone-900">
+              ${{ simulationResult()?.totalUnitCost | number:'1.2-2' }}
+            </span>
           </div>
-          <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Margen Deseado Detal (%)</label>
-            <input
-              type="number"
-              min="10"
-              max="90"
-              formControlName="targetMarginRetail"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
-            />
-            <span class="text-[10px] text-stone-400">Venta directa al consumidor (45% - 55%)</span>
-          </div>
-        </div>
-      </form>
-
-      <!-- Simulation Results Panel -->
-      <div class="lg:col-span-5 bg-stone-50 border border-stone-200 rounded-xl p-5 flex flex-col justify-between">
-        <div>
-          <span class="text-xs font-bold text-stone-800 uppercase tracking-wider block mb-4">Resultado del Costeo Dinámico</span>
-
-          <div class="space-y-3">
-            <div class="flex items-center justify-between text-xs py-1 border-b border-stone-200/60">
-              <span class="text-stone-500">Costo Base Producción:</span>
-              <span class="font-mono font-semibold text-stone-800">
-                ${{ (simulatorForm.controls.directMaterial.value + simulatorForm.controls.directPackaging.value + simulatorForm.controls.directLabor.value + simulatorForm.controls.utilityCost.value) | number:'1.2-2' }}
-              </span>
-            </div>
-
-            <div class="flex items-center justify-between text-xs py-1 border-b border-stone-200/60 text-amber-800">
-              <span>+ Absorción Semanas Inactivas:</span>
-              <span class="font-mono font-semibold">+${{ simulationResult()?.inactiveAbsorbedPerUnit | number:'1.2-2' }}</span>
-            </div>
-
-            <div class="flex items-center justify-between text-sm py-2 bg-white px-3 rounded-lg border border-stone-200 font-bold">
-              <span class="text-stone-900">Costo Unitario Real:</span>
-              <span class="font-mono text-stone-900 text-base">${{ simulationResult()?.totalUnitCost | number:'1.2-2' }}</span>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3 mt-6">
-            <div class="bg-white p-3 rounded-lg border border-stone-200">
+          <div class="flex gap-4">
+            <div class="bg-white p-3 rounded-lg border border-stone-200 text-center">
               <span class="text-[11px] text-stone-500 block">PVP Mayorista Sugerido</span>
-              <span class="text-lg font-bold font-mono text-stone-900 block mt-0.5">
-                ${{ simulationResult()?.suggestedWholesalePrice | number:'1.2-2' }}
-              </span>
-              <span class="text-[11px] text-emerald-700 font-semibold block mt-1">
-                Ganancia: +${{ simulationResult()?.wholesaleGrossProfit | number:'1.2-2' }}
-              </span>
+              <span class="text-lg font-bold font-mono text-stone-900">${{ simulationResult()?.suggestedWholesalePrice | number:'1.2-2' }}</span>
             </div>
-
-            <div class="bg-white p-3 rounded-lg border border-stone-200">
+            <div class="bg-white p-3 rounded-lg border border-stone-200 text-center">
               <span class="text-[11px] text-stone-500 block">PVP Detal Sugerido</span>
-              <span class="text-lg font-bold font-mono text-stone-900 block mt-0.5">
-                ${{ simulationResult()?.suggestedRetailPrice | number:'1.2-2' }}
-              </span>
-              <span class="text-[11px] text-emerald-700 font-semibold block mt-1">
-                Ganancia: +${{ simulationResult()?.retailGrossProfit | number:'1.2-2' }}
-              </span>
+              <span class="text-lg font-bold font-mono text-stone-900">${{ simulationResult()?.suggestedRetailPrice | number:'1.2-2' }}</span>
             </div>
           </div>
-        </div>
-
-        <div class="mt-4 pt-3 border-t border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[11px] text-stone-500">
-          <span>Fórmula: Precio = Costo Total / (1 - Margen %). Protege contra devaluación y garantiza absorción de costos fijos de planta.</span>
-          <button
-            type="button"
-            (click)="exportCostingSummaryPdf()"
-            class="shrink-0 inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold bg-white hover:bg-stone-100 text-rose-800 border border-stone-300 rounded-lg shadow-2xs transition-colors"
-            title="Descargar Resumen Completo y Simulación en formato PDF"
-          >
-            <mat-icon class="text-xs text-rose-600">picture_as_pdf</mat-icon>
-            Descargar Resumen PDF
-          </button>
         </div>
       </div>
     </div>
-  </div>
+  }
 </div>

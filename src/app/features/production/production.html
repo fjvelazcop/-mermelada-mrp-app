@@ -8,59 +8,61 @@
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
-      <!-- Currency Switcher Toggle -->
-      <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
-        <button
-          type="button"
-          (click)="currencyMode.set('USD')"
-          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
-          [class.bg-white]="currencyMode() === 'USD'"
-          [class.text-stone-900]="currencyMode() === 'USD'"
-          [class.shadow-xs]="currencyMode() === 'USD'"
-          [class.text-stone-500]="currencyMode() !== 'USD'"
-        >
-          <span>USD ($)</span>
-        </button>
-        <button
-          type="button"
-          (click)="currencyMode.set('Bs')"
-          class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
-          [class.bg-white]="currencyMode() === 'Bs'"
-          [class.text-stone-900]="currencyMode() === 'Bs'"
-          [class.shadow-xs]="currencyMode() === 'Bs'"
-          [class.text-stone-500]="currencyMode() !== 'Bs'"
-        >
-          <span>Bolívares (Bs.)</span>
-        </button>
-      </div>
+      @if (api.canViewPrices()) {
+        <!-- Currency Switcher Toggle -->
+        <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
+          <button
+            type="button"
+            (click)="currencyMode.set('USD')"
+            class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+            [class.bg-white]="currencyMode() === 'USD'"
+            [class.text-stone-900]="currencyMode() === 'USD'"
+            [class.shadow-xs]="currencyMode() === 'USD'"
+            [class.text-stone-500]="currencyMode() !== 'USD'"
+          >
+            <span>USD ($)</span>
+          </button>
+          <button
+            type="button"
+            (click)="currencyMode.set('Bs')"
+            class="px-2.5 py-1.5 rounded-md transition-all flex items-center gap-1"
+            [class.bg-white]="currencyMode() === 'Bs'"
+            [class.text-stone-900]="currencyMode() === 'Bs'"
+            [class.shadow-xs]="currencyMode() === 'Bs'"
+            [class.text-stone-500]="currencyMode() !== 'Bs'"
+          >
+            <span>Bolívares (Bs.)</span>
+          </button>
+        </div>
 
-      <!-- Export Toolbar for Production Orders with Excel, CSV, PDF icons -->
-      <div class="inline-flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-xs">
-        <button
-          (click)="exportProductionExcel()"
-          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
-          title="Exportar órdenes de producción a Excel (.xls)"
-        >
-          <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
-          <span class="hidden sm:inline">Excel</span>
-        </button>
-        <button
-          (click)="exportProductionCsv()"
-          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-800 hover:bg-sky-50 rounded transition-colors"
-          title="Exportar órdenes de producción a CSV (;)"
-        >
-          <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
-          <span class="hidden sm:inline">CSV</span>
-        </button>
-        <button
-          (click)="exportProductionPdf()"
-          class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-rose-800 hover:bg-rose-50 rounded transition-colors"
-          title="Exportar órdenes de producción a PDF / Imprimir"
-        >
-          <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
-          <span class="hidden sm:inline">PDF</span>
-        </button>
-      </div>
+        <!-- Export Toolbar for Production Orders with Excel, CSV, PDF icons -->
+        <div class="inline-flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-xs">
+          <button
+            (click)="exportProductionExcel()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 rounded transition-colors"
+            title="Exportar órdenes de producción a Excel (.xls)"
+          >
+            <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
+            <span class="hidden sm:inline">Excel</span>
+          </button>
+          <button
+            (click)="exportProductionCsv()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-800 hover:bg-sky-50 rounded transition-colors"
+            title="Exportar órdenes de producción a CSV (;)"
+          >
+            <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
+            <span class="hidden sm:inline">CSV</span>
+          </button>
+          <button
+            (click)="exportProductionPdf()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-rose-800 hover:bg-rose-50 rounded transition-colors"
+            title="Exportar órdenes de producción a PDF / Imprimir"
+          >
+            <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+            <span class="hidden sm:inline">PDF</span>
+          </button>
+        </div>
+      }
 
       <button
         (click)="openCreateOrderModal()"
@@ -72,6 +74,61 @@
     </div>
   </div>
 
+  <!-- Sub-Navigation Segmented Tabs -->
+  <div class="flex items-center gap-2 border-b border-stone-200 pb-px overflow-x-auto">
+    <button
+      type="button"
+      (click)="activeProductionTab.set('orders')"
+      class="px-4 py-2.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[44px]"
+      [class.border-stone-900]="activeProductionTab() === 'orders'"
+      [class.text-stone-900]="activeProductionTab() === 'orders'"
+      [class.border-transparent]="activeProductionTab() !== 'orders'"
+      [class.text-stone-500]="activeProductionTab() !== 'orders'"
+      [class.hover:text-stone-800]="activeProductionTab() !== 'orders'"
+    >
+      <mat-icon class="text-base" [class.text-amber-800]="activeProductionTab() === 'orders'">precision_manufacturing</mat-icon>
+      <span>Órdenes de Producción</span>
+      <span class="ml-1 text-xs px-2 py-0.5 rounded-full font-mono bg-stone-100 text-stone-700">
+        {{ productionOrders().length }}
+      </span>
+    </button>
+
+    <button
+      type="button"
+      (click)="activeProductionTab.set('recipes')"
+      class="px-4 py-2.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[44px]"
+      [class.border-stone-900]="activeProductionTab() === 'recipes'"
+      [class.text-stone-900]="activeProductionTab() === 'recipes'"
+      [class.border-transparent]="activeProductionTab() !== 'recipes'"
+      [class.text-stone-500]="activeProductionTab() !== 'recipes'"
+      [class.hover:text-stone-800]="activeProductionTab() !== 'recipes'"
+    >
+      <mat-icon class="text-base" [class.text-amber-800]="activeProductionTab() === 'recipes'">receipt_long</mat-icon>
+      <span>Fórmulas Maestras (BOM)</span>
+      <span class="ml-1 text-xs px-2 py-0.5 rounded-full font-mono bg-stone-100 text-stone-700">
+        {{ recipes().length }}
+      </span>
+    </button>
+
+    <button
+      type="button"
+      (click)="activeProductionTab.set('audit')"
+      class="px-4 py-2.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[44px]"
+      [class.border-stone-900]="activeProductionTab() === 'audit'"
+      [class.text-stone-900]="activeProductionTab() === 'audit'"
+      [class.border-transparent]="activeProductionTab() !== 'audit'"
+      [class.text-stone-500]="activeProductionTab() !== 'audit'"
+      [class.hover:text-stone-800]="activeProductionTab() !== 'audit'"
+    >
+      <mat-icon class="text-base" [class.text-amber-800]="activeProductionTab() === 'audit'">history_edu</mat-icon>
+      <span>Log de Auditoría & Trazabilidad</span>
+      <span class="ml-1 text-xs px-2 py-0.5 rounded-full font-mono bg-amber-100 text-amber-900 font-bold">
+        {{ productionAuditCount() }}
+      </span>
+    </button>
+  </div>
+
+  @if (activeProductionTab() === 'recipes') {
   <!-- SECCIÓN 1: RECETAS / FÓRMULAS MAESTRAS (BOM) -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
@@ -136,7 +193,9 @@
       }
     </div>
   </div>
+  }
 
+  @if (activeProductionTab() === 'orders') {
   <!-- SECCIÓN 2: ÓRDENES DE PRODUCCIÓN (MTO & LOTES) -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
@@ -191,33 +250,40 @@
 
             <!-- Financial Summary & Action Button -->
             <div class="flex flex-col sm:flex-row sm:items-center gap-4 lg:gap-6 border-t lg:border-t-0 pt-3 lg:pt-0 border-stone-100">
-              @let pRate = api.exchangeRates()?.currentUsd || 48.35;
-              <div class="grid grid-cols-3 gap-3 text-xs text-center">
-                <div class="bg-stone-50 p-2 rounded">
-                  <span class="text-stone-400 block text-[10px]">Costo Insumos</span>
-                  @if (currencyMode() === 'USD') {
-                    <span class="font-mono font-bold text-stone-900">{{ order.directMaterialCost | veCurrency:'$':2 }}</span>
-                  } @else {
-                    <span class="font-mono font-bold text-amber-950">{{ (order.directMaterialCost * pRate) | veCurrency:'Bs.':2 }}</span>
-                  }
+              @if (api.canViewPrices()) {
+                @let pRate = api.exchangeRates()?.currentUsd || 48.35;
+                <div class="grid grid-cols-3 gap-3 text-xs text-center">
+                  <div class="bg-stone-50 p-2 rounded">
+                    <span class="text-stone-400 block text-[10px]">Costo Insumos</span>
+                    @if (currencyMode() === 'USD') {
+                      <span class="font-mono font-bold text-stone-900">{{ order.directMaterialCost | veCurrency:'$':2 }}</span>
+                    } @else {
+                      <span class="font-mono font-bold text-amber-950">{{ (order.directMaterialCost * pRate) | veCurrency:'Bs.':2 }}</span>
+                    }
+                  </div>
+                  <div class="bg-stone-50 p-2 rounded">
+                    <span class="text-stone-400 block text-[10px]">M.O. + CIF</span>
+                    @if (currencyMode() === 'USD') {
+                      <span class="font-mono font-bold text-stone-900">{{ (order.directLaborCost + order.indirectCost) | veCurrency:'$':2 }}</span>
+                    } @else {
+                      <span class="font-mono font-bold text-amber-950">{{ ((order.directLaborCost + order.indirectCost) * pRate) | veCurrency:'Bs.':2 }}</span>
+                    }
+                  </div>
+                  <div class="bg-stone-100 p-2 rounded">
+                    <span class="text-stone-500 block text-[10px]">Costo Unitario</span>
+                    @if (currencyMode() === 'USD') {
+                      <span class="font-mono font-bold text-stone-900 text-sm">{{ order.unitCost | veCurrency:'$':2 }}</span>
+                    } @else {
+                      <span class="font-mono font-bold text-amber-950 text-sm">{{ (order.unitCost * pRate) | veCurrency:'Bs.':2 }}</span>
+                    }
+                  </div>
                 </div>
-                <div class="bg-stone-50 p-2 rounded">
-                  <span class="text-stone-400 block text-[10px]">M.O. + CIF</span>
-                  @if (currencyMode() === 'USD') {
-                    <span class="font-mono font-bold text-stone-900">{{ (order.directLaborCost + order.indirectCost) | veCurrency:'$':2 }}</span>
-                  } @else {
-                    <span class="font-mono font-bold text-amber-950">{{ ((order.directLaborCost + order.indirectCost) * pRate) | veCurrency:'Bs.':2 }}</span>
-                  }
+              } @else {
+                <div class="bg-stone-50 border border-stone-200/80 px-3 py-2 rounded-lg text-xs text-stone-600 flex items-center gap-2">
+                  <mat-icon class="text-xs text-amber-700">soup_kitchen</mat-icon>
+                  <span>Tanda Operativa · <strong class="text-stone-800">{{ order.targetUnits }} unidades</strong></span>
                 </div>
-                <div class="bg-stone-100 p-2 rounded">
-                  <span class="text-stone-500 block text-[10px]">Costo Unitario</span>
-                  @if (currencyMode() === 'USD') {
-                    <span class="font-mono font-bold text-stone-900 text-sm">{{ order.unitCost | veCurrency:'$':2 }}</span>
-                  } @else {
-                    <span class="font-mono font-bold text-amber-950 text-sm">{{ (order.unitCost * pRate) | veCurrency:'Bs.':2 }}</span>
-                  }
-                </div>
-              </div>
+              }
 
               <div>
                 @if (order.status !== 'completada') {
@@ -249,7 +315,12 @@
                 @for (c of order.consumedMaterials; track c.materialId) {
                   <div class="p-2 bg-stone-50 rounded border border-stone-100">
                     <span class="font-medium text-stone-800 block truncate">{{ c.materialName }}</span>
-                    <span class="font-mono text-stone-600 block mt-0.5">{{ c.quantityConsumed }} {{ c.unit }} (${{ c.totalCost | number:'1.2-2' }})</span>
+                    <span class="font-mono text-stone-600 block mt-0.5">
+                      {{ c.quantityConsumed }} {{ c.unit }}
+                      @if (api.canViewPrices()) {
+                        <span class="text-stone-400">(${{ c.totalCost | number:'1.2-2' }})</span>
+                      }
+                    </span>
                   </div>
                 }
               </div>
@@ -259,6 +330,17 @@
       }
     </div>
   </div>
+  }
+
+  <!-- TAB 3: AUDITORÍA & TRAZABILIDAD HACCP -->
+  @if (activeProductionTab() === 'audit') {
+    <app-audit-log
+      [moduleFilter]="'produccion'"
+      [showModuleTabs]="false"
+      [title]="'Bitácora de Auditoría — Producción, Cocción & Lotes HACCP'"
+      [subtitle]="'Trazabilidad inmutable de órdenes de producción, cocción en marmitas, control de °Brix, mermas y fórmulas BOM'"
+    />
+  }
 
   <!-- MODAL: CREAR ORDEN DE PRODUCCIÓN -->
   @if (isCreateOrderModalOpen()) {
@@ -318,7 +400,9 @@
             >
               <option value="">-- Sin pedido vinculado (Producción para stock de seguridad) --</option>
               @for (so of pendingSalesOrders(); track so.id) {
-                <option [value]="so.id">{{ so.orderNumber }} - {{ so.customerName }} (${{ so.total | number:'1.2-2' }})</option>
+                <option [value]="so.id">
+                  {{ so.orderNumber }} - {{ so.customerName }} @if (api.canViewPrices()) { (${{ so.total | number:'1.2-2' }}) }
+                </option>
               }
             </select>
           </div>
@@ -413,7 +497,9 @@
                   <tr>
                     <th class="py-2 px-3 font-semibold">Insumo</th>
                     <th class="py-2 px-3 text-right font-semibold">Cantidad</th>
-                    <th class="py-2 px-3 text-right font-semibold">Costo Aprox.</th>
+                    @if (api.canViewPrices()) {
+                      <th class="py-2 px-3 text-right font-semibold">Costo Aprox.</th>
+                    }
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-stone-100">
@@ -421,7 +507,9 @@
                     <tr>
                       <td class="py-2 px-3 text-stone-800">{{ item.materialName }}</td>
                       <td class="py-2 px-3 text-right font-mono">{{ item.quantity }} {{ item.unit }}</td>
-                      <td class="py-2 px-3 text-right font-mono">${{ item.estimatedCost | number:'1.2-2' }}</td>
+                      @if (api.canViewPrices()) {
+                        <td class="py-2 px-3 text-right font-mono">${{ item.estimatedCost | number:'1.2-2' }}</td>
+                      }
                     </tr>
                   }
                 </tbody>
@@ -431,7 +519,9 @@
 
           <div class="flex items-center justify-between pt-2 border-t border-stone-100">
             <span class="text-stone-500">Mano de Obra Directa: <strong>{{ selectedRecipe()?.directLaborMinutes }} minutos</strong></span>
-            <span class="text-stone-500">Servicios (Gas/Agua): <strong>${{ selectedRecipe()?.estimatedUtilityCost | number:'1.2-2' }}</strong></span>
+            @if (api.canViewPrices()) {
+              <span class="text-stone-500">Servicios (Gas/Agua): <strong>${{ selectedRecipe()?.estimatedUtilityCost | number:'1.2-2' }}</strong></span>
+            }
           </div>
         </div>
 

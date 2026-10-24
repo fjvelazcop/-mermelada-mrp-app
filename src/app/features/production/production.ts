@@ -7,20 +7,27 @@ import {RecipeBOM, ProductionOrder} from '../../core/models/erp.models';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
 
+import {AuditLog} from '../../shared/components/audit-log/audit-log';
+
 @Component({
   selector: 'app-production',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe],
+  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, AuditLog],
   templateUrl: './production.html',
 })
 export class ProductionComponent {
   public api = inject(ErpApiService);
 
+  public activeProductionTab = signal<'orders' | 'recipes' | 'audit'>('orders');
   public currencyMode = signal<'USD' | 'Bs'>('USD');
   public isCreateOrderModalOpen = signal<boolean>(false);
   public isRecipeDetailModalOpen = signal<boolean>(false);
   public selectedRecipe = signal<RecipeBOM | null>(null);
   public selectedOrderForDetails = signal<ProductionOrder | null>(null);
+
+  public productionAuditCount = computed(() =>
+    this.api.auditLogs().filter(l => l.module === 'produccion').length
+  );
 
   public newOrderForm = new FormGroup({
     recipeId: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),

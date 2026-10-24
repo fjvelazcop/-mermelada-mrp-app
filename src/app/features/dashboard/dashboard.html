@@ -1,4 +1,504 @@
 <div class="space-y-8">
+  @if (api.isProductionOperator()) {
+    <!-- TABLERO SIMPLIFICADO: OPERADOR DE PRODUCCIÓN (EXCLUSIVAMENTE ÓRDENES EN CURSO & TAREAS PENDIENTES SIN COSTOS) -->
+    <div class="space-y-6">
+      <!-- Header Operativo -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+        <div>
+          <div class="flex items-center gap-2 text-xs text-stone-500 font-medium">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
+            <span class="font-bold text-blue-900 uppercase tracking-wider">Perfil Operativo de Planta</span>
+            <span aria-hidden="true">·</span>
+            <span>Marmitas & Cocción</span>
+            <span aria-hidden="true">·</span>
+            <span>Turno Activo</span>
+          </div>
+          <h1 class="text-2xl font-bold text-stone-900 tracking-tight mt-1">Control de Órdenes de Producción</h1>
+          <p class="text-xs text-stone-500 mt-1">
+            Operario: <strong class="text-stone-800">{{ api.currentUser().fullName }}</strong> · Monitoreo de tandas en cocción, envasado y tareas prioritarias
+          </p>
+        </div>
+
+        <!-- Acciones Rápidas de Cabecera -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            (click)="openOperatorCreateModal()"
+            class="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-amber-700 text-white rounded-xl shadow-xs hover:bg-amber-800 transition-colors min-h-[44px]"
+          >
+            <mat-icon class="text-sm">add</mat-icon>
+            <span>Nueva Orden de Producción</span>
+          </button>
+
+          <button
+            type="button"
+            (click)="goToProduction()"
+            class="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold bg-stone-900 text-white rounded-xl shadow-xs hover:bg-stone-800 transition-colors min-h-[44px]"
+          >
+            <mat-icon class="text-sm text-amber-400">precision_manufacturing</mat-icon>
+            <span>Ver Módulo de Planta</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tarjetas de Resumen Operacional (CERO MÉTRICAS FINANCIERAS) -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- 1. En Cocción / En Proceso -->
+        <div class="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-[11px] font-semibold text-blue-800 block uppercase tracking-wide">En Cocción Activa</span>
+            <span class="text-2xl font-bold font-mono text-blue-950 mt-1 block">{{ operatorInProcessCount() }}</span>
+            <span class="text-[11px] text-blue-700 mt-0.5 block">en marmitas</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700">
+            <mat-icon class="text-2xl">soup_kitchen</mat-icon>
+          </div>
+        </div>
+
+        <!-- 2. Planificadas por Iniciar -->
+        <div class="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-[11px] font-semibold text-amber-900 block uppercase tracking-wide">En Espera / Cola</span>
+            <span class="text-2xl font-bold font-mono text-amber-950 mt-1 block">{{ operatorPlannedCount() }}</span>
+            <span class="text-[11px] text-amber-800 mt-0.5 block">listas para cocer</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-800">
+            <mat-icon class="text-2xl">schedule</mat-icon>
+          </div>
+        </div>
+
+        <!-- 3. Unidades Programadas -->
+        <div class="bg-stone-50 border border-stone-200 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-[11px] font-semibold text-stone-600 block uppercase tracking-wide">Frascos a Producir</span>
+            <span class="text-2xl font-bold font-mono text-stone-900 mt-1 block">{{ operatorTargetUnitsActive() | veNumber:0 }}</span>
+            <span class="text-[11px] text-stone-500 mt-0.5 block">unidades meta</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-stone-200/70 flex items-center justify-center text-stone-700">
+            <mat-icon class="text-2xl">inventory_2</mat-icon>
+          </div>
+        </div>
+
+        <!-- 4. Lotes Concluidos -->
+        <div class="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <span class="text-[11px] font-semibold text-emerald-900 block uppercase tracking-wide">Lotes Completados</span>
+            <span class="text-2xl font-bold font-mono text-emerald-950 mt-1 block">{{ operatorCompletedCount() }}</span>
+            <span class="text-[11px] text-emerald-800 mt-0.5 block">calidad aprobada</span>
+          </div>
+          <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700">
+            <mat-icon class="text-2xl">check_circle</mat-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- Barra de Filtros Rápidos & Buscador Operativo -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border border-stone-200 rounded-2xl p-3 shadow-xs">
+        <!-- Segmented Filter Tabs -->
+        <div class="flex flex-wrap items-center gap-1 bg-stone-100 p-1 rounded-xl">
+          <button
+            type="button"
+            (click)="operatorStatusFilter.set('pending')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+            [class.bg-white]="operatorStatusFilter() === 'pending'"
+            [class.text-stone-900]="operatorStatusFilter() === 'pending'"
+            [class.shadow-xs]="operatorStatusFilter() === 'pending'"
+            [class.text-stone-600]="operatorStatusFilter() !== 'pending'"
+          >
+            <span>Pendientes Prioritarias</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 font-bold">
+              {{ operatorPendingTotalCount() }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            (click)="operatorStatusFilter.set('en_proceso')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+            [class.bg-white]="operatorStatusFilter() === 'en_proceso'"
+            [class.text-stone-900]="operatorStatusFilter() === 'en_proceso'"
+            [class.shadow-xs]="operatorStatusFilter() === 'en_proceso'"
+            [class.text-stone-600]="operatorStatusFilter() !== 'en_proceso'"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+            <span>En Proceso</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-900 font-bold">
+              {{ operatorInProcessCount() }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            (click)="operatorStatusFilter.set('planificada')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+            [class.bg-white]="operatorStatusFilter() === 'planificada'"
+            [class.text-stone-900]="operatorStatusFilter() === 'planificada'"
+            [class.shadow-xs]="operatorStatusFilter() === 'planificada'"
+            [class.text-stone-600]="operatorStatusFilter() !== 'planificada'"
+          >
+            <span>Planificadas</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-stone-200 text-stone-800">
+              {{ operatorPlannedCount() }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            (click)="operatorStatusFilter.set('completada')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+            [class.bg-white]="operatorStatusFilter() === 'completada'"
+            [class.text-stone-900]="operatorStatusFilter() === 'completada'"
+            [class.shadow-xs]="operatorStatusFilter() === 'completada'"
+            [class.text-stone-600]="operatorStatusFilter() !== 'completada'"
+          >
+            <span>Completadas</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-900">
+              {{ operatorCompletedCount() }}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            (click)="operatorStatusFilter.set('all')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+            [class.bg-white]="operatorStatusFilter() === 'all'"
+            [class.text-stone-900]="operatorStatusFilter() === 'all'"
+            [class.shadow-xs]="operatorStatusFilter() === 'all'"
+            [class.text-stone-600]="operatorStatusFilter() !== 'all'"
+          >
+            <span>Ver Todas</span>
+          </button>
+        </div>
+
+        <!-- Buscador -->
+        <div class="relative min-w-[240px]">
+          <input
+            type="text"
+            [value]="operatorSearchQuery()"
+            (input)="operatorSearchQuery.set($any($event.target).value)"
+            placeholder="Filtrar por Nro. OP, lote o sabor..."
+            class="w-full bg-stone-50 border border-stone-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+          />
+          <mat-icon class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 text-sm">search</mat-icon>
+          @if (operatorSearchQuery()) {
+            <button
+              type="button"
+              (click)="operatorSearchQuery.set('')"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+            >
+              <mat-icon class="text-xs">close</mat-icon>
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- LISTA DE TARJETAS DE ÓRDENES DE PRODUCCIÓN EN CURSO -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        @for (order of operatorFilteredOrders(); track order.id) {
+          <div
+            class="bg-white border rounded-2xl p-5 shadow-xs transition-all flex flex-col justify-between"
+            [class.border-blue-300]="order.status === 'en_proceso'"
+            [class.ring-2]="order.status === 'en_proceso'"
+            [class.ring-blue-500/10]="order.status === 'en_proceso'"
+            [class.border-amber-200]="order.status === 'planificada'"
+            [class.border-stone-200]="order.status === 'completada'"
+          >
+            <div>
+              <!-- Card Header -->
+              <div class="flex items-start justify-between gap-3 pb-3 border-b border-stone-100">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono font-bold text-sm text-stone-900">{{ order.orderNumber }}</span>
+                    <span class="font-mono text-xs px-2 py-0.5 rounded bg-stone-100 text-stone-700 font-semibold">
+                      Lote: {{ order.lotNumber }}
+                    </span>
+                  </div>
+                  <div class="text-[11px] text-stone-500 mt-1 flex items-center gap-2">
+                    <span>Iniciada: {{ order.startDate }}</span>
+                    @if (order.completionDate) {
+                      <span aria-hidden="true">·</span>
+                      <span class="text-emerald-700">Finalizada: {{ order.completionDate }}</span>
+                    }
+                  </div>
+                </div>
+
+                <!-- Status Badge -->
+                <div>
+                  @if (order.status === 'en_proceso') {
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                      <span class="w-2 h-2 rounded-full bg-blue-600 animate-ping"></span>
+                      <span>En Cocción</span>
+                    </span>
+                  } @else if (order.status === 'planificada') {
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                      <mat-icon class="text-xs">schedule</mat-icon>
+                      <span>Por Iniciar</span>
+                    </span>
+                  } @else if (order.status === 'completada') {
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      <mat-icon class="text-xs">check_circle</mat-icon>
+                      <span>Completada</span>
+                    </span>
+                  } @else {
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-stone-100 text-stone-600">
+                      {{ order.status }}
+                    </span>
+                  }
+                </div>
+              </div>
+
+              <!-- Product & Batch Info -->
+              <div class="mt-3">
+                <span class="text-xs font-mono text-stone-400 block uppercase tracking-wider">{{ order.recipeName }}</span>
+                <h3 class="text-base font-bold text-stone-900 mt-0.5">Mermelada de {{ order.flavor }}</h3>
+                <span class="text-xs text-stone-600 font-medium block">
+                  Presentación: {{ order.presentation === 'pequena_250g' ? 'Frasco de Vidrio 250g' : 'Frasco Institucional 1000g' }}
+                </span>
+              </div>
+
+              <!-- Associated Client / MTO Reference -->
+              @if (order.customerName) {
+                <div class="mt-2.5 p-2 bg-amber-50/60 border border-amber-200/60 rounded-xl text-xs text-amber-900 flex items-center gap-2">
+                  <mat-icon class="text-sm text-amber-700">storefront</mat-icon>
+                  <div>
+                    <span class="font-bold">Pedido Make-to-Order (MTO):</span>
+                    <span class="ml-1">{{ order.customerName }}</span>
+                  </div>
+                </div>
+              }
+
+              <!-- Volume & Target Units Stats (Pure Operational) -->
+              <div class="grid grid-cols-2 gap-3 mt-3 p-3 bg-stone-50 rounded-xl border border-stone-100 text-center">
+                <div>
+                  <span class="text-[10px] uppercase font-bold text-stone-400 tracking-wider block">Meta a Envasar</span>
+                  <span class="text-lg font-bold font-mono text-stone-900">{{ order.targetUnits | veNumber:0 }}</span>
+                  <span class="text-[10px] text-stone-500 block">frascos terminados</span>
+                </div>
+                <div>
+                  <span class="text-[10px] uppercase font-bold text-stone-400 tracking-wider block">Tandas Marmita</span>
+                  <span class="text-lg font-bold font-mono text-stone-900">{{ order.batchCount }}</span>
+                  <span class="text-[10px] text-stone-500 block">multiplicador tanda</span>
+                </div>
+              </div>
+
+              <!-- Consumo de Insumos & Receta (SIN COSTOS) -->
+              @if (order.consumedMaterials && order.consumedMaterials.length > 0) {
+                <div class="mt-3 pt-3 border-t border-stone-100">
+                  <span class="text-[10px] uppercase font-bold text-stone-400 tracking-wider block mb-1.5">
+                    Insumos y Materia Prima Asignada:
+                  </span>
+                  <div class="flex flex-wrap gap-1.5 text-xs">
+                    @for (mat of order.consumedMaterials; track mat.materialId) {
+                      <span class="inline-flex items-center gap-1 bg-stone-100/90 text-stone-800 px-2 py-0.5 rounded-md text-[11px] font-medium">
+                        <span class="font-mono font-bold">{{ mat.quantityConsumed }} {{ mat.unit }}</span>
+                        <span>{{ mat.materialName }}</span>
+                      </span>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Notas Operacionales del Operador -->
+              @if (order.operatorNotes) {
+                <div class="mt-3 text-xs text-stone-600 bg-stone-50 p-2.5 rounded-lg border border-stone-200/60 italic flex items-start gap-1.5">
+                  <mat-icon class="text-xs text-stone-400 mt-0.5">edit_note</mat-icon>
+                  <span>{{ order.operatorNotes }}</span>
+                </div>
+              }
+            </div>
+
+            <!-- Card Actions: Acceso Rápido a Tareas Pendientes -->
+            <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between gap-3">
+              <div>
+                @if (order.status === 'planificada') {
+                  <button
+                    type="button"
+                    (click)="processOperatorOrder(order.id)"
+                    [disabled]="isProcessingOrderId() === order.id"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-amber-600 text-white rounded-xl hover:bg-amber-700 shadow-xs transition-colors disabled:opacity-50 min-h-[40px]"
+                    title="Iniciar cocción en marmita y descontar materia prima"
+                  >
+                    @if (isProcessingOrderId() === order.id) {
+                      <mat-icon class="text-sm animate-spin">refresh</mat-icon>
+                      <span>Iniciando...</span>
+                    } @else {
+                      <mat-icon class="text-sm">play_arrow</mat-icon>
+                      <span>Iniciar Cocción en Marmita</span>
+                    }
+                  </button>
+                } @else if (order.status === 'en_proceso') {
+                  <button
+                    type="button"
+                    (click)="processOperatorOrder(order.id)"
+                    [disabled]="isProcessingOrderId() === order.id"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-emerald-700 text-white rounded-xl hover:bg-emerald-800 shadow-xs transition-colors disabled:opacity-50 min-h-[40px]"
+                    title="Registrar llenado hot-fill, choque térmico y liberar lote"
+                  >
+                    @if (isProcessingOrderId() === order.id) {
+                      <mat-icon class="text-sm animate-spin">refresh</mat-icon>
+                      <span>Completando...</span>
+                    } @else {
+                      <mat-icon class="text-sm">check_circle</mat-icon>
+                      <span>Finalizar Lote & Envasado</span>
+                    }
+                  </button>
+                } @else {
+                  <span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800">
+                    <mat-icon class="text-sm text-emerald-600">verified</mat-icon>
+                    <span>Lote Liberado y Disponible en Stock</span>
+                  </span>
+                }
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  (click)="goToProduction()"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-stone-500 hover:text-stone-900 transition-colors"
+                  title="Abrir detalles de producción"
+                >
+                  <span>Ver en Planta</span>
+                  <mat-icon class="text-xs">arrow_forward</mat-icon>
+                </button>
+              </div>
+            </div>
+          </div>
+        } @empty {
+          <div class="col-span-2 bg-white border border-stone-200 rounded-2xl p-12 text-center shadow-xs">
+            <div class="w-14 h-14 rounded-2xl bg-stone-50 border border-stone-200 flex items-center justify-center mx-auto text-stone-400 mb-3">
+              <mat-icon class="text-2xl">soup_kitchen</mat-icon>
+            </div>
+            <h3 class="text-base font-bold text-stone-900">No hay órdenes para el filtro seleccionado</h3>
+            <p class="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
+              No se encontraron órdenes de producción pendientes con los criterios actuales. Puedes generar una nueva orden de cocción.
+            </p>
+            <div class="mt-4">
+              <button
+                type="button"
+                (click)="openOperatorCreateModal()"
+                class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-amber-700 text-white rounded-xl hover:bg-amber-800"
+              >
+                <mat-icon class="text-sm">add</mat-icon>
+                <span>Generar Nueva Orden</span>
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- MODAL: NUEVA ORDEN DE PRODUCCIÓN PARA OPERADOR (SIN COSTOS NI PRECIOS) -->
+    @if (isOperatorCreateModalOpen()) {
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200 my-6">
+          <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+            <div class="flex items-center gap-2">
+              <mat-icon class="text-amber-800">soup_kitchen</mat-icon>
+              <div>
+                <h3 class="text-lg font-bold text-stone-900">Nueva Orden de Cocción en Marmita</h3>
+                <p class="text-[11px] text-stone-500">Planificación de tanda operacional sin métricas de costo</p>
+              </div>
+            </div>
+            <button (click)="closeOperatorCreateModal()" class="text-stone-400 hover:text-stone-700">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+
+          <form [formGroup]="operatorNewOrderForm" (ngSubmit)="submitOperatorOrder()" class="space-y-4 mt-4">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Receta / Formulación BOM</label>
+              <select formControlName="recipeId" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400">
+                @for (rec of recipes(); track rec.id) {
+                  <option [value]="rec.id">{{ rec.name }} (Rinde: {{ rec.batchSizeUnits }} frascos)</option>
+                }
+              </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-stone-700 mb-1">Multiplicador de Tandas</label>
+                <input
+                  type="number"
+                  formControlName="batchCount"
+                  min="1"
+                  max="10"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono focus:outline-none focus:ring-1 focus:ring-stone-400"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-stone-700 mb-1">Código de Lote Sanitario</label>
+                <input
+                  type="text"
+                  formControlName="lotNumber"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-stone-400"
+                />
+              </div>
+            </div>
+
+            <!-- Preview Operacional de Insumos Requeridos (SIN COSTOS) -->
+            @if (operatorOrderPreview(); as preview) {
+              <div class="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-2">
+                <div class="flex items-center justify-between font-bold text-stone-800">
+                  <span>Meta de Producción:</span>
+                  <span class="font-mono text-amber-900 text-sm">{{ preview.targetUnits }} Frascos Terminados</span>
+                </div>
+
+                <div class="pt-2 border-t border-stone-200/60">
+                  <span class="text-[10px] uppercase font-bold text-stone-400 tracking-wider block mb-1">
+                    Verificación de Insumos Físicos en Almacén:
+                  </span>
+                  <div class="space-y-1">
+                    @for (req of preview.requirements; track req.materialId) {
+                      <div class="flex items-center justify-between text-[11px]" [class.text-rose-700]="req.isShort" [class.text-stone-700]="!req.isShort">
+                        <span>{{ req.materialName }}:</span>
+                        <div class="font-mono flex items-center gap-1">
+                          <span class="font-bold">Requerido: {{ req.needed }} {{ req.unit }}</span>
+                          <span class="text-stone-400">|</span>
+                          <span [class.font-bold]="req.isShort">Disponible: {{ req.stock }} {{ req.unit }}</span>
+                          @if (req.isShort) {
+                            <span class="text-[10px] font-bold text-rose-600 bg-rose-50 px-1 rounded">¡Déficit!</span>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              </div>
+            }
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Instrucciones u Observaciones de Cocción</label>
+              <textarea
+                rows="2"
+                formControlName="operatorNotes"
+                placeholder="ej: Marmita #1, controlar grados Brix a 65° y choque térmico inmediato"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              ></textarea>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+              <button
+                type="button"
+                (click)="closeOperatorCreateModal()"
+                class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                [disabled]="operatorNewOrderForm.invalid"
+                class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50"
+              >
+                <mat-icon class="text-xs">soup_kitchen</mat-icon>
+                <span>Lanzar Orden a Marmita</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    }
+  } @else {
   <!-- Top Title & Operational Status -->
   <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200 pb-5">
     <div>
@@ -377,116 +877,768 @@
     </div>
   </div>
 
-  <!-- COMPARATIVO MENSUAL DE VENTAS (Agosto, Septiembre, Octubre) -->
-  <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-3 border-b border-stone-100">
+  <!-- ============================================================ -->
+  <!-- SECCIÓN: CENTRO DE ALERTAS DE STOCK MÍNIMO & FACTIBILIDAD MTO -->
+  <!-- ============================================================ -->
+  <div class="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6 pb-4 border-b border-stone-100">
       <div>
-        <h3 class="text-lg font-bold text-stone-900">Ventas Comparativas Mensuales (2026)</h3>
-        <p class="text-xs text-stone-500">
-          Evolución de facturación e impacto de las semanas de inactividad operativa en el margen bruto
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+            [class.bg-rose-100]="criticalAlertsCount() > 0"
+            [class.text-rose-800]="criticalAlertsCount() > 0"
+            [class.bg-amber-100]="criticalAlertsCount() === 0 && warningAlertsCount() > 0"
+            [class.text-amber-800]="criticalAlertsCount() === 0 && warningAlertsCount() > 0"
+            [class.bg-emerald-100]="totalAlertsCount() === 0"
+            [class.text-emerald-800]="totalAlertsCount() === 0"
+          >
+            <span class="w-2 h-2 rounded-full animate-pulse"
+              [class.bg-rose-600]="criticalAlertsCount() > 0"
+              [class.bg-amber-600]="criticalAlertsCount() === 0 && warningAlertsCount() > 0"
+              [class.bg-emerald-600]="totalAlertsCount() === 0"
+            ></span>
+            @if (criticalAlertsCount() > 0) {
+              {{ criticalAlertsCount() }} Insumos Críticos para Producción
+            } @else if (warningAlertsCount() > 0) {
+              {{ warningAlertsCount() }} Insumos Bajo Stock Mínimo
+            } @else {
+              Inventario de Insumos Óptimo
+            }
+          </span>
+          <span class="text-stone-300">·</span>
+          <span class="text-xs text-stone-500 font-medium">Servicio de Inventario & MRP</span>
+        </div>
+
+        <h2 class="text-xl font-bold text-stone-900 tracking-tight mt-1 flex items-center gap-2">
+          <mat-icon class="text-amber-700">inventory_2</mat-icon>
+          Centro de Alertas de Stock Mínimo & Factibilidad de Producción
+        </h2>
+        <p class="text-xs text-stone-500 mt-1">
+          Supervisión en tiempo real de niveles de seguridad y verificación cruzada contra órdenes de fabricación activas para prevenir paradas de paila.
         </p>
       </div>
+
+      <!-- Action Toolbar -->
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Filter Tabs -->
+        <div class="inline-flex bg-stone-100 p-1 rounded-xl text-xs font-medium border border-stone-200">
+          <button
+            (click)="setAlertsFilter('all')"
+            class="px-3 py-1 rounded-lg transition-all"
+            [class.bg-white]="alertsFilter() === 'all'"
+            [class.text-stone-900]="alertsFilter() === 'all'"
+            [class.shadow-xs]="alertsFilter() === 'all'"
+            [class.text-stone-600]="alertsFilter() !== 'all'"
+          >
+            Todas ({{ totalAlertsCount() }})
+          </button>
+          <button
+            (click)="setAlertsFilter('critical')"
+            class="px-3 py-1 rounded-lg transition-all flex items-center gap-1"
+            [class.bg-white]="alertsFilter() === 'critical'"
+            [class.text-rose-700]="alertsFilter() === 'critical'"
+            [class.shadow-xs]="alertsFilter() === 'critical'"
+            [class.text-stone-600]="alertsFilter() !== 'critical'"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
+            Bloqueo Prod. ({{ criticalAlertsCount() }})
+          </button>
+          <button
+            (click)="setAlertsFilter('warning')"
+            class="px-3 py-1 rounded-lg transition-all flex items-center gap-1"
+            [class.bg-white]="alertsFilter() === 'warning'"
+            [class.text-amber-800]="alertsFilter() === 'warning'"
+            [class.shadow-xs]="alertsFilter() === 'warning'"
+            [class.text-stone-600]="alertsFilter() !== 'warning'"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+            Bajo Mínimo ({{ warningAlertsCount() }})
+          </button>
+        </div>
+
+        <!-- Export PDF -->
+        <button
+          (click)="exportStockAlertsPdf()"
+          class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors shadow-xs"
+          title="Descargar reporte de alertas en PDF"
+        >
+          <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+          <span>Exportar PDF</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- KPI Summary Cards for Inventory Alerts -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-rose-50/70 border border-rose-200 rounded-xl p-4">
+        <div class="flex items-center justify-between text-rose-800 text-xs font-semibold">
+          <span>Insumos Insuficientes</span>
+          <mat-icon class="text-base text-rose-600">error</mat-icon>
+        </div>
+        <div class="text-2xl font-bold font-mono text-rose-900 mt-2">
+          {{ criticalAlertsCount() }}
+        </div>
+        <div class="text-[11px] text-rose-700 mt-0.5">
+          Bloquean órdenes activas
+        </div>
+      </div>
+
+      <div class="bg-amber-50/70 border border-amber-200 rounded-xl p-4">
+        <div class="flex items-center justify-between text-amber-800 text-xs font-semibold">
+          <span>Bajo Stock Mínimo</span>
+          <mat-icon class="text-base text-amber-600">warning</mat-icon>
+        </div>
+        <div class="text-2xl font-bold font-mono text-amber-900 mt-2">
+          {{ warningAlertsCount() }}
+        </div>
+        <div class="text-[11px] text-amber-700 mt-0.5">
+          Por debajo de seguridad
+        </div>
+      </div>
+
+      <div class="bg-stone-50 border border-stone-200 rounded-xl p-4">
+        <div class="flex items-center justify-between text-stone-700 text-xs font-semibold">
+          <span>Órdenes en Riesgo</span>
+          <mat-icon class="text-base text-stone-500">pending_actions</mat-icon>
+        </div>
+        <div class="text-2xl font-bold font-mono text-stone-900 mt-2">
+          {{ activeBatchesCount() }}
+        </div>
+        <div class="text-[11px] text-stone-500 mt-0.5">
+          Tandas programadas
+        </div>
+      </div>
+
+      <div class="bg-stone-50 border border-stone-200 rounded-xl p-4">
+        <div class="flex items-center justify-between text-stone-700 text-xs font-semibold">
+          <span>Tasa de Conversión BCV</span>
+          <mat-icon class="text-base text-stone-500">currency_exchange</mat-icon>
+        </div>
+        <div class="text-2xl font-bold font-mono text-stone-900 mt-2">
+          Bs. {{ rates()?.currentUsd | veNumber:2 }}
+        </div>
+        <div class="text-[11px] text-stone-500 mt-0.5">
+          Valoración dual en tiempo real
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Alerts Cards List -->
+    @if (filteredAlerts().length > 0) {
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        @for (alert of filteredAlerts(); track alert.id) {
+          <div
+            class="border rounded-xl p-4 transition-all relative overflow-hidden flex flex-col justify-between"
+            [class.border-rose-300]="alert.severity === 'critical'"
+            [class.bg-rose-50/30]="alert.severity === 'critical'"
+            [class.border-amber-300]="alert.severity === 'warning'"
+            [class.bg-amber-50/20]="alert.severity === 'warning'"
+            [class.border-stone-200]="alert.severity === 'caution'"
+            [class.bg-stone-50/50]="alert.severity === 'caution'"
+          >
+            <!-- Severity Stripe -->
+            <div
+              class="absolute left-0 top-0 bottom-0 w-1.5"
+              [class.bg-rose-600]="alert.severity === 'critical'"
+              [class.bg-amber-500]="alert.severity === 'warning'"
+              [class.bg-stone-400]="alert.severity === 'caution'"
+            ></div>
+
+            <div>
+              <!-- Header info -->
+              <div class="flex items-start justify-between gap-2 mb-2 pl-2">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs font-bold text-stone-500">{{ alert.materialCode }}</span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
+                      [class.bg-emerald-100]="alert.category === 'fruta'"
+                      [class.text-emerald-800]="alert.category === 'fruta'"
+                      [class.bg-amber-100]="alert.category === 'aditivo'"
+                      [class.text-amber-800]="alert.category === 'aditivo'"
+                      [class.bg-blue-100]="alert.category === 'empaque'"
+                      [class.text-blue-800]="alert.category === 'empaque'"
+                      [class.bg-purple-100]="alert.category === 'quimico'"
+                      [class.text-purple-800]="alert.category === 'quimico'"
+                    >
+                      {{ alert.category }}
+                    </span>
+                  </div>
+                  <h3 class="font-bold text-stone-900 text-sm mt-0.5 leading-snug">
+                    {{ alert.materialName }}
+                  </h3>
+                </div>
+
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold"
+                  [class.bg-rose-100]="alert.severity === 'critical'"
+                  [class.text-rose-800]="alert.severity === 'critical'"
+                  [class.bg-amber-100]="alert.severity === 'warning'"
+                  [class.text-amber-800]="alert.severity === 'warning'"
+                  [class.bg-stone-100]="alert.severity === 'caution'"
+                  [class.text-stone-700]="alert.severity === 'caution'"
+                >
+                  <mat-icon class="text-xs">
+                    {{ alert.severity === 'critical' ? 'cancel' : alert.severity === 'warning' ? 'warning' : 'info' }}
+                  </mat-icon>
+                  {{ alert.severity === 'critical' ? 'DÉFICIT CRÍTICO' : alert.severity === 'warning' ? 'BAJO MÍNIMO' : 'ALERTA PREVENTIVA' }}
+                </span>
+              </div>
+
+              <!-- Stock metrics comparison -->
+              <div class="grid grid-cols-3 gap-2 bg-white/80 rounded-lg p-2.5 my-3 border border-stone-200/60 pl-3 text-xs">
+                <div>
+                  <span class="block text-[10px] uppercase font-bold text-stone-400">Stock Actual</span>
+                  <span class="font-mono font-bold text-stone-900 text-sm">
+                    {{ alert.currentStock | veNumber:1 }} {{ alert.unit }}
+                  </span>
+                </div>
+                <div>
+                  <span class="block text-[10px] uppercase font-bold text-stone-400">Stock Mínimo</span>
+                  <span class="font-mono text-stone-700">
+                    {{ alert.minStock | veNumber:1 }} {{ alert.unit }}
+                  </span>
+                </div>
+                <div>
+                  <span class="block text-[10px] uppercase font-bold"
+                    [class.text-rose-700]="alert.insufficientForProduction"
+                    [class.text-stone-500]="!alert.insufficientForProduction"
+                  >
+                    Requerido Prod.
+                  </span>
+                  <span class="font-mono font-bold"
+                    [class.text-rose-700]="alert.insufficientForProduction"
+                    [class.text-stone-800]="!alert.insufficientForProduction"
+                  >
+                    {{ alert.requiredForActiveOrders | veNumber:1 }} {{ alert.unit }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Production deficit alert callout if insufficient -->
+              @if (alert.insufficientForProduction) {
+                <div class="mb-3 pl-2 flex items-start gap-2 text-xs bg-rose-100/80 text-rose-900 p-2.5 rounded-lg border border-rose-300">
+                  <mat-icon class="text-base text-rose-700 shrink-0">block</mat-icon>
+                  <div>
+                    <span class="font-bold">Faltan {{ alert.productionShortage | veNumber:1 }} {{ alert.unit }}</span>
+                    para poder completar las órdenes de fabricación en curso:
+                    @for (ord of alert.affectedOrders; track ord.orderId) {
+                      <div class="font-mono text-[11px] text-rose-800 mt-0.5">
+                        • {{ ord.orderNumber }}: {{ ord.recipeName }} ({{ ord.batchCount }} tandas)
+                      </div>
+                    }
+                  </div>
+                </div>
+              } @else if (alert.isBelowMinStock) {
+                <div class="mb-3 pl-2 flex items-center gap-2 text-xs bg-amber-100/80 text-amber-900 p-2 rounded-lg border border-amber-300">
+                  <mat-icon class="text-sm text-amber-700 shrink-0">warning_amber</mat-icon>
+                  <span>
+                    El inventario está <span class="font-bold">{{ (alert.minStock - alert.currentStock) | veNumber:1 }} {{ alert.unit }}</span> por debajo del colchón de seguridad sugerido.
+                  </span>
+                </div>
+              }
+
+              <!-- Replenishment Cost & Recommendation -->
+              <div class="text-xs text-stone-600 pl-2 mb-3">
+                <span class="text-[11px] text-stone-400 block font-medium">Inversión requerida para reponer:</span>
+                <span class="font-mono font-bold text-stone-900">
+                  @if (currencyMode() === 'USD') {
+                    $ {{ alert.estimatedReplenishCostUsd | veNumber:2 }} USD
+                    <span class="text-stone-400 font-normal text-[11px]">(≈ Bs. {{ alert.estimatedReplenishCostBs | veNumber:2 }})</span>
+                  } @else {
+                    Bs. {{ alert.estimatedReplenishCostBs | veNumber:2 }}
+                    <span class="text-stone-400 font-normal text-[11px]">(≈ $ {{ alert.estimatedReplenishCostUsd | veNumber:2 }} USD)</span>
+                  }
+                </span>
+              </div>
+            </div>
+
+            <!-- Card Actions -->
+            <div class="flex items-center justify-between pt-3 border-t border-stone-200/80 pl-2 gap-2">
+              <button
+                (click)="notifyAlert(alert)"
+                class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-stone-700 bg-white hover:bg-stone-100 border border-stone-300 rounded-lg transition-colors"
+                title="Generar notificación inmediata en pantalla"
+              >
+                <mat-icon class="text-sm text-amber-600">notifications_active</mat-icon>
+                <span>Notificar</span>
+              </button>
+
+              <button
+                (click)="openRestockModal(alert)"
+                class="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 rounded-lg transition-colors shadow-xs"
+                title="Registrar entrada rápida de materia prima"
+              >
+                <mat-icon class="text-sm text-amber-400">add_box</mat-icon>
+                <span>Entrada Rápida</span>
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <!-- Empty state when no alerts match filter -->
+      <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center my-4">
+        <mat-icon class="text-3xl text-emerald-600 mb-1">verified</mat-icon>
+        <h3 class="font-bold text-emerald-950 text-sm">
+          Inventario en Condiciones Óptimas
+        </h3>
+        <p class="text-xs text-emerald-700 max-w-md mx-auto mt-1">
+          No hay insumos en situación de bloqueo para las órdenes de producción vigentes en este filtro. Todos los materiales cumplen con el stock mínimo de seguridad.
+        </p>
+      </div>
+    }
+
+    <!-- ============================================================ -->
+    <!-- SIMULADOR INTERACTIVO DE FACTIBILIDAD DE PRODUCCIÓN EN TIEMPO REAL -->
+    <!-- ============================================================ -->
+    <div class="bg-stone-50 border border-stone-200 rounded-xl p-5 mt-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-3 border-b border-stone-200">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Verificador Operativo</span>
+            <span class="text-stone-300">·</span>
+            <span class="text-xs text-stone-500 font-medium">BOM & Stock al Instante</span>
+          </div>
+          <h3 class="text-base font-bold text-stone-900 tracking-tight mt-0.5 flex items-center gap-1.5">
+            <mat-icon class="text-base text-amber-700">calculate</mat-icon>
+            Simulador de Factibilidad de Producción
+          </h3>
+          <p class="text-xs text-stone-500 mt-0.5">
+            Selecciona una fórmula y la cantidad de tandas a cocinar para verificar al segundo si los insumos en almacén son suficientes.
+          </p>
+        </div>
+
+        <!-- Recipe Selector & Batch Controls -->
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-stone-600 mb-1">Fórmula / Receta BOM:</label>
+            <select
+              [value]="selectedRecipeForSim()"
+              (change)="selectRecipeForSim($any($event.target).value)"
+              class="text-xs font-medium bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-stone-900 focus:outline-hidden"
+            >
+              @for (rec of recipes(); track rec.id) {
+                <option [value]="rec.id">{{ rec.name }} (Lote {{ rec.batchSizeUnits }} uds)</option>
+              }
+            </select>
+          </div>
+
+          <div class="w-24">
+            <label class="block text-[11px] font-semibold text-stone-600 mb-1">Tandas (Lotes):</label>
+            <input
+              type="number"
+              min="1"
+              max="20"
+              [value]="simBatchCount()"
+              (input)="updateSimBatchCount($event)"
+              class="w-full text-xs font-mono font-bold bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-stone-900 focus:outline-hidden"
+            />
+          </div>
+
+          <div class="self-end">
+            <button
+              (click)="notifySimulationResult()"
+              class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white rounded-lg shadow-xs transition-colors"
+              title="Notificar resultado a compras o supervisión"
+            >
+              <mat-icon class="text-sm text-amber-400">notifications_active</mat-icon>
+              <span>Notificar Factibilidad</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feasibility Result Display -->
+      @if (simFeasibilityResult(); as res) {
+        <div class="rounded-xl p-4 transition-all"
+          [class.bg-emerald-100/60]="res.canProduce"
+          [class.border]="true"
+          [class.border-emerald-300]="res.canProduce"
+          [class.bg-rose-50]="!res.canProduce"
+          [class.border-rose-300]="!res.canProduce"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+            <div class="flex items-center gap-2">
+              <mat-icon class="text-2xl"
+                [class.text-emerald-700]="res.canProduce"
+                [class.text-rose-600]="!res.canProduce"
+              >
+                {{ res.canProduce ? 'check_circle' : 'cancel' }}
+              </mat-icon>
+              <div>
+                <h4 class="font-bold text-sm"
+                  [class.text-emerald-950]="res.canProduce"
+                  [class.text-rose-950]="!res.canProduce"
+                >
+                  {{ res.canProduce ? '¡Factibilidad Confirmada! Insumos 100% Disponibles' : '¡Alerta de Insumos Insuficientes para Completar Producción!' }}
+                </h4>
+                <p class="text-xs"
+                  [class.text-emerald-800]="res.canProduce"
+                  [class.text-rose-700]="!res.canProduce"
+                >
+                  Para producir <span class="font-bold font-mono">{{ res.batchCount }}</span> tanda(s) de <span class="font-bold">{{ res.recipeName }}</span> (Rendimiento: <span class="font-bold font-mono">{{ res.targetUnits }} frascos</span>).
+                </p>
+              </div>
+            </div>
+
+            @if (!res.canProduce) {
+              <div class="text-right">
+                <span class="text-xs font-semibold text-rose-800 block">Déficit en {{ res.totalMissingCount }} insumo(s)</span>
+                <span class="text-[11px] text-rose-600">Requiere compra antes de encender paila</span>
+              </div>
+            }
+          </div>
+
+          <!-- Missing Materials Breakdown if any -->
+          @if (!res.canProduce && res.missingMaterials.length > 0) {
+            <div class="mt-3 overflow-x-auto text-xs bg-white rounded-lg border border-rose-200">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-rose-100/60 text-rose-900 border-b border-rose-200 text-[11px] font-bold">
+                    <th class="py-2 px-3">Insumo Faltante</th>
+                    <th class="py-2 px-3">Requerido ({{ res.batchCount }} tandas)</th>
+                    <th class="py-2 px-3">Stock Actual</th>
+                    <th class="py-2 px-3 text-rose-700">Déficit a Reponer</th>
+                    <th class="py-2 px-3 text-right">Costo Estimado</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-rose-100">
+                  @for (m of res.missingMaterials; track m.materialId) {
+                    <tr>
+                      <td class="py-2 px-3 font-semibold text-stone-900">{{ m.materialName }}</td>
+                      <td class="py-2 px-3 font-mono text-stone-700">{{ m.required | veNumber:1 }} {{ m.unit }}</td>
+                      <td class="py-2 px-3 font-mono text-stone-500">{{ m.available | veNumber:1 }} {{ m.unit }}</td>
+                      <td class="py-2 px-3 font-mono font-bold text-rose-700 bg-rose-50/50">
+                        -{{ m.deficit | veNumber:1 }} {{ m.unit }}
+                      </td>
+                      <td class="py-2 px-3 font-mono text-right font-bold text-stone-900">
+                        @if (currencyMode() === 'USD') {
+                          $ {{ m.estimatedCostToCoverUsd | veNumber:2 }}
+                        } @else {
+                          Bs. {{ m.estimatedCostToCoverBs | veNumber:2 }}
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+
+          <!-- Sufficient ingredients list -->
+          <div class="mt-3 pt-2 border-t border-stone-200/40 text-[11px] flex flex-wrap items-center gap-1.5 text-stone-600">
+            <span class="font-bold text-stone-700">Insumos en inventario:</span>
+            @for (s of res.sufficientMaterials; track s.materialId) {
+              <span class="inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-stone-200 font-mono text-[10px]">
+                <mat-icon class="text-xs text-emerald-600">check</mat-icon>
+                {{ s.materialName }}: {{ s.available | veNumber:1 }} {{ s.unit }} (Quedarán {{ s.remainingAfter | veNumber:1 }})
+              </span>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SECCIÓN RECHARTS 1: VENTAS SEMANALES (BARRAS Y LÍNEAS) -->
+  <!-- ============================================================ -->
+  <div class="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-stone-100">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-amber-800">Visualización Recharts</span>
+          <span class="text-stone-300">·</span>
+          <span class="text-xs text-stone-500 font-medium">Gráficos de Barras y Líneas Dinámicos</span>
+        </div>
+        <h2 class="text-xl font-bold text-stone-900 tracking-tight mt-0.5">
+          Ventas Semanales & Comportamiento Operativo MTO
+        </h2>
+        <p class="text-xs text-stone-500 mt-1">
+          Evolución semanal de facturación, costos directos y volumen de frascos despachados bajo pedido a clientes mayoristas.
+        </p>
+      </div>
+
+      <!-- Export Weekly Sales Toolbar -->
       <div class="flex items-center gap-2">
-        <!-- Export Monthly Sales Toolbar -->
         <div class="inline-flex items-center gap-1 bg-stone-50 border border-stone-200 rounded-lg p-0.5 shadow-xs">
           <button
-            (click)="exportMonthlySalesExcel()"
+            (click)="exportWeeklySalesExcel()"
             class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 rounded transition-colors"
-            title="Exportar comparativo mensual a Excel (.xls)"
+            title="Exportar ventas semanales a Excel"
           >
             <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
             <span class="hidden sm:inline">Excel</span>
           </button>
           <button
-            (click)="exportMonthlySalesCsv()"
+            (click)="exportWeeklySalesCsv()"
             class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 rounded transition-colors"
-            title="Exportar comparativo mensual a CSV (;)"
+            title="Exportar ventas semanales a CSV"
           >
             <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
             <span class="hidden sm:inline">CSV</span>
           </button>
           <button
-            (click)="exportMonthlySalesPdf()"
+            (click)="exportWeeklySalesPdf()"
             class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-100 rounded transition-colors"
-            title="Exportar comparativo mensual a PDF"
+            title="Exportar ventas semanales a PDF"
           >
             <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
             <span class="hidden sm:inline">PDF</span>
           </button>
         </div>
+      </div>
+    </div>
 
-        <div class="text-xs text-stone-500 hidden md:flex items-center gap-3 ml-2">
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-xs bg-amber-500"></span> Facturación</span>
-          <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-xs bg-emerald-600"></span> Margen Bruto</span>
+    <!-- Quick Stats Cards for Weekly Sales -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div class="p-3 bg-stone-50 border border-stone-200/70 rounded-xl">
+        <span class="text-[11px] text-stone-500 block uppercase font-medium">Semanas Monitoreadas</span>
+        <span class="text-lg font-bold text-stone-900 font-mono">{{ weeklySales().length }} sem</span>
+      </div>
+      <div class="p-3 bg-stone-50 border border-stone-200/70 rounded-xl">
+        <span class="text-[11px] text-stone-500 block uppercase font-medium">Facturación Acumulada</span>
+        <span class="text-lg font-bold text-amber-700 font-mono">
+          {{ (1577 * (currencyMode() === 'Bs' ? (rates()?.currentUsd || 48.35) : 1)) | veCurrency:(currencyMode() === 'Bs' ? 'Bs.' : '$'):0 }}
+        </span>
+      </div>
+      <div class="p-3 bg-stone-50 border border-stone-200/70 rounded-xl">
+        <span class="text-[11px] text-stone-500 block uppercase font-medium">Volumen Total Vendido</span>
+        <span class="text-lg font-bold text-stone-900 font-mono">638 frascos</span>
+      </div>
+      <div class="p-3 bg-stone-50 border border-stone-200/70 rounded-xl">
+        <span class="text-[11px] text-stone-500 block uppercase font-medium">Margen Promedio Activo</span>
+        <span class="text-lg font-bold text-emerald-700 font-mono">38.3%</span>
+      </div>
+    </div>
+
+    <!-- 2 Recharts Charts Side by Side: BarChart (Revenue & Costs) & LineChart (Units & Margin %) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Chart 1: Bar Chart of Weekly Sales -->
+      <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/40">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <mat-icon class="text-amber-600 text-sm">bar_chart</mat-icon>
+            <h4 class="text-xs font-bold uppercase tracking-wider text-stone-800">
+              Gráfico de Barras: Facturación vs Costos Directos
+            </h4>
+          </div>
+          <span class="text-[11px] text-stone-500 font-mono">Valores en {{ currencyMode() === 'USD' ? 'USD ($)' : 'Bs.' }}</span>
+        </div>
+        <p class="text-[11px] text-stone-500 mb-3">
+          Compara ingresos brutos, costos de insumos/nómina y margen resultante por semana de producción.
+        </p>
+
+        <!-- Recharts Container (BarChart) -->
+        <div #salesBarContainer class="w-full h-[280px]"></div>
+      </div>
+
+      <!-- Chart 2: Line Chart of Weekly Units & Margin -->
+      <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/40">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <mat-icon class="text-blue-600 text-sm">show_chart</mat-icon>
+            <h4 class="text-xs font-bold uppercase tracking-wider text-stone-800">
+              Gráfico de Líneas: Volumen de Frascos & % Margen
+            </h4>
+          </div>
+          <span class="text-[11px] text-stone-500 font-mono">250g vs 1000g vs % Margen</span>
+        </div>
+        <p class="text-[11px] text-stone-500 mb-3">
+          Evolución del mix de presentaciones y la caída de rentabilidad durante semanas 38 y 39 por parada técnica.
+        </p>
+
+        <!-- Recharts Container (LineChart) -->
+        <div #salesLineContainer class="w-full h-[280px]"></div>
+      </div>
+    </div>
+
+    <!-- Detailed Weekly Table -->
+    <div class="mt-6 overflow-x-auto">
+      <table class="w-full text-left text-xs border-collapse">
+        <thead>
+          <tr class="border-b border-stone-200 font-semibold text-stone-500 uppercase tracking-wider">
+            <th class="py-2.5 px-3">Semana</th>
+            <th class="py-2.5 px-3">Rango de Fechas</th>
+            <th class="py-2.5 px-3 text-right">Facturación</th>
+            <th class="py-2.5 px-3 text-right">Costo Directo</th>
+            <th class="py-2.5 px-3 text-right">Margen Bruto</th>
+            <th class="py-2.5 px-3 text-right">% Margen</th>
+            <th class="py-2.5 px-3 text-right">Frasco 250g</th>
+            <th class="py-2.5 px-3 text-right">Frasco 1kg</th>
+            <th class="py-2.5 px-3 text-center">Estado Operacional</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-100 text-stone-700">
+          @for (week of weeklySales(); track week.week) {
+            <tr class="hover:bg-stone-50 transition-colors">
+              <td class="py-2.5 px-3 font-bold text-stone-900 font-mono">{{ week.week }}</td>
+              <td class="py-2.5 px-3 text-stone-500">{{ week.startDate }} al {{ week.endDate }}</td>
+              <td class="py-2.5 px-3 text-right font-mono font-semibold text-amber-800">
+                {{ (week.revenue * (currencyMode() === 'Bs' ? (rates()?.currentUsd || 48.35) : 1)) | veCurrency:(currencyMode() === 'Bs' ? 'Bs.' : '$'):2 }}
+              </td>
+              <td class="py-2.5 px-3 text-right font-mono text-stone-600">
+                {{ (week.cost * (currencyMode() === 'Bs' ? (rates()?.currentUsd || 48.35) : 1)) | veCurrency:(currencyMode() === 'Bs' ? 'Bs.' : '$'):2 }}
+              </td>
+              <td class="py-2.5 px-3 text-right font-mono font-bold"
+                [class.text-emerald-700]="week.margin >= 0"
+                [class.text-rose-600]="week.margin < 0">
+                {{ (week.margin * (currencyMode() === 'Bs' ? (rates()?.currentUsd || 48.35) : 1)) | veCurrency:(currencyMode() === 'Bs' ? 'Bs.' : '$'):2 }}
+              </td>
+              <td class="py-2.5 px-3 text-right font-mono font-semibold"
+                [class.text-emerald-700]="week.marginPercent >= 20"
+                [class.text-rose-600]="week.marginPercent < 20">
+                {{ week.marginPercent | veNumber:1 }}%
+              </td>
+              <td class="py-2.5 px-3 text-right font-mono">{{ week.smallUnitsSold | veNumber:0 }}</td>
+              <td class="py-2.5 px-3 text-right font-mono">{{ week.largeUnitsSold | veNumber:0 }}</td>
+              <td class="py-2.5 px-3 text-center">
+                @if (week.status === 'activa') {
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                    Producción Activa
+                  </span>
+                } @else {
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800" title="Semana sin cocción: Nómina fija absorbe pérdidas">
+                    Inactiva / Parada
+                  </span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SECCIÓN RECHARTS 2: INVENTORY TURNOVER (ROTACIÓN DE INVENTARIO) -->
+  <!-- ============================================================ -->
+  <div class="bg-white border border-stone-200 rounded-2xl p-6 shadow-xs">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-stone-100">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-emerald-800">Métrica Logística Clave</span>
+          <span class="text-stone-300">·</span>
+          <span class="text-xs text-stone-500 font-medium">Recharts Line & Bar Charts</span>
+        </div>
+        <h2 class="text-xl font-bold text-stone-900 tracking-tight mt-0.5">
+          Inventory Turnover (Rotación de Inventario) & Días de Almacén
+        </h2>
+        <p class="text-xs text-stone-500 mt-1">
+          Relación entre Costo de Ventas (COGS) e inventario promedio. En mermeladas artesanales, una rotación alta protege la fruta de mermas y optimiza el capital inmovilizado.
+        </p>
+      </div>
+
+      <!-- Export Inventory Turnover Toolbar -->
+      <div class="flex items-center gap-2">
+        <div class="inline-flex items-center gap-1 bg-stone-50 border border-stone-200 rounded-lg p-0.5 shadow-xs">
+          <button
+            (click)="exportInventoryTurnoverExcel()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 rounded transition-colors"
+            title="Exportar rotación de inventarios a Excel"
+          >
+            <mat-icon class="text-sm text-emerald-600">table_view</mat-icon>
+            <span class="hidden sm:inline">Excel</span>
+          </button>
+          <button
+            (click)="exportInventoryTurnoverCsv()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 rounded transition-colors"
+            title="Exportar rotación de inventarios a CSV"
+          >
+            <mat-icon class="text-sm text-sky-600">grid_on</mat-icon>
+            <span class="hidden sm:inline">CSV</span>
+          </button>
+          <button
+            (click)="exportInventoryTurnoverPdf()"
+            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-800 hover:bg-rose-100 rounded transition-colors"
+            title="Exportar rotación de inventarios a PDF"
+          >
+            <mat-icon class="text-sm text-rose-600">picture_as_pdf</mat-icon>
+            <span class="hidden sm:inline">PDF</span>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- SVG Bar Chart -->
-    <div class="w-full overflow-x-auto">
-      <div class="min-w-[540px] h-56 flex items-end justify-between gap-8 pt-8 pb-4 px-6 border-b border-stone-200 bg-stone-50/50 rounded-lg">
-        @for (stat of metrics()?.monthlySales || []; track stat.month) {
-          <div class="flex-1 flex flex-col items-center h-full justify-end group">
-            <div class="text-xs font-mono font-semibold text-stone-700 mb-2 opacity-90 group-hover:opacity-100">
-              {{ stat.totalRevenue | veCurrency:'$':0 }}
-            </div>
-            <div class="w-full max-w-[90px] flex items-end justify-center gap-2 h-40">
-              <!-- Revenue Bar (Max ~1100 = 100%) -->
-              <div
-                class="w-8 bg-amber-500 rounded-t-sm transition-all duration-300 relative group-hover:bg-amber-600"
-                [style.height.%]="(stat.totalRevenue / 1100) * 100"
-                title="Facturación: {{ stat.totalRevenue | veCurrency:'$':2 }}"
-              ></div>
-              <!-- Margin Bar -->
-              <div
-                class="w-8 rounded-t-sm transition-all duration-300 relative"
-                [class.bg-emerald-600]="stat.grossMargin > 150"
-                [class.bg-rose-500]="stat.grossMargin <= 150"
-                [style.height.%]="Math.max(5, (stat.grossMargin / 1100) * 100)"
-                title="Margen: {{ stat.grossMargin | veCurrency:'$':2 }} ({{ stat.grossMarginPercent | veNumber:1 }}%)"
-              ></div>
-            </div>
-            <div class="mt-3 text-center">
-              <span class="block text-xs font-semibold text-stone-800">{{ stat.month }}</span>
-              <span class="block text-[11px] text-stone-400 font-mono">{{ stat.grossMarginPercent | veNumber:1 }}% margen</span>
-            </div>
-          </div>
-        }
+    <!-- Alert / Explanation Banner for Inactive Weeks Turnover Collapse -->
+    <div class="mb-5 p-4 bg-amber-50/70 border border-amber-200 rounded-xl flex items-start gap-3">
+      <mat-icon class="text-amber-700 text-lg mt-0.5">lightbulb</mat-icon>
+      <div class="text-xs text-amber-900 leading-relaxed">
+        <strong class="font-bold">Efecto de Semanas Inactivas en la Rotación (Semanas 38 y 39):</strong>
+        Durante las dos semanas sin cocción activa, la tasa de rotación cayó drásticamente a <strong>1.4x - 1.9x</strong> y los días de suministro subieron a <strong>64.3 días</strong>. Al reanudar las operaciones Make-to-Order en las semanas 40 y 41, el ratio rebotó a <strong>5.1x</strong> (17.6 días de stock), reduciendo el riesgo de descomposición de la guayaba criolla.
       </div>
     </div>
 
-    <!-- Comparative Table Breakdown -->
+    <!-- 2 Recharts Charts Side by Side: LineChart (Weekly Turnover & Days) & BarChart (Category Breakdown) -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Chart 1: Line Chart of Weekly Turnover & Days of Supply -->
+      <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/40">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <mat-icon class="text-emerald-700 text-sm">trending_up</mat-icon>
+            <h4 class="text-xs font-bold uppercase tracking-wider text-stone-800">
+              Gráfico de Líneas Recharts: Tendencia Semanal de Rotación
+            </h4>
+          </div>
+          <span class="text-[11px] text-stone-500 font-mono">Turnover Ratio (x) vs Días</span>
+        </div>
+        <p class="text-[11px] text-stone-500 mb-3">
+          Eje izquierdo: Veces de rotación anualizada (Verde). Eje derecho: Días de inventario en almacén (Rojo).
+        </p>
+
+        <!-- Recharts Container (LineChart) -->
+        <div #turnoverLineContainer class="w-full h-[280px]"></div>
+      </div>
+
+      <!-- Chart 2: Bar Chart of Turnover by Category -->
+      <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/40">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <mat-icon class="text-teal-700 text-sm">inventory</mat-icon>
+            <h4 class="text-xs font-bold uppercase tracking-wider text-stone-800">
+              Gráfico de Barras Recharts: Rotación por Categoría
+            </h4>
+          </div>
+          <span class="text-[11px] text-stone-500 font-mono">Ratio (x) vs Días en Bodega</span>
+        </div>
+        <p class="text-[11px] text-stone-500 mb-3">
+          Verde Azulado: Ratio de rotación por tipo de insumo. Naranja: Días promedio de permanencia.
+        </p>
+
+        <!-- Recharts Container (BarChart) -->
+        <div #turnoverBarContainer class="w-full h-[280px]"></div>
+      </div>
+    </div>
+
+    <!-- Category Breakdown Table -->
     <div class="mt-6 overflow-x-auto">
-      <table class="w-full text-left text-sm border-collapse">
+      <table class="w-full text-left text-xs border-collapse">
         <thead>
-          <tr class="border-b border-stone-200 text-xs font-semibold text-stone-500 uppercase tracking-wider">
-            <th class="py-2.5 px-3">Mes Operativo</th>
-            <th class="py-2.5 px-3 text-right">Frasco Pequeño (250g)</th>
-            <th class="py-2.5 px-3 text-right">Frasco Grande (1000g)</th>
-            <th class="py-2.5 px-3 text-right">Facturación Neta</th>
-            <th class="py-2.5 px-3 text-right">Margen Bruto</th>
-            <th class="py-2.5 px-3 text-center">Observación Operacional</th>
+          <tr class="border-b border-stone-200 font-semibold text-stone-500 uppercase tracking-wider">
+            <th class="py-2.5 px-3">Categoría de Almacén</th>
+            <th class="py-2.5 px-3 text-right">Tasa de Rotación (x)</th>
+            <th class="py-2.5 px-3 text-right">Días en Bodega</th>
+            <th class="py-2.5 px-3 text-right">Valor Stock Inmovilizado</th>
+            <th class="py-2.5 px-3 text-center">Clasificación Logística</th>
+            <th class="py-2.5 px-3">Estrategia de Mitigación</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-stone-100 text-stone-700">
-          @for (row of metrics()?.monthlySales || []; track row.month) {
+          @for (cat of inventoryTurnoverCategories(); track cat.category) {
             <tr class="hover:bg-stone-50 transition-colors">
-              <td class="py-3 px-3 font-semibold text-stone-900">{{ row.month }} {{ row.year }}</td>
-              <td class="py-3 px-3 text-right font-mono tabular-nums">{{ row.smallUnitsSold | veNumber:0 }} uds</td>
-              <td class="py-3 px-3 text-right font-mono tabular-nums">{{ row.largeUnitsSold | veNumber:0 }} uds</td>
-              <td class="py-3 px-3 text-right font-mono font-semibold tabular-nums">{{ row.totalRevenue | veCurrency:'$':2 }}</td>
-              <td class="py-3 px-3 text-right font-mono tabular-nums font-semibold" [class.text-rose-600]="row.grossMarginPercent < 20" [class.text-emerald-700]="row.grossMarginPercent >= 20">
-                {{ row.grossMargin | veCurrency:'$':2 }} ({{ row.grossMarginPercent | veNumber:1 }}%)
+              <td class="py-2.5 px-3 font-semibold text-stone-900">{{ cat.category }}</td>
+              <td class="py-2.5 px-3 text-right font-mono font-bold text-teal-700">{{ cat.turnoverRatio | veNumber:1 }}x</td>
+              <td class="py-2.5 px-3 text-right font-mono">{{ cat.averageDaysInWarehouse }} días</td>
+              <td class="py-2.5 px-3 text-right font-mono font-semibold">{{ cat.inventoryValueUsd | veCurrency:'$':2 }}</td>
+              <td class="py-2.5 px-3 text-center">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  [class.bg-emerald-100]="cat.turnoverClassification === 'Alta Rotación'"
+                  [class.text-emerald-800]="cat.turnoverClassification === 'Alta Rotación'"
+                  [class.bg-amber-100]="cat.turnoverClassification === 'Rotación Media'"
+                  [class.text-amber-800]="cat.turnoverClassification === 'Rotación Media'">
+                  {{ cat.turnoverClassification }}
+                </span>
               </td>
-              <td class="py-3 px-3 text-center text-xs text-stone-500">
-                @if (row.month === 'Septiembre') {
-                  <span class="text-rose-600 font-medium">Margen deprimido por 2 semanas inactivas (mantenimiento y veda)</span>
-                } @else if (row.month === 'Agosto') {
-                  <span>Operación regular a capacidad nominal</span>
-                } @else {
-                  <span>En recuperación con pedidos mayoristas acumulados</span>
-                }
-              </td>
+              <td class="py-2.5 px-3 text-stone-500 text-[11px]">{{ cat.description }}</td>
             </tr>
           }
         </tbody>
@@ -798,5 +1950,94 @@
         </div>
       </div>
     </div>
+  }
+
+  <!-- Modal: Quick Restock for Alerted Raw Material -->
+  @if (isRestockModalOpen(); as alert) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-3 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <span class="p-2 bg-amber-100 text-amber-800 rounded-xl">
+              <mat-icon class="text-base">add_box</mat-icon>
+            </span>
+            <div>
+              <h3 class="text-sm font-bold text-stone-900">Entrada Rápida de Insumo</h3>
+              <p class="text-xs text-stone-500">Reabastecimiento express para solventar alerta</p>
+            </div>
+          </div>
+          <button (click)="closeRestockModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        @if (selectedAlertForRestock(); as selectedAlert) {
+          <div class="my-4 bg-stone-50 p-3 rounded-xl border border-stone-200 text-xs">
+            <div class="font-bold text-stone-900 text-sm mb-1">
+              {{ selectedAlert.materialName }}
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-stone-600">
+              <div>Código: <span class="font-mono font-semibold">{{ selectedAlert.materialCode }}</span></div>
+              <div>Categoría: <span class="capitalize font-semibold">{{ selectedAlert.category }}</span></div>
+              <div>Stock Actual: <span class="font-mono font-bold">{{ selectedAlert.currentStock | veNumber:1 }} {{ selectedAlert.unit }}</span></div>
+              <div>Mínimo: <span class="font-mono font-semibold">{{ selectedAlert.minStock | veNumber:1 }} {{ selectedAlert.unit }}</span></div>
+            </div>
+
+            @if (selectedAlert.insufficientForProduction) {
+              <div class="mt-2 pt-2 border-t border-stone-200 text-rose-700 font-bold text-[11px] flex items-center gap-1">
+                <mat-icon class="text-xs">error</mat-icon>
+                <span>Déficit para órdenes activas: -{{ selectedAlert.productionShortage | veNumber:1 }} {{ selectedAlert.unit }}</span>
+              </div>
+            }
+          </div>
+
+          <form [formGroup]="restockForm" (ngSubmit)="submitQuickRestock()" class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Cantidad a Ingresar al Almacén ({{ selectedAlert.unit }}):
+              </label>
+              <input
+                type="number"
+                min="1"
+                step="any"
+                formControlName="quantity"
+                class="w-full text-sm font-mono font-bold bg-white border border-stone-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Nota u Observación de Entrada:
+              </label>
+              <input
+                type="text"
+                formControlName="notes"
+                placeholder="ej: Despacho de proveedor local, reposición urgente"
+                class="w-full text-xs bg-white border border-stone-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+              />
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+              <button
+                type="button"
+                (click)="closeRestockModal()"
+                class="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                [disabled]="restockForm.invalid"
+                class="px-4 py-2 text-xs font-bold text-white bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded-lg shadow-xs flex items-center gap-1"
+              >
+                <mat-icon class="text-sm text-amber-400">check</mat-icon>
+                <span>Confirmar Entrada</span>
+              </button>
+            </div>
+          </form>
+        }
+      </div>
+    </div>
+  }
   }
 </div>

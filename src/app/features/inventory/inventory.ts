@@ -6,15 +6,18 @@ import {RawMaterial, MaterialCategory, UnitOfMeasure} from '../../core/models/er
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
 
+import {AuditLog} from '../../shared/components/audit-log/audit-log';
+
 @Component({
   selector: 'app-inventory',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe],
+  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, AuditLog],
   templateUrl: './inventory.html',
 })
 export class InventoryComponent {
   public api = inject(ErpApiService);
 
+  public activeInventoryTab = signal<'stock' | 'movements' | 'audit'>('stock');
   public selectedCategory = signal<string>('all');
   public isMovementModalOpen = signal<boolean>(false);
   public isNewMaterialModalOpen = signal<boolean>(false);
@@ -57,6 +60,9 @@ export class InventoryComponent {
 
   public finishedGoods = computed(() => this.api.finishedGoods());
   public movements = computed(() => this.api.inventoryMovements());
+  public inventoryAuditCount = computed(() =>
+    this.api.auditLogs().filter(l => l.module === 'inventario').length
+  );
 
   public openMovementModal(mat?: RawMaterial) {
     const activeRate = this.api.exchangeRates()?.currentUsd || 48.35;
