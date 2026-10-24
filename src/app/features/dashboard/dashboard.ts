@@ -185,6 +185,18 @@ export class DashboardComponent implements OnDestroy {
     }
   }
 
+  public getPresentationLabel(presentation: string): string {
+    switch (presentation) {
+      case 'pequena_250g': return 'Frasco de Vidrio 250g';
+      case 'grande_1000g': return 'Frasco Institucional 1000g (1 kg)';
+      case 'galon_5kg': return 'Galón Industrial 5kg';
+      case 'balde_15kg': return 'Balde Industrial 15kg';
+      case 'pote_20kg': return 'Pote / Cuñete Industrial 20kg';
+      case 'caja_20kg': return 'Caja Bag-in-Box 20kg';
+      default: return presentation;
+    }
+  }
+
   // Chart Containers for Recharts
   public salesBarContainer = viewChild<ElementRef<HTMLDivElement>>('salesBarContainer');
   public salesLineContainer = viewChild<ElementRef<HTMLDivElement>>('salesLineContainer');

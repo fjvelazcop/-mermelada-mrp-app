@@ -57,6 +57,12 @@ export class CostingComponent {
     { id: 'gal-1', presentation: 'Envase Galón 5kg + Etiqueta', unitCost: 2.61 },
   ]);
 
+  // Balde 15kg
+  public packagingBalde15k = signal<PackagingCostItem[]>([
+    { id: 'bld-1', presentation: 'Balde Industrial 15kg (Cuñete HDPE) + Asa', unitCost: 3.80 },
+    { id: 'bld-2', presentation: 'Etiqueta Adhesiva Industrial 15kg', unitCost: 0.25 },
+  ]);
+
   // 3. Muestras
   public samples = signal<SampleCostItem[]>([
     { id: 'smp-1', description: 'Muestra 250cc', bulkCost: 69.60, unitCost: 0.28 },
@@ -225,6 +231,10 @@ export class CostingComponent {
     return Number(this.packagingGalon().reduce((acc, p) => acc + (Number(p.unitCost) || 0), 0).toFixed(2));
   });
 
+  public totalPackagingBalde15k = computed(() => {
+    return Number(this.packagingBalde15k().reduce((acc, p) => acc + (Number(p.unitCost) || 0), 0).toFixed(2));
+  });
+
   // Totales de Materia Prima
   public totalRawMaterialsCost = computed(() => {
     return Number(this.rawMaterials().reduce((acc, rm) => acc + (Number(rm.costPerProduction) || 0), 0).toFixed(2));
@@ -239,6 +249,10 @@ export class CostingComponent {
     return Number((this.rawMaterialCostPerKg() * 20).toFixed(2));
   });
 
+  public rawMaterialCost15kg = computed(() => {
+    return Number((this.rawMaterialCostPerKg() * 15).toFixed(2));
+  });
+
   public rawMaterialCost5kg = computed(() => {
     return Number((this.rawMaterialCostPerKg() * 5).toFixed(2));
   });
@@ -246,6 +260,10 @@ export class CostingComponent {
   // Costo Fijo por Presentación
   public fixedCost20kg = computed(() => {
     return Number((this.totalFixedPerKg() * 20).toFixed(2));
+  });
+
+  public fixedCost15kg = computed(() => {
+    return Number((this.totalFixedPerKg() * 15).toFixed(2));
   });
 
   public fixedCost5kg = computed(() => {
@@ -260,6 +278,11 @@ export class CostingComponent {
   // Costo 20kg sin envase
   public cost20kgWithoutPackaging = computed(() => {
     return Number((this.rawMaterialCost20kg() + this.fixedCost20kg()).toFixed(2));
+  });
+
+  // Costo 15kg sin envase
+  public cost15kgWithoutPackaging = computed(() => {
+    return Number((this.rawMaterialCost15kg() + this.fixedCost15kg()).toFixed(2));
   });
 
   // Costo 5kg sin envase
@@ -306,6 +329,22 @@ export class CostingComponent {
 
   public galonPrices = computed(() => {
     const cost = this.galonFinalCost();
+    const customM = this.customMarginPercent() || 35;
+    return {
+      margin30: Number((cost / (1 - 0.30)).toFixed(2)),
+      margin25: Number((cost / (1 - 0.25)).toFixed(2)),
+      margin20: Number((cost / (1 - 0.20)).toFixed(2)),
+      custom: Number((cost / (1 - customM / 100)).toFixed(2)),
+    };
+  });
+
+  // --- 10. ESTRUCTURA DE COSTOS FINAL: BALDE 15KG ---
+  public balde15kFinalCost = computed(() => {
+    return Number((this.cost15kgWithoutPackaging() + this.totalPackagingBalde15k()).toFixed(2));
+  });
+
+  public balde15kPrices = computed(() => {
+    const cost = this.balde15kFinalCost();
     const customM = this.customMarginPercent() || 35;
     return {
       margin30: Number((cost / (1 - 0.30)).toFixed(2)),

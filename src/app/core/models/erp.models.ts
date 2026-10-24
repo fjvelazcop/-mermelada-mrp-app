@@ -46,7 +46,14 @@ export type UnitOfMeasure = 'kg' | 'g' | 'l' | 'ml' | 'unidades' | 'cajas' | 'pa
 
 export type MaterialCategory = 'fruta' | 'aditivo' | 'empaque' | 'quimico';
 
-export type PresentationType = 'pequena_250g' | 'grande_1000g' | 'otra';
+export type PresentationType =
+  | 'pequena_250g'
+  | 'grande_1000g'
+  | 'galon_5kg'
+  | 'balde_15kg'
+  | 'pote_20kg'
+  | 'caja_20kg'
+  | 'otra';
 
 export interface RawMaterial {
   id: string;

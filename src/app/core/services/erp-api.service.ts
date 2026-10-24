@@ -26,6 +26,7 @@ import {
   SystemRole,
   SystemUser,
   AuditLogEntry,
+  Expense,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 import {computed} from '@angular/core';
@@ -51,6 +52,7 @@ export class ErpApiService {
         costing: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         sales: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         payroll: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        expenses: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         settings: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         architecture: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
       },
@@ -68,6 +70,7 @@ export class ErpApiService {
         costing: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         sales: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         payroll: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -85,6 +88,7 @@ export class ErpApiService {
         costing: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         sales: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -102,6 +106,7 @@ export class ErpApiService {
         costing: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
         sales: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
         payroll: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        expenses: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -119,6 +124,7 @@ export class ErpApiService {
         costing: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         sales: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
         payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -359,6 +365,7 @@ export class ErpApiService {
   public deliveryNotes = signal<DeliveryNote[]>([]);
   public employees = signal<Employee[]>([]);
   public payrollWeeks = signal<PayrollWeek[]>([]);
+  public expenses = signal<Expense[]>([]);
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
   public dashboardData = signal<any | null>(null);

@@ -252,7 +252,7 @@
                 <span class="text-xs font-mono text-stone-400 block uppercase tracking-wider">{{ order.recipeName }}</span>
                 <h3 class="text-base font-bold text-stone-900 mt-0.5">Mermelada de {{ order.flavor }}</h3>
                 <span class="text-xs text-stone-600 font-medium block">
-                  Presentación: {{ order.presentation === 'pequena_250g' ? 'Frasco de Vidrio 250g' : 'Frasco Institucional 1000g' }}
+                  Presentación: {{ getPresentationLabel(order.presentation) }}
                 </span>
               </div>
 
