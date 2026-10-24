@@ -1,0 +1,1010 @@
+<div class="space-y-6">
+  <!-- ENCABEZADO PRINCIPAL DE GASTOS & ACCIONES -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+    <div>
+      <div class="flex items-center gap-2 text-xs text-stone-500 font-medium">
+        <span class="w-2 h-2 rounded-full bg-amber-600"></span>
+        <span class="font-bold text-amber-900 uppercase tracking-wider">Gestión Financiera & Egresos</span>
+        <span aria-hidden="true">·</span>
+        <span>Estructura de Costos Fijos & Fiscalidad</span>
+      </div>
+      <h1 class="text-2xl font-bold text-stone-900 tracking-tight mt-1">Gastos, Viáticos & Egresos Operativos</h1>
+      <p class="text-xs text-stone-500 mt-0.5">
+        Registro centralizado de alquileres, servicios, viáticos de ventas, retiros de socios y acumulación de crédito fiscal para libros contables
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- Selector de Moneda Dual -->
+      <div class="inline-flex rounded-xl bg-stone-100 p-1 border border-stone-200">
+        <button
+          type="button"
+          (click)="currencyMode.set('USD')"
+          class="px-2.5 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 min-h-[32px]"
+          [class.bg-white]="currencyMode() === 'USD'"
+          [class.text-stone-900]="currencyMode() === 'USD'"
+          [class.shadow-xs]="currencyMode() === 'USD'"
+          [class.text-stone-500]="currencyMode() !== 'USD'"
+        >
+          <span>USD ($)</span>
+        </button>
+        <button
+          type="button"
+          (click)="currencyMode.set('Bs')"
+          class="px-2.5 py-1 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 min-h-[32px]"
+          [class.bg-white]="currencyMode() === 'Bs'"
+          [class.text-stone-900]="currencyMode() === 'Bs'"
+          [class.shadow-xs]="currencyMode() === 'Bs'"
+          [class.text-stone-500]="currencyMode() !== 'Bs'"
+        >
+          <span>Bs. (BCV)</span>
+        </button>
+      </div>
+
+      <!-- Exportar Reporte -->
+      @if (api.hasPermission('expenses', 'canExport')) {
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            (click)="exportExpensesExcel()"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition-colors min-h-[38px]"
+            title="Exportar a Excel"
+          >
+            <mat-icon class="text-xs text-emerald-700">table_view</mat-icon>
+            <span class="hidden sm:inline">Excel</span>
+          </button>
+          <button
+            type="button"
+            (click)="exportExpensesCsv()"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-200 rounded-xl transition-colors min-h-[38px]"
+            title="Exportar a CSV"
+          >
+            <mat-icon class="text-xs text-stone-600">grid_on</mat-icon>
+            <span class="hidden sm:inline">CSV</span>
+          </button>
+        </div>
+      }
+
+      <!-- Botón Registrar Gasto -->
+      @if (api.hasPermission('expenses', 'canCreate')) {
+        <button
+          type="button"
+          (click)="openCreateModal()"
+          class="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold bg-amber-700 text-white hover:bg-amber-800 rounded-xl shadow-xs transition-colors min-h-[38px]"
+        >
+          <mat-icon class="text-sm">add_circle</mat-icon>
+          <span>Registrar Egreso</span>
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- TARJETAS DE MÉTRICAS & RESUMEN FINANCIERO -->
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+    <!-- 1. Total Egresos -->
+    <div class="bg-white border border-stone-200 rounded-2xl p-4 shadow-xs">
+      <div class="flex items-center justify-between text-stone-500 mb-1">
+        <span class="text-[11px] font-bold uppercase tracking-wider">Total Egresos</span>
+        <mat-icon class="text-stone-400 text-base">payments</mat-icon>
+      </div>
+      <div class="font-mono font-bold text-xl sm:text-2xl text-stone-900 mt-1">
+        @if (currencyMode() === 'USD') {
+          {{ totalAmountUsd() | veCurrency:'$':2 }}
+        } @else {
+          {{ totalAmountBs() | veCurrency:'Bs.':2 }}
+        }
+      </div>
+      <span class="text-[10px] text-stone-400 block mt-0.5">
+        {{ expensesList().length }} movimientos registrados
+      </span>
+    </div>
+
+    <!-- 2. Gastos Operativos & Planta -->
+    <div class="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4">
+      <div class="flex items-center justify-between text-amber-900 mb-1">
+        <span class="text-[11px] font-bold uppercase tracking-wider">Operación & Planta</span>
+        <mat-icon class="text-amber-700 text-base">factory</mat-icon>
+      </div>
+      <div class="font-mono font-bold text-xl sm:text-2xl text-amber-950 mt-1">
+        @if (currencyMode() === 'USD') {
+          {{ operationalAmountUsd() | veCurrency:'$':2 }}
+        } @else {
+          {{ (operationalAmountUsd() * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+        }
+      </div>
+      <span class="text-[10px] text-amber-800/80 block mt-0.5">
+        Alquiler, gas, servicios y mant.
+      </span>
+    </div>
+
+    <!-- 3. Viajes, Combustible & Fletes -->
+    <div class="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4">
+      <div class="flex items-center justify-between text-blue-900 mb-1">
+        <span class="text-[11px] font-bold uppercase tracking-wider">Viajes & Fletes</span>
+        <mat-icon class="text-blue-700 text-base">directions_car</mat-icon>
+      </div>
+      <div class="font-mono font-bold text-xl sm:text-2xl text-blue-950 mt-1">
+        @if (currencyMode() === 'USD') {
+          {{ travelAndLogisticsAmountUsd() | veCurrency:'$':2 }}
+        } @else {
+          {{ (travelAndLogisticsAmountUsd() * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+        }
+      </div>
+      <span class="text-[10px] text-blue-800/80 block mt-0.5">
+        Peajes, gasolina y despachos
+      </span>
+    </div>
+
+    <!-- 4. Retiros / Gastos Personales de Socios -->
+    <div class="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-4">
+      <div class="flex items-center justify-between text-purple-900 mb-1">
+        <span class="text-[11px] font-bold uppercase tracking-wider">Retiros de Socios</span>
+        <mat-icon class="text-purple-700 text-base">person_pin</mat-icon>
+      </div>
+      <div class="font-mono font-bold text-xl sm:text-2xl text-purple-950 mt-1">
+        @if (currencyMode() === 'USD') {
+          {{ personalPartnersAmountUsd() | veCurrency:'$':2 }}
+        } @else {
+          {{ (personalPartnersAmountUsd() * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+        }
+      </div>
+      <span class="text-[10px] text-purple-800/80 block mt-0.5">
+        No computa a costo de marmitas
+      </span>
+    </div>
+
+    <!-- 5. Crédito Fiscal IVA (SENIAT Libro de Compras) -->
+    <div class="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4">
+      <div class="flex items-center justify-between text-emerald-900 mb-1">
+        <span class="text-[11px] font-bold uppercase tracking-wider">Crédito Fiscal IVA</span>
+        <mat-icon class="text-emerald-700 text-base">receipt</mat-icon>
+      </div>
+      <div class="font-mono font-bold text-xl sm:text-2xl text-emerald-950 mt-1">
+        @if (currencyMode() === 'USD') {
+          {{ fiscalCreditIvaAmountUsd() | veCurrency:'$':2 }}
+        } @else {
+          {{ fiscalCreditIvaAmountBs() | veCurrency:'Bs.':2 }}
+        }
+      </div>
+      <span class="text-[10px] text-emerald-800/80 block mt-0.5">
+        Base para Libro de Compras
+      </span>
+    </div>
+  </div>
+
+  <!-- PESTAÑAS DE NAVEGACIÓN SECUNDARIA DEL MÓDULO -->
+  <div class="flex items-center gap-2 border-b border-stone-200 pb-px overflow-x-auto">
+    <button
+      type="button"
+      (click)="activeSubTab.set('list')"
+      class="px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[40px]"
+      [class.border-amber-700]="activeSubTab() === 'list'"
+      [class.text-amber-900]="activeSubTab() === 'list'"
+      [class.border-transparent]="activeSubTab() !== 'list'"
+      [class.text-stone-500]="activeSubTab() !== 'list'"
+      [class.hover:text-stone-800]="activeSubTab() !== 'list'"
+    >
+      <mat-icon class="text-sm">receipt_long</mat-icon>
+      <span>Comprobantes de Egreso</span>
+      <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-stone-100 text-stone-700">
+        {{ filteredExpenses().length }}
+      </span>
+    </button>
+
+    <button
+      type="button"
+      (click)="activeSubTab.set('future_books')"
+      class="px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[40px]"
+      [class.border-amber-700]="activeSubTab() === 'future_books'"
+      [class.text-amber-900]="activeSubTab() === 'future_books'"
+      [class.border-transparent]="activeSubTab() !== 'future_books'"
+      [class.text-stone-500]="activeSubTab() !== 'future_books'"
+      [class.hover:text-stone-800]="activeSubTab() !== 'future_books'"
+    >
+      <mat-icon class="text-sm">menu_book</mat-icon>
+      <span>Preparación de Libros Contables (SENIAT)</span>
+      <span class="text-[10px] px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-bold uppercase tracking-wider">
+        Futuro Desarrollo
+      </span>
+    </button>
+
+    <button
+      type="button"
+      (click)="activeSubTab.set('audit')"
+      class="px-4 py-2.5 text-xs font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[40px]"
+      [class.border-amber-700]="activeSubTab() === 'audit'"
+      [class.text-amber-900]="activeSubTab() === 'audit'"
+      [class.border-transparent]="activeSubTab() !== 'audit'"
+      [class.text-stone-500]="activeSubTab() !== 'audit'"
+      [class.hover:text-stone-800]="activeSubTab() !== 'audit'"
+    >
+      <mat-icon class="text-sm">history_edu</mat-icon>
+      <span>Trazabilidad & Auditoría</span>
+      <span class="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 font-bold">
+        {{ expensesAuditCount() }}
+      </span>
+    </button>
+  </div>
+
+  <!-- SUB-PESTAÑA 1: LISTA DE EGRESOS & FILTROS -->
+  @if (activeSubTab() === 'list') {
+    <div class="space-y-4">
+      <!-- Barra de Filtros & Búsqueda -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border border-stone-200 rounded-2xl p-3 shadow-xs">
+        <!-- Filtros por tipo de gasto -->
+        <div class="flex flex-wrap items-center gap-1 bg-stone-100 p-1 rounded-xl">
+          <button
+            type="button"
+            (click)="categoryFilter.set('all')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+            [class.bg-white]="categoryFilter() === 'all'"
+            [class.text-stone-900]="categoryFilter() === 'all'"
+            [class.shadow-xs]="categoryFilter() === 'all'"
+            [class.text-stone-600]="categoryFilter() !== 'all'"
+          >
+            Todos ({{ expensesList().length }})
+          </button>
+          <button
+            type="button"
+            (click)="categoryFilter.set('operativos')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+            [class.bg-white]="categoryFilter() === 'operativos'"
+            [class.text-amber-950]="categoryFilter() === 'operativos'"
+            [class.shadow-xs]="categoryFilter() === 'operativos'"
+            [class.text-stone-600]="categoryFilter() !== 'operativos'"
+          >
+            Planta & Alquiler
+          </button>
+          <button
+            type="button"
+            (click)="categoryFilter.set('viajes')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+            [class.bg-white]="categoryFilter() === 'viajes'"
+            [class.text-blue-950]="categoryFilter() === 'viajes'"
+            [class.shadow-xs]="categoryFilter() === 'viajes'"
+            [class.text-stone-600]="categoryFilter() !== 'viajes'"
+          >
+            Viajes & Fletes
+          </button>
+          <button
+            type="button"
+            (click)="categoryFilter.set('socios')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+            [class.bg-white]="categoryFilter() === 'socios'"
+            [class.text-purple-950]="categoryFilter() === 'socios'"
+            [class.shadow-xs]="categoryFilter() === 'socios'"
+            [class.text-stone-600]="categoryFilter() !== 'socios'"
+          >
+            Retiros Socios
+          </button>
+          <button
+            type="button"
+            (click)="categoryFilter.set('fiscales')"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1"
+            [class.bg-white]="categoryFilter() === 'fiscales'"
+            [class.text-emerald-950]="categoryFilter() === 'fiscales'"
+            [class.shadow-xs]="categoryFilter() === 'fiscales'"
+            [class.text-stone-600]="categoryFilter() !== 'fiscales'"
+          >
+            <mat-icon class="text-xs text-emerald-600">receipt</mat-icon>
+            <span>Con Factura IVA</span>
+          </button>
+        </div>
+
+        <!-- Buscador -->
+        <div class="relative min-w-[260px]">
+          <input
+            type="text"
+            [value]="searchQuery()"
+            (input)="searchQuery.set($any($event.target).value)"
+            placeholder="Buscar por concepto, proveedor o RIF..."
+            class="w-full bg-stone-50 border border-stone-200 rounded-xl pl-9 pr-8 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+          />
+          <mat-icon class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 text-sm">search</mat-icon>
+          @if (searchQuery()) {
+            <button
+              type="button"
+              (click)="searchQuery.set('')"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
+            >
+              <mat-icon class="text-xs">close</mat-icon>
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- TABLA DE EGRESOS & COMPROBANTES -->
+      <div class="bg-white border border-stone-200 rounded-2xl shadow-xs overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-stone-50/80 border-b border-stone-200 text-stone-600 font-semibold uppercase tracking-wider text-[11px]">
+              <tr>
+                <th class="py-3 px-4">Nro. Egreso / Fecha</th>
+                <th class="py-3 px-4">Concepto & Cuenta Contable</th>
+                <th class="py-3 px-4">Beneficiario / RIF</th>
+                <th class="py-3 px-4">Documento / Pago</th>
+                <th class="py-3 px-4">Tratamiento Fiscal</th>
+                <th class="py-3 px-4 text-right">Monto</th>
+                <th class="py-3 px-4 text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100">
+              @for (exp of filteredExpenses(); track exp.id) {
+                <tr class="hover:bg-stone-50/60 transition-colors">
+                  <!-- 1. Nro. & Fecha -->
+                  <td class="py-3 px-4 whitespace-nowrap">
+                    <span class="font-mono font-bold text-stone-900 block">{{ exp.expenseNumber }}</span>
+                    <span class="text-[11px] text-stone-500 font-mono">{{ exp.date }}</span>
+                  </td>
+
+                  <!-- 2. Concepto & Categoría -->
+                  <td class="py-3 px-4 max-w-xs">
+                    <span class="font-semibold text-stone-900 block line-clamp-1" [title]="exp.concept">{{ exp.concept }}</span>
+                    <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-medium border"
+                        [class.bg-amber-50]="exp.category === 'alquiler_instalaciones'"
+                        [class.text-amber-900]="exp.category === 'alquiler_instalaciones'"
+                        [class.border-amber-200]="exp.category === 'alquiler_instalaciones'"
+                        [class.bg-sky-50]="exp.category === 'servicios_basicos'"
+                        [class.text-sky-900]="exp.category === 'servicios_basicos'"
+                        [class.border-sky-200]="exp.category === 'servicios_basicos'"
+                        [class.bg-emerald-50]="exp.category === 'viajes_viaticos'"
+                        [class.text-emerald-900]="exp.category === 'viajes_viaticos'"
+                        [class.border-emerald-200]="exp.category === 'viajes_viaticos'"
+                        [class.bg-purple-50]="exp.category === 'gastos_personales_socios'"
+                        [class.text-purple-900]="exp.category === 'gastos_personales_socios'"
+                        [class.border-purple-200]="exp.category === 'gastos_personales_socios'"
+                        [class.bg-stone-100]="!['alquiler_instalaciones', 'servicios_basicos', 'viajes_viaticos', 'gastos_personales_socios'].includes(exp.category)"
+                        [class.text-stone-700]="!['alquiler_instalaciones', 'servicios_basicos', 'viajes_viaticos', 'gastos_personales_socios'].includes(exp.category)"
+                        [class.border-stone-200]="!['alquiler_instalaciones', 'servicios_basicos', 'viajes_viaticos', 'gastos_personales_socios'].includes(exp.category)"
+                      >
+                        {{ exp.categoryLabel }}
+                      </span>
+                      @if (exp.accountingAccountCode) {
+                        <span class="font-mono text-[10px] text-stone-400">
+                          CTA: {{ exp.accountingAccountCode }}
+                        </span>
+                      }
+                    </div>
+                  </td>
+
+                  <!-- 3. Proveedor / Beneficiario -->
+                  <td class="py-3 px-4 max-w-xs">
+                    <span class="font-medium text-stone-800 block truncate" [title]="exp.supplierOrBeneficiary">{{ exp.supplierOrBeneficiary }}</span>
+                    <span class="font-mono text-[11px] text-stone-500 block">
+                      {{ exp.taxId || 'Sin RIF / Cédula' }}
+                    </span>
+                  </td>
+
+                  <!-- 4. Documento & Pago -->
+                  <td class="py-3 px-4 whitespace-nowrap">
+                    <div class="flex items-center gap-1 font-medium text-stone-700">
+                      <mat-icon class="text-xs text-stone-400">
+                        {{ exp.documentType === 'factura_fiscal' ? 'description' : (exp.documentType === 'vale_caja' ? 'receipt' : 'article') }}
+                      </mat-icon>
+                      <span class="capitalize">{{ exp.documentType.replace('_', ' ') }}</span>
+                      @if (exp.documentNumber) {
+                        <span class="font-mono font-bold text-stone-900">#{{ exp.documentNumber }}</span>
+                      }
+                    </div>
+                    <span class="text-[11px] text-stone-500 block capitalize mt-0.5">
+                      {{ exp.paymentMethod.replace('_', ' ') }}
+                      @if (exp.paymentReference) {
+                        <span class="font-mono text-stone-400">({{ exp.paymentReference }})</span>
+                      }
+                    </span>
+                  </td>
+
+                  <!-- 5. Tratamiento Fiscal -->
+                  <td class="py-3 px-4 whitespace-nowrap">
+                    @if (exp.fiscalBookEligible) {
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <mat-icon class="text-[11px]">verified</mat-icon>
+                        <span>Libro Compras (IVA {{ exp.taxRatePercent || 16 }}%)</span>
+                      </span>
+                      @if (exp.taxAmountUsd) {
+                        <span class="font-mono text-[10px] text-emerald-700 block mt-0.5">
+                          IVA: ${{ exp.taxAmountUsd | number:'1.2-2' }}
+                        </span>
+                      }
+                    } @else if (exp.category === 'gastos_personales_socios') {
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-50 text-purple-800 border border-purple-200">
+                        <span>Retiro Personal (No Deducible)</span>
+                      </span>
+                    } @else {
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 text-stone-600">
+                        <span>Gasto Interno / Sin IVA</span>
+                      </span>
+                    }
+                  </td>
+
+                  <!-- 6. Monto -->
+                  <td class="py-3 px-4 text-right whitespace-nowrap">
+                    <div class="font-mono font-bold text-stone-900 text-sm">
+                      @if (currencyMode() === 'USD') {
+                        {{ exp.amountUsd | veCurrency:'$':2 }}
+                      } @else {
+                        {{ exp.amountBs | veCurrency:'Bs.':2 }}
+                      }
+                    </div>
+                    <span class="font-mono text-[10px] text-stone-400 block">
+                      @if (currencyMode() === 'USD') {
+                        ≈ {{ exp.amountBs | veCurrency:'Bs.':2 }}
+                      } @else {
+                        ≈ {{ exp.amountUsd | veCurrency:'$':2 }}
+                      }
+                    </span>
+                  </td>
+
+                  <!-- 7. Acciones -->
+                  <td class="py-3 px-4 text-center whitespace-nowrap">
+                    <div class="flex items-center justify-center gap-1">
+                      <button
+                        type="button"
+                        (click)="openDetailModal(exp)"
+                        class="p-1 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors"
+                        title="Ver detalle del comprobante"
+                      >
+                        <mat-icon class="text-sm">visibility</mat-icon>
+                      </button>
+
+                      @if (api.hasPermission('expenses', 'canDelete')) {
+                        <button
+                          type="button"
+                          (click)="deleteExpense(exp.id)"
+                          class="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Eliminar comprobante"
+                        >
+                          <mat-icon class="text-sm">delete</mat-icon>
+                        </button>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="7" class="py-12 text-center text-stone-400">
+                    <mat-icon class="text-3xl block mx-auto mb-2 text-stone-300">receipt_long</mat-icon>
+                    <span>No se encontraron egresos con los filtros aplicados.</span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- SUB-PESTAÑA 2: PREPARACIÓN DE LIBROS CONTABLES (SENIAT & NIIF) -->
+  @if (activeSubTab() === 'future_books') {
+    <div class="space-y-6">
+      <!-- Explicación Conceptual -->
+      <div class="bg-gradient-to-r from-amber-50 to-stone-50 border border-amber-200 rounded-2xl p-6">
+        <div class="flex items-start gap-4">
+          <div class="w-12 h-12 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <mat-icon class="text-2xl">menu_book</mat-icon>
+          </div>
+          <div class="space-y-2">
+            <h3 class="text-base font-bold text-stone-900">
+              Arquitectura de Trazabilidad Contable: De Egresos a Libros Fiscales
+            </h3>
+            <p class="text-xs text-stone-600 leading-relaxed">
+              Todos los gastos registrados en este módulo quedan catalogados con los identificadores requeridos por la providencia administrativa del <strong>SENIAT (Art. 56 y 70 Ley de IVA)</strong> y las Normas de Información Financiera (VEN-NIF). Este registro sirve como repositorio base para generar de forma automatizada los siguientes libros obligatorios en la fase contable:
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cuadrícula de los 4 Libros Contables Clave -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- 1. Libro de Compras Fiscal -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div class="flex items-center gap-2">
+                <span class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                  LC
+                </span>
+                <h4 class="font-bold text-stone-900 text-sm">1. Libro de Compras (Art. 56 Ley IVA)</h4>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 uppercase">
+                Tributario SENIAT
+              </span>
+            </div>
+            <p class="text-xs text-stone-600 mt-3">
+              Consolida todas las facturas fiscales emitidas por proveedores de materia prima (fruta, azúcar, envases) y prestadores de servicios con derecho a crédito fiscal.
+            </p>
+            <ul class="text-xs text-stone-500 space-y-1.5 mt-3 bg-stone-50 p-3 rounded-xl">
+              <li>• RIF, Razón Social, Nro. de Factura y Nro. de Control.</li>
+              <li>• Base Imponible y Alícuota general (16%) y reducida (8%).</li>
+              <li>• Retenciones de IVA (75% o 100% como Contribuyente Especial).</li>
+              <li>• Comprobantes de Retención emitidos a proveedores.</li>
+            </ul>
+          </div>
+          <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+            <span>Egresos calificados actuales: <strong>{{ (filteredExpenses() | json) ? 4 : 0 }} facturas</strong></span>
+            <span class="font-bold text-emerald-700">Listo para exportar data</span>
+          </div>
+        </div>
+
+        <!-- 2. Libro de Ventas Fiscal -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div class="flex items-center gap-2">
+                <span class="w-8 h-8 rounded-lg bg-sky-100 text-sky-800 flex items-center justify-center font-bold">
+                  LV
+                </span>
+                <h4 class="font-bold text-stone-900 text-sm">2. Libro de Ventas (Art. 56 Ley IVA)</h4>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-900 uppercase">
+                Tributario SENIAT
+              </span>
+            </div>
+            <p class="text-xs text-stone-600 mt-3">
+              Vinculado directamente con el módulo de <strong>Ventas & Despachos</strong>. Registra cada factura emitida y nota de entrega despachada a clientes (panaderías, distribuidores).
+            </p>
+            <ul class="text-xs text-stone-500 space-y-1.5 mt-3 bg-stone-50 p-3 rounded-xl">
+              <li>• Correlativo de Facturación Fiscal y autorización providencia.</li>
+              <li>• Débito fiscal generado por ventas gravadas con 16% IVA.</li>
+              <li>• Retenciones de IVA recibidas de clientes contribuyentes especiales.</li>
+              <li>• Balance mensual entre Débito Fiscal vs. Crédito Fiscal a declarar.</li>
+            </ul>
+          </div>
+          <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+            <span>Alimentado desde: <strong>Módulo de Ventas & Notas de Entrega</strong></span>
+            <span class="font-bold text-sky-700">Integrado</span>
+          </div>
+        </div>
+
+        <!-- 3. Libro Diario Legal -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div class="flex items-center gap-2">
+                <span class="w-8 h-8 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center font-bold">
+                  LD
+                </span>
+                <h4 class="font-bold text-stone-900 text-sm">3. Libro Diario (Código de Comercio)</h4>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-900 uppercase">
+                Mercantil / Legal
+              </span>
+            </div>
+            <p class="text-xs text-stone-600 mt-3">
+              Asientos cronológicos de doble partida (Debe y Haber) que registran cada entrada de insumos, costo de producción en marmitas, egresos operativos y cobro de ventas.
+            </p>
+            <ul class="text-xs text-stone-500 space-y-1.5 mt-3 bg-stone-50 p-3 rounded-xl">
+              <li>• Cargo a Cuentas de Gasto Operativo (5.1) y Abono a Banco/Caja.</li>
+              <li>• Registro diferenciado de Anticipos de Socios (Cuenta de Patrimonio 3.1).</li>
+              <li>• Asientos de nómina semanal y absorción de semanas inactivas.</li>
+            </ul>
+          </div>
+          <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+            <span>Estructura de cuentas: <strong>VEN-NIF PYMES</strong></span>
+            <span class="font-bold text-purple-700">Plan de cuentas listo</span>
+          </div>
+        </div>
+
+        <!-- 4. Libro Mayor -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div class="flex items-center gap-2">
+                <span class="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                  LM
+                </span>
+                <h4 class="font-bold text-stone-900 text-sm">4. Libro Mayor & Balances de Comprobación</h4>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 uppercase">
+                Financiero
+              </span>
+            </div>
+            <p class="text-xs text-stone-600 mt-3">
+              Totalización por cuenta contable para emitir el Balance General y el Estado de Resultados (Ganancias y Pérdidas) para la junta directiva y entidades financieras.
+            </p>
+            <ul class="text-xs text-stone-500 space-y-1.5 mt-3 bg-stone-50 p-3 rounded-xl">
+              <li>• Saldos acumulados por cuenta T (Deudor vs. Acreedor).</li>
+              <li>• Separación entre Costos Directos de Fabricación y Gastos del Período.</li>
+              <li>• Margen bruto real de producción de mermeladas descontando mermas.</li>
+            </ul>
+          </div>
+          <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+            <span>Base de datos: <strong>Normalizada con Códigos 5.x.xx</strong></span>
+            <span class="font-bold text-amber-700">Diseño preparado</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- SUB-PESTAÑA 3: LOG DE AUDITORÍA DE GASTOS -->
+  @if (activeSubTab() === 'audit') {
+    <app-audit-log
+      [moduleFilter]="'gastos'"
+      [showModuleTabs]="false"
+      [title]="'Bitácora de Auditoría — Gastos, Egresos & Comprobantes Fiscales'"
+      [subtitle]="'Trazabilidad inmutable de pagos, transferencias, retiros de socios y comprobantes de retención tributaria'"
+    />
+  }
+
+  <!-- MODAL: REGISTRAR NUEVO GASTO / EGRESO -->
+  @if (isCreateModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+              <mat-icon class="text-sm">payments</mat-icon>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-stone-900">Registrar Nuevo Gasto / Egreso</h3>
+              <p class="text-xs text-stone-500">Comprobante de egreso con imputación contable y clasificación fiscal</p>
+            </div>
+          </div>
+          <button type="button" (click)="closeCreateModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="expenseForm" (ngSubmit)="submitExpense()" class="space-y-4 mt-4">
+          <!-- 1. Concepto y Categoría -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Concepto o Descripción del Gasto <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="concept"
+                placeholder="ej: Recarga de gas industrial GLP para calderas / Alquiler galpón"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Categoría de Gasto <span class="text-rose-500">*</span>
+              </label>
+              <select
+                formControlName="category"
+                (change)="onCategoryChange($any($event.target).value)"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              >
+                @for (c of categories; track c.value) {
+                  <option [value]="c.value">{{ c.label }}</option>
+                }
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Fecha del Egreso <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                formControlName="date"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+          </div>
+
+          <!-- Alerta visual si es retiro personal de socios -->
+          @if (expenseForm.controls.category.value === 'gastos_personales_socios') {
+            <div class="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-900 flex items-start gap-2">
+              <mat-icon class="text-purple-700 text-sm mt-0.5">info</mat-icon>
+              <div>
+                <strong>Aviso de Retiro Personal / Socio:</strong>
+                <span class="block text-purple-800 mt-0.5">
+                  Este egreso se contabiliza como anticipo personal / cuenta de dividendos de socios. No afectará el costo unitario de producción de las marmitas de mermelada ni generará crédito fiscal de IVA.
+                </span>
+              </div>
+            </div>
+          }
+
+          <!-- 2. Monto, Tasa y Equivalencia en Bs. -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-stone-50 border border-stone-200 rounded-xl">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Monto en USD ($) <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                formControlName="amountUsd"
+                class="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Tasa Oficial (Bs./USD) <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                formControlName="exchangeRateUsed"
+                class="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Equivalente en Bolívares
+              </label>
+              <div class="px-3 py-2 bg-stone-100 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-800">
+                Bs. {{ ((expenseForm.controls.amountUsd.value || 0) * (expenseForm.controls.exchangeRateUsed.value || 48.35)) | number:'1.2-2' }}
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Proveedor / Beneficiario y Documento -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Proveedor / Beneficiario del Pago <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="supplierOrBeneficiary"
+                placeholder="ej: Inversiones Los Llanos C.A. / Nombre socio"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                RIF o Cédula (V-... / J-...)
+              </label>
+              <input
+                type="text"
+                formControlName="taxId"
+                placeholder="ej: J-40192837-1 o V-18.490.231"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Tipo de Comprobante / Documento
+              </label>
+              <select
+                formControlName="documentType"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              >
+                <option value="factura_fiscal">Factura Fiscal (Con Control SENIAT)</option>
+                <option value="recibo_pago">Recibo de Pago / Comprobante</option>
+                <option value="vale_caja">Vale de Caja Menor / Retiro</option>
+                <option value="nota_debito">Nota de Débito Bancaria</option>
+                <option value="otro">Otro Comprobante</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Nro. de Factura / Control
+              </label>
+              <input
+                type="text"
+                formControlName="documentNumber"
+                placeholder="ej: FACT-00918 o 00-001290"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+          </div>
+
+          <!-- 4. Método de Pago y Referencia -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Forma de Pago
+              </label>
+              <select
+                formControlName="paymentMethod"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              >
+                <option value="transferencia_bancaria">Transferencia Bancaria (Banesco / BDV / Mercantil)</option>
+                <option value="pago_movil">Pago Móvil Interbancario</option>
+                <option value="zelle">Zelle / Transferencia Internacional</option>
+                <option value="efectivo_usd">Efectivo Divisas (USD Cash)</option>
+                <option value="efectivo_bs">Efectivo Bolívares</option>
+                <option value="tarjeta">Tarjeta de Débito / Débito Inmediato</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Nro. de Referencia o Confirmación
+              </label>
+              <input
+                type="text"
+                formControlName="paymentReference"
+                placeholder="ej: REF-991204 / ZLL-CONF-77"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+          </div>
+
+          <!-- 5. Configuración Fiscal & Cuenta Contable -->
+          <div class="p-3 bg-stone-50 border border-stone-200 rounded-xl space-y-3">
+            <span class="text-[11px] font-bold text-stone-700 uppercase tracking-wider block">
+              Imputación Contable & Fiscal (Soporte para Libros Futuros):
+            </span>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">
+                  Tratamiento de IVA
+                </label>
+                <select
+                  formControlName="taxCategory"
+                  class="w-full bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs text-stone-800"
+                >
+                  <option value="con_factura_iva">Factura Gravada (16% IVA)</option>
+                  <option value="exento">Exento de IVA</option>
+                  <option value="no_sujeto">No Sujeto (Gasto Personal / Viático)</option>
+                  <option value="retencion_aplicada">Con Retención de IVA 75%</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">
+                  Código Cuenta Contable
+                </label>
+                <input
+                  type="text"
+                  formControlName="accountingAccountCode"
+                  placeholder="5.1.01.01"
+                  class="w-full bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs font-mono text-stone-800"
+                />
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">
+                  Elegible para Libro de Compras
+                </label>
+                <div class="flex items-center gap-2 mt-2">
+                  <input
+                    type="checkbox"
+                    id="fiscalEligibleCheck"
+                    formControlName="fiscalBookEligible"
+                    class="rounded text-amber-600 focus:ring-amber-500 h-4 w-4"
+                  />
+                  <label for="fiscalEligibleCheck" class="text-xs text-stone-700 select-none cursor-pointer">
+                    Declarar en SENIAT
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. Observaciones -->
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">
+              Notas u Observaciones
+            </label>
+            <textarea
+              formControlName="notes"
+              rows="2"
+              placeholder="Detalles adicionales sobre el destino del gasto o soporte de auditoría..."
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+            ></textarea>
+          </div>
+
+          <!-- Acciones del Modal -->
+          <div class="flex items-center justify-end gap-3 pt-3 border-t border-stone-100">
+            <button
+              type="button"
+              (click)="closeCreateModal()"
+              class="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-800 rounded-xl"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="expenseForm.invalid"
+              class="px-4 py-2 text-xs font-bold bg-amber-700 text-white hover:bg-amber-800 disabled:opacity-50 rounded-xl shadow-xs transition-colors"
+            >
+              Guardar Comprobante
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: FICHA / DETALLE DE COMPROBANTE DE EGRESO -->
+  @if (isDetailModalOpen() && selectedExpenseForDetail()) {
+    @let item = selectedExpenseForDetail()!;
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-bold text-xs">
+              P
+            </span>
+            <div>
+              <h3 class="text-sm font-bold text-stone-900 font-mono">{{ item.expenseNumber }}</h3>
+              <p class="text-[11px] text-stone-500">Comprobante Interno de Egreso</p>
+            </div>
+          </div>
+          <button type="button" (click)="closeDetailModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <div class="space-y-4 mt-4 text-xs">
+          <div class="p-3 bg-stone-50 rounded-xl border border-stone-200">
+            <span class="text-[10px] uppercase font-bold text-stone-400 tracking-wider block">Concepto</span>
+            <span class="font-bold text-stone-900 text-sm mt-0.5 block">{{ item.concept }}</span>
+            <span class="text-amber-800 font-medium block mt-1">Categoría: {{ item.categoryLabel }}</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <span class="text-[10px] text-stone-400 block uppercase font-medium">Beneficiario</span>
+              <span class="font-semibold text-stone-900 block mt-0.5">{{ item.supplierOrBeneficiary }}</span>
+              <span class="font-mono text-stone-500 text-[11px] block">{{ item.taxId || 'Sin RIF' }}</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-stone-400 block uppercase font-medium">Fecha & Emisión</span>
+              <span class="font-mono text-stone-900 font-semibold block mt-0.5">{{ item.date }}</span>
+              <span class="text-stone-500 text-[11px] block">Por: {{ item.registeredBy }}</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200">
+            <div>
+              <span class="text-[10px] text-stone-400 block uppercase font-medium">Monto USD</span>
+              <span class="font-mono font-bold text-base text-stone-900 block mt-0.5">
+                {{ item.amountUsd | veCurrency:'$':2 }}
+              </span>
+              <span class="font-mono text-[10px] text-stone-500 block">Tasa: Bs. {{ item.exchangeRateUsed | number:'1.2-2' }}</span>
+            </div>
+            <div>
+              <span class="text-[10px] text-stone-400 block uppercase font-medium">Total en Bolívares</span>
+              <span class="font-mono font-bold text-base text-stone-900 block mt-0.5">
+                {{ item.amountBs | veCurrency:'Bs.':2 }}
+              </span>
+              @if (item.taxAmountUsd) {
+                <span class="font-mono text-[10px] text-emerald-700 block">IVA: ${{ item.taxAmountUsd | number:'1.2-2' }}</span>
+              }
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <span class="text-[10px] text-stone-400 block uppercase font-medium">Detalles de Documento & Pago</span>
+            <div class="p-2.5 bg-white border border-stone-200 rounded-xl space-y-1 font-mono text-[11px]">
+              <div>Tipo: <strong class="capitalize">{{ item.documentType.replace('_', ' ') }}</strong> (Doc: {{ item.documentNumber || 'S/N' }})</div>
+              <div>Método: <strong class="capitalize">{{ item.paymentMethod.replace('_', ' ') }}</strong> (Ref: {{ item.paymentReference || 'S/R' }})</div>
+              @if (item.accountingAccountCode) {
+                <div>Cuenta: <strong class="text-amber-900">{{ item.accountingAccountCode }}</strong> - {{ item.accountingAccountName }}</div>
+              }
+              <div>Fiscal SENIAT: <strong>{{ item.fiscalBookEligible ? 'Declarable en Libro de Compras' : 'No Computable en Libro de Compras' }}</strong></div>
+            </div>
+          </div>
+
+          @if (item.notes) {
+            <div>
+              <span class="text-[10px] text-stone-400 block uppercase font-medium">Observaciones</span>
+              <p class="text-xs text-stone-600 bg-stone-50 p-2.5 rounded-xl border border-stone-100 italic mt-0.5">
+                "{{ item.notes }}"
+              </p>
+            </div>
+          }
+        </div>
+
+        <div class="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-stone-100">
+          <button
+            type="button"
+            (click)="closeDetailModal()"
+            class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white hover:bg-stone-800 rounded-xl"
+          >
+            Cerrar Ficha
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

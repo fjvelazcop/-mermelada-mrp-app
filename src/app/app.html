@@ -91,6 +91,19 @@
           </button>
         }
 
+        @if (api.canViewModule('expenses')) {
+          <button
+            (click)="setTab('expenses')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+            [class.bg-stone-100]="currentTab() === 'expenses'"
+            [class.text-stone-900]="currentTab() === 'expenses'"
+            [class.font-semibold]="currentTab() === 'expenses'"
+          >
+            <mat-icon class="text-xs text-amber-700">receipt_long</mat-icon>
+            <span>Gastos</span>
+          </button>
+        }
+
         @if (api.canViewModule('settings')) {
           <button
             (click)="setTab('settings')"
@@ -207,6 +220,12 @@
       }
       @if (api.canViewModule('payroll')) {
         <button (click)="setTab('payroll')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors" [class.bg-amber-600]="currentTab() === 'payroll'" [class.text-white]="currentTab() === 'payroll'" [class.bg-stone-100]="currentTab() !== 'payroll'" [class.text-stone-700]="currentTab() !== 'payroll'">Nómina</button>
+      }
+      @if (api.canViewModule('expenses')) {
+        <button (click)="setTab('expenses')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-amber-600]="currentTab() === 'expenses'" [class.text-white]="currentTab() === 'expenses'" [class.bg-stone-100]="currentTab() !== 'expenses'" [class.text-stone-700]="currentTab() !== 'expenses'">
+          <mat-icon class="text-xs">receipt_long</mat-icon>
+          <span>Gastos</span>
+        </button>
       }
       @if (api.canViewModule('settings')) {
         <button (click)="setTab('settings')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-amber-600]="currentTab() === 'settings'" [class.text-white]="currentTab() === 'settings'" [class.bg-stone-100]="currentTab() !== 'settings'" [class.text-stone-700]="currentTab() !== 'settings'">
@@ -362,6 +381,20 @@
             </button>
           }
 
+          @if (api.canViewModule('expenses')) {
+            <button
+              (click)="setTab('expenses')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'expenses'"
+              [class.text-amber-900]="currentTab() === 'expenses'"
+              [class.font-semibold]="currentTab() === 'expenses'"
+              [class.text-stone-700]="currentTab() !== 'expenses'"
+            >
+              <mat-icon class="text-sm text-amber-700">receipt_long</mat-icon>
+              <span>Gastos & Egresos</span>
+            </button>
+          }
+
           @if (api.canViewModule('settings')) {
             <button
               (click)="setTab('settings')"
@@ -483,6 +516,9 @@
         }
         @case ('payroll') {
           <app-payroll />
+        }
+        @case ('expenses') {
+          <app-expenses />
         }
         @case ('settings') {
           <app-settings />

@@ -15,7 +15,7 @@ export class AuditLog {
   public api = inject(ErpApiService);
 
   // Inputs
-  public moduleFilter = input<'all' | 'inventario' | 'produccion'>('all');
+  public moduleFilter = input<'all' | 'inventario' | 'produccion' | 'gastos' | 'costos' | 'ventas'>('all');
   public title = input<string>('Log de Auditoría & Trazabilidad');
   public subtitle = input<string>('Historial cronológico inmutable de movimientos de stock, cocción en marmitas y lotes');
   public compact = input<boolean>(false);
@@ -23,7 +23,7 @@ export class AuditLog {
   public showFilters = input<boolean>(true);
 
   // Local state signals
-  public activeModuleFilter = signal<'all' | 'inventario' | 'produccion'>('all');
+  public activeModuleFilter = signal<'all' | 'inventario' | 'produccion' | 'gastos' | 'costos' | 'ventas'>('all');
   public searchQuery = signal<string>('');
   public selectedActionType = signal<string>('all');
   public selectedSeverity = signal<string>('all');
@@ -49,6 +49,8 @@ export class AuditLog {
     {id: 'orden_produccion_procesada', label: 'Cocción & Lotes Finalizados'},
     {id: 'ajuste_merma', label: 'Ajustes & Mermas'},
     {id: 'receta_bom_creada', label: 'Formulaciones BOM'},
+    {id: 'gasto_registrado', label: 'Comprobantes de Egreso Registrados'},
+    {id: 'gasto_eliminado', label: 'Comprobantes de Egreso Eliminados'},
   ];
 
   // Filtered logs computation

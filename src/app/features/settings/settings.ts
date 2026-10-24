@@ -70,6 +70,12 @@ export class Settings {
       description: 'Registro de personal, pago semanal en USD/Bs. y costeo de semanas inactivas.',
     },
     {
+      id: 'expenses',
+      name: 'Gastos & Egresos Operativos',
+      icon: 'receipt_long',
+      description: 'Registro de gastos operativos, viajes, alquiler, retiros de socios y soporte para libros fiscales.',
+    },
+    {
       id: 'settings',
       name: 'Configuración & Permisología',
       icon: 'settings',

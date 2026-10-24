@@ -649,6 +649,7 @@ export class ErpApiService {
         dNotes,
         staff,
         weeks,
+        expensesList,
         costing,
         fiscal,
         dash,
@@ -665,6 +666,7 @@ export class ErpApiService {
         firstValueFrom(this.http.get<DeliveryNote[]>('/api/sales/delivery-notes')),
         firstValueFrom(this.http.get<Employee[]>('/api/payroll/employees')),
         firstValueFrom(this.http.get<PayrollWeek[]>('/api/payroll/weeks')),
+        firstValueFrom(this.http.get<Expense[]>('/api/expenses')).catch(() => []),
         firstValueFrom(this.http.get<CostStructureAnalysis>('/api/costing/summary')),
         firstValueFrom(this.http.get<FiscalSettings>('/api/fiscal-settings')),
         firstValueFrom(this.http.get<any>('/api/reports/dashboard')),
@@ -682,6 +684,7 @@ export class ErpApiService {
       this.deliveryNotes.set(dNotes);
       this.employees.set(staff);
       this.payrollWeeks.set(weeks);
+      this.expenses.set(expensesList || []);
       this.costStructure.set(costing);
       this.fiscalSettings.set(fiscal);
       this.dashboardData.set(dash);
@@ -1047,6 +1050,66 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar personal';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  // --- EXPENSES & OPERATING OUTFLOWS ---
+  public async addExpense(data: Omit<Expense, 'id' | 'expenseNumber'>) {
+    try {
+      const res = await firstValueFrom<Expense>(this.http.post<Expense>('/api/expenses', data));
+      this.expenses.update(list => [res, ...list]);
+
+      await this.recordAuditLog({
+        module: 'gastos',
+        actionType: 'gasto_registrado',
+        title: `Gasto Registrado: ${res.expenseNumber}`,
+        description: `${res.concept} — $${res.amountUsd.toFixed(2)} (${res.categoryLabel}). Beneficiario: ${res.supplierOrBeneficiary}`,
+        severity: res.category === 'gastos_personales_socios' ? 'warning' : 'info',
+        details: {
+          targetId: res.id,
+          targetCode: res.expenseNumber,
+          itemName: res.concept,
+          costUsd: res.amountUsd,
+          referenceDoc: res.documentNumber || res.paymentReference,
+          operatorNotes: res.notes,
+        },
+      });
+
+      this.showToast(`Gasto ${res.expenseNumber} registrado exitosamente ($${res.amountUsd.toFixed(2)}).`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al registrar gasto';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteExpense(id: string) {
+    try {
+      const exp = this.expenses().find(e => e.id === id);
+      await firstValueFrom(this.http.delete(`/api/expenses/${id}`));
+      this.expenses.update(list => list.filter(e => e.id !== id));
+
+      await this.recordAuditLog({
+        module: 'gastos',
+        actionType: 'gasto_eliminado',
+        title: `Gasto Eliminado: ${exp ? exp.expenseNumber : id}`,
+        description: `Eliminado comprobante de egreso por $${exp ? exp.amountUsd.toFixed(2) : '0.00'} (${exp ? exp.concept : ''})`,
+        severity: 'warning',
+        details: {
+          targetId: id,
+          targetCode: exp ? exp.expenseNumber : undefined,
+          costUsd: exp ? exp.amountUsd : undefined,
+        },
+      });
+
+      this.showToast('Gasto eliminado del registro.');
+      await this.refreshAllData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar gasto';
       this.showToast(msg, 'error');
       throw err;
     }

@@ -348,6 +348,40 @@ app.post('/api/costing/simulate', (req, res) => {
   }
 });
 
+// --- EXPENSES (GASTOS OPERATIVOS, VIAJES, ALQUILER, RETIROS DE SOCIOS) ---
+app.get('/api/expenses', (req, res) => {
+  try {
+    res.json(dbInstance.getExpenses());
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al consultar gastos';
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.post('/api/expenses', (req, res) => {
+  try {
+    const created = dbInstance.addExpense(req.body);
+    res.status(201).json(created);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al registrar gasto';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.delete('/api/expenses/:id', (req, res) => {
+  try {
+    const success = dbInstance.deleteExpense(req.params.id);
+    if (!success) {
+      res.status(404).json({ error: 'Gasto no encontrado' });
+      return;
+    }
+    res.json({ success: true, message: 'Gasto eliminado exitosamente' });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al eliminar gasto';
+    res.status(400).json({ error: msg });
+  }
+});
+
 // --- FISCAL SETTINGS ---
 app.get('/api/fiscal-settings', (req, res) => {
   try {

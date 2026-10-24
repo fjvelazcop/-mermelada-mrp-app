@@ -2288,6 +2288,42 @@ export class ErpDatabase {
     }
     return newEntry;
   }
+
+  // --- EXPENSES (GASTOS OPERATIVOS, VIAJES, ALQUILER, RETIROS DE SOCIOS) ---
+  public getExpenses(): Expense[] {
+    return this.state.expenses || [];
+  }
+
+  public addExpense(data: Omit<Expense, 'id' | 'expenseNumber'>): Expense {
+    if (!this.state.expenses) {
+      this.state.expenses = [];
+    }
+    const count = this.state.expenses.length + 1;
+    const nextNum = 'GTO-2026-00' + (count < 10 ? '0' + count : count);
+    const rate = data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
+    const amountBs = data.amountBs || Number((data.amountUsd * rate).toFixed(2));
+    const taxAmountBs = data.taxAmountUsd ? Number((data.taxAmountUsd * rate).toFixed(2)) : undefined;
+
+    const newExpense: Expense = {
+      ...data,
+      id: 'gto-' + Date.now(),
+      expenseNumber: nextNum,
+      exchangeRateUsed: rate,
+      amountBs,
+      taxAmountBs,
+    };
+
+    this.state.expenses.unshift(newExpense);
+    return newExpense;
+  }
+
+  public deleteExpense(id: string): boolean {
+    if (!this.state.expenses) return false;
+    const idx = this.state.expenses.findIndex(e => e.id === id);
+    if (idx === -1) return false;
+    this.state.expenses.splice(idx, 1);
+    return true;
+  }
 }
 
 export const dbInstance = new ErpDatabase();

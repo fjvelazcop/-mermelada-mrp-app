@@ -7,6 +7,7 @@ import {ProductionComponent} from './features/production/production';
 import {CostingComponent} from './features/costing/costing';
 import {SalesComponent} from './features/sales/sales';
 import {PayrollComponent} from './features/payroll/payroll';
+import {ExpensesComponent} from './features/expenses/expenses';
 import {Settings} from './features/settings/settings';
 import {ArchitectureDocsComponent} from './features/architecture-docs/architecture-docs';
 import {VeCurrencyPipe} from './core/pipes/ve-currency.pipe';
@@ -18,6 +19,7 @@ export type MainNavigationTab =
   | 'costing'
   | 'sales'
   | 'payroll'
+  | 'expenses'
   | 'settings'
   | 'architecture';
 
@@ -32,6 +34,7 @@ export type MainNavigationTab =
     CostingComponent,
     SalesComponent,
     PayrollComponent,
+    ExpensesComponent,
     Settings,
     ArchitectureDocsComponent,
     VeCurrencyPipe,

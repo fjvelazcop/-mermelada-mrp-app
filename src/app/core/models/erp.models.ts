@@ -513,7 +513,7 @@ export interface FinishedPresentationCost {
   };
 }
 
-export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas';
+export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas' | 'gastos';
 export type AuditSeverity = 'info' | 'success' | 'warning' | 'critical';
 
 export interface AuditLogDetails {
@@ -545,7 +545,9 @@ export interface AuditLogEntry {
     | 'orden_produccion_creada'
     | 'orden_produccion_procesada'
     | 'receta_bom_creada'
-    | 'alerta_stock_critico';
+    | 'alerta_stock_critico'
+    | 'gasto_registrado'
+    | 'gasto_eliminado';
   title: string;
   description: string;
   userId: string;
