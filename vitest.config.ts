@@ -15,5 +15,18 @@ export default defineConfig({
     },
     testTimeout: 20_000,
     hookTimeout: 20_000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: 'coverage/server',
+      include: ['src/server/**/*.ts'],
+      exclude: ['src/server/**/*.spec.ts', 'src/server/**/*.d.ts'],
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        statements: 80,
+        branches: 70,
+      },
+    },
   },
 });

@@ -390,11 +390,25 @@ function migrate(db: Database.Database): void {
       details_json TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS auth_users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      national_id TEXT,
+      password_hash TEXT NOT NULL,
+      role_id TEXT NOT NULL,
+      department TEXT,
+      status TEXT NOT NULL DEFAULT 'activo',
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_production_materials_order ON production_order_materials(order_id);
     CREATE INDEX IF NOT EXISTS idx_sales_items_order ON sales_order_items(order_id);
     CREATE INDEX IF NOT EXISTS idx_delivery_items_note ON delivery_note_items(note_id);
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_week ON payroll_payments(week_id);
+    CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
   `);
 
   const row = db
@@ -411,6 +425,9 @@ function migrate(db: Database.Database): void {
   }
   if (currentVersion < 2) {
     insert.run(2, new Date().toISOString());
+  }
+  if (currentVersion < 3) {
+    insert.run(3, new Date().toISOString());
   }
 }
 

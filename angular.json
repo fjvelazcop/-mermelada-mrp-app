@@ -37,7 +37,7 @@
             ],
             "server": "src/main.server.ts",
             "outputMode": "server",
-            "externalDependencies": ["better-sqlite3"],
+            "externalDependencies": ["better-sqlite3", "swagger-ui-express", "swagger-ui-dist"],
             "ssr": {
               "entry": "src/server.ts"
             }

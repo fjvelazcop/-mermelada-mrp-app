@@ -58,6 +58,7 @@ The server persists the full ERP state in a real SQLite database using `better-s
   | Payroll | `employees`, `payroll_weeks`, `payroll_payments` |
   | Expenses | `expenses`, `expense_categories` |
   | Configuration | `fiscal_settings`, `exchange_rates`, `exchange_rate_history`, `audit_logs` |
+  | Security | `auth_users` (scrypt password hashes + role) |
 
 - **Auto‑save:** every mutating operation on `dbInstance` writes the new snapshot to the relational tables in a single transaction (via a Proxy that wraps `ErpDatabase`). See `src/server/database/relational-persistence.ts`.
 - **Legacy migration:** databases created before the relational schema are imported once from the old `app_state` JSON table.
@@ -65,11 +66,38 @@ The server persists the full ERP state in a real SQLite database using `better-s
 
 To start fresh, delete `data/mermelada.db` (and the `-wal`/`-shm` files) or call `POST /api/system/reset`.
 
+### Authentication & RBAC
+
+Authentication is **opt-in** so the demo keeps working without a login screen:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AUTH_ENABLED` | `false` | When `true`, every `/api/*` route (except health, login and docs) requires `Authorization: Bearer <token>`. |
+| `AUTH_SECRET` | dev secret | HMAC‑SHA256 key used to sign tokens. **Change it in production.** |
+| `AUTH_TOKEN_TTL_SECONDS` | `28800` (8 h) | Token lifetime. |
+| `AUTH_SEED_PASSWORD` | `mermelada123` | Password assigned to the five demo users on first run. |
+
+Demo users (seeded into `auth_users` once): `admin` (admin), `supervisor` (supervisor_planta), `operador` (operator), `costos` (analista_costos) and `almacen` (almacenista).
+
+```bash
+# Obtain a token
+curl -X POST http://localhost:4000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"mermelada123"}'
+
+# Use it on protected routes
+curl http://localhost:4000/api/inventory/raw-materials \
+  -H "Authorization: Bearer <token>"
+```
+
+Passwords are hashed with Node's `scrypt` (random salt, timing‑safe comparison) and tokens are stateless `base64url(payload).base64url(HMAC-SHA256)`. Permissions are defined per role and module in `src/server/auth.ts`.
+
 ### Server tests
 
 ```bash
-npm run test:server        # run the backend integration tests once
-npm run test:server:watch  # watch mode
+npm run test:server            # backend integration tests
+npm run test:server:watch      # watch mode
+npm run test:server:coverage   # coverage report (threshold: 80% lines/functions/statements)
 ```
 
 The backend suite (`src/server/**/*.spec.ts`, Vitest) uses a real temporary SQLite file and covers:
@@ -77,7 +105,8 @@ The backend suite (`src/server/**/*.spec.ts`, Vitest) uses a real temporary SQLi
 - creation of the normalized schema and migration history,
 - relational roundtrip of the full seed state,
 - persistence of mutations and reload after a simulated restart,
-- HTTP API integration tests (health, inventory, reset and read-only endpoints).
+- HTTP API integration tests (health, auth/RBAC, validation, CRUD, docs, reset),
+- payload validation errors (HTTP 422) and uniform error responses.
 
 ---
 
@@ -113,24 +142,26 @@ The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `
 
 | Category | Key Endpoints |
 |----------|---------------|
+| **Docs** | `GET /api/openapi.json` (OpenAPI 3.0), `GET /api/docs` (Swagger UI) |
+| **Auth** | `POST /api/auth/login`, `GET /api/auth/me` |
 | **Inventory → Raw Materials** | `GET /api/inventory/raw-materials`, `POST /api/inventory/raw-materials`, `PUT /api/inventory/raw-materials/:id` |
 | **Inventory → Movements** | `GET /api/inventory/movements`, `POST /api/inventory/movements` |
 | **Finished Goods** | `GET /api/inventory/finished-goods`, `PUT /api/inventory/finished-goods/:id` |
 | **Recipes / BOM** | `GET /api/recipes`, `POST /api/recipes` |
 | **Production Orders (MTO)** | `GET /api/production-orders`, `POST /api/production-orders`, `POST /api/production-orders/:id/process` |
 | **Customers** | `GET /api/sales/customers`, `POST /api/sales/customers` |
-| **Sales Orders** | `GET /api/sales/orders`, `POST /api/sales/orders`, `PUT /api/sales/orders/:id/status` |
-| **Delivery Notes** | `POST /api/sales/orders/:id/create-delivery-note`, `GET /api/sales/delivery-notes` |
+| **Sales Orders** | `GET /api/sales/orders`, `POST /api/sales/orders`, `PUT /api/sales/orders/:id/status`, `POST /api/sales/orders/:id/create-production-order`, `POST /api/sales/orders/:id/create-delivery-note` |
+| **Delivery Notes** | `GET /api/sales/delivery-notes` |
 | **Payroll & Employees** | `GET /api/payroll/weeks`, `POST /api/payroll/weeks`, `GET /api/payroll/employees`, `POST /api/payroll/employees` |
 | **Costing / Margins** | `GET /api/costing/summary`, `POST /api/costing/simulate` |
-| **Expenses** | `GET /api/expenses`, `POST /api/expenses`, `DELETE /api/expenses/:id` |
+| **Expenses** | `GET /api/expenses`, `POST /api/expenses`, `DELETE /api/expenses/:id`, `GET/POST /api/expenses/categories`, `PUT/DELETE /api/expenses/categories/:id` |
 | **Fiscal Settings** | `GET /api/fiscal-settings`, `PUT /api/fiscal-settings` |
 | **Exchange Rates** | `GET /api/exchange-rates`, `POST /api/exchange-rates/update`, `POST /api/exchange-rates/refresh` |
 | **Audit Logs** | `GET /api/audit-logs`, `POST /api/audit-logs` |
-| **System** | `POST /api/system/reset` (reset demo data) |
+| **System** | `POST /api/system/reset` (reset demo data, admin only when auth is enabled) |
 | **Dashboard Report** | `GET /api/reports/dashboard` |
 
-All endpoints return JSON. Error handling follows the pattern `{ error: "description" }` with appropriate HTTP status codes (400, 404, 500).
+All endpoints return JSON. Payloads are validated with **zod**; invalid input returns **422** with `{ error, code: "VALIDATION_ERROR", details: { issues: [{ path, message }] } }`. Unknown API routes return a JSON **404**, and every other error uses `{ error, code, details? }` with status 400/401/403/404/500. OpenAPI documentation is generated from `src/server/openapi.ts`.
 
 ---
 
@@ -198,14 +229,15 @@ const tasks = this.agents.plannerAgent.planGoal('mostrar resumen de stock bajo')
 
 ## 📊 Test Coverage
 
-The project uses **Vitest**. Run the suite:
+The project uses **Vitest** for the Angular unit tests and for the backend integration suite:
 
 ```bash
-bun run test          # runs all tests
-bun run test -- --coverage   # generates coverage report in `coverage/`
+npm run test                 # Angular unit tests
+npm run test:server          # backend integration tests
+npm run test:server:coverage # backend coverage (HTML + lcov in coverage/server/)
 ```
 
-A **badge** is embedded in the README (see the "Test Coverage" section). After running with `--coverage`, update the badge percentage manually or via a CI job.
+Backend coverage includes `src/server/**/*.ts` (excluding specs) and enforces thresholds of **80% lines/functions/statements** and **70% branches**. The report is generated in `coverage/server/`.
 
 ---
 
@@ -213,10 +245,9 @@ A **badge** is embedded in the README (see the "Test Coverage" section). After r
 
 - **Vector store for semantic memory** – long‑term context across sessions (e.g., Pinecone, Qdrant).
 - **External market APIs** – connect `InformationGatheringAgent` to price‑forecast services for guava derivatives.
-- **Role‑based access control** – refine `CybersecurityAgent.isAuthorized` with granular permissions per route.
 - **PDF/Excel report generation** – leverage `jsPDF` + `jspdf-autotable` (already a dependency) to export dashboards.
 - **Persistent session memory** – `MemoryAgent.persistToLocalStorage()` / `loadFromLocalStorage()` to survive page reloads.
-- **CI/CD integration** – GitHub Actions to run tests, build, and auto‑update the README badge on each push.
+- **CI/CD integration** – GitHub Actions to run tests, build, and enforce backend coverage on each push.
 
 ---
 

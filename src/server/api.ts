@@ -1,6 +1,90 @@
-import express from 'express';
+import express, {
+  type NextFunction,
+  type Request,
+  type RequestHandler,
+  type Response,
+} from 'express';
+import swaggerUi from 'swagger-ui-express';
 import { dbInstance } from './erp-database.js';
 import { getDb, getDbPath } from './database/persistence.js';
+import {
+  authenticate,
+  authorizeRequest,
+  ensureSeedUsers,
+  isAuthEnabled,
+  loginHandler,
+  meHandler,
+} from './auth.js';
+import { ApiError, apiNotFoundHandler, errorHandler } from './errors.js';
+import {
+  auditLogSchema,
+  costingSimulationSchema,
+  customerSchema,
+  deliveryNoteSchema,
+  employeeSchema,
+  exchangeRateUpdateSchema,
+  expenseCategorySchema,
+  expenseCategoryUpdateSchema,
+  expenseSchema,
+  finishedGoodUpdateSchema,
+  fiscalSettingsSchema,
+  idParamsSchema,
+  inventoryMovementSchema,
+  loginSchema,
+  payrollWeekSchema,
+  productionOrderSchema,
+  rawMaterialSchema,
+  rawMaterialUpdateSchema,
+  recipeSchema,
+  salesOrderSchema,
+  salesOrderStatusUpdateSchema,
+  validateBody,
+  validateParams,
+} from './validation.js';
+import { openApiDocument } from './openapi.js';
+
+type Handler = (req: Request, res: Response, next: NextFunction) => unknown;
+
+function toApiError(err: unknown, status: number, code: string): ApiError {
+  if (err instanceof ApiError) return err;
+  const message =
+    err instanceof Error ? err.message : 'Error interno del servidor';
+  return new ApiError(status, message, code);
+}
+
+/** Wrap a mutating handler: business-rule failures become HTTP 400. */
+function mutation(handler: Handler): RequestHandler {
+  return (req, res, next) => {
+    try {
+      const result = handler(req, res, next);
+      if (result instanceof Promise) {
+        result.catch((err) => next(toApiError(err, 400, 'BAD_REQUEST')));
+      }
+    } catch (err) {
+      next(toApiError(err, 400, 'BAD_REQUEST'));
+    }
+  };
+}
+
+/** Wrap a read-only handler: unexpected failures become HTTP 500. */
+function query(handler: Handler): RequestHandler {
+  return (req, res, next) => {
+    try {
+      const result = handler(req, res, next);
+      if (result instanceof Promise) {
+        result.catch((err) => next(toApiError(err, 500, 'INTERNAL_ERROR')));
+      }
+    } catch (err) {
+      next(toApiError(err, 500, 'INTERNAL_ERROR'));
+    }
+  };
+}
+
+/** Resolve a validated `:id` path parameter as a plain string. */
+function routeId(req: Request): string {
+  const value = req.params['id'];
+  return Array.isArray(value) ? value[0] : value;
+}
 
 /**
  * Build the Express application with every ERP API route.
@@ -10,249 +94,262 @@ import { getDb, getDbPath } from './database/persistence.js';
  */
 export function createApiApp(): express.Express {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '2mb' }));
+
+  // Authentication / RBAC middleware. Both are no-ops unless AUTH_ENABLED=true.
+  app.use(authenticate);
+  app.use(authorizeRequest);
+
+  ensureSeedUsers();
 
   // --- HEALTH CHECK ---
-  app.get('/api/health', (req, res) => {
-    try {
+  app.get(
+    '/api/health',
+    query((req, res) => {
       const db = getDb();
-      const result = db.prepare('SELECT 1 AS ok').get() as { ok: number } | undefined;
+      const result = db.prepare('SELECT 1 AS ok').get() as
+        | { ok: number }
+        | undefined;
       res.json({
         status: 'ok',
+        authEnabled: isAuthEnabled(),
         database: {
           path: getDbPath(),
           connected: result?.ok === 1,
         },
         timestamp: new Date().toISOString(),
       });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error desconocido';
-      res.status(500).json({ status: 'error', error: msg });
-    }
+    })
+  );
+
+  // --- OPENAPI / SWAGGER DOCS (public) ---
+  app.get('/api/openapi.json', (req, res) => {
+    res.json(openApiDocument);
   });
-  
+  app.get(
+    '/api/docs',
+    swaggerUi.setup(openApiDocument, {
+      customSiteTitle: 'Pulpacraft ERP API',
+    })
+  );
+  app.use(
+    '/api/docs',
+    swaggerUi.serve,
+    swaggerUi.setup(openApiDocument, {
+      customSiteTitle: 'Pulpacraft ERP API',
+    })
+  );
+
+  // --- AUTHENTICATION ---
+  app.post('/api/auth/login', validateBody(loginSchema), loginHandler);
+  app.get('/api/auth/me', meHandler);
+
   // ==========================================
   // REST API ROUTES - PULPACRAFT ERP / MRP
   // ==========================================
-  
+
   // --- INVENTORY: RAW MATERIALS ---
-  app.get('/api/inventory/raw-materials', (req, res) => {
-    try {
-      const materials = dbInstance.getRawMaterials();
-      res.json(materials);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error desconocido';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/inventory/raw-materials', (req, res) => {
-    try {
+  app.get(
+    '/api/inventory/raw-materials',
+    query((req, res) => {
+      res.json(dbInstance.getRawMaterials());
+    })
+  );
+
+  app.post(
+    '/api/inventory/raw-materials',
+    validateBody(rawMaterialSchema),
+    mutation((req, res) => {
       const newMat = dbInstance.addRawMaterial(req.body);
       res.status(201).json(newMat);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar materia prima';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.put('/api/inventory/raw-materials/:id', (req, res) => {
-    try {
-      const updated = dbInstance.updateRawMaterial(req.params.id, req.body);
+    })
+  );
+
+  app.put(
+    '/api/inventory/raw-materials/:id',
+    validateParams(idParamsSchema),
+    validateBody(rawMaterialUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateRawMaterial(routeId(req), req.body);
       if (!updated) {
-        res.status(404).json({ error: 'Materia prima no encontrada' });
+        res.status(404).json({ error: 'Materia prima no encontrada', code: 'NOT_FOUND' });
         return;
       }
       res.json(updated);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar materia prima';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/inventory/movements', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/inventory/movements',
+    validateBody(inventoryMovementSchema),
+    mutation((req, res) => {
       const mov = dbInstance.addInventoryMovement(req.body);
       res.status(201).json(mov);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar movimiento';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.get('/api/inventory/movements', (req, res) => {
-    try {
+    })
+  );
+
+  app.get(
+    '/api/inventory/movements',
+    query((req, res) => {
       res.json(dbInstance.getMovements());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar movimientos';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- AUDIT LOGS & TRACEABILITY ---
-  app.get('/api/audit-logs', (req, res) => {
-    try {
+  app.get(
+    '/api/audit-logs',
+    query((req, res) => {
       const moduleFilter = req.query['module'] as string | undefined;
       res.json(dbInstance.getAuditLogs(moduleFilter));
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar logs de auditoría';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/audit-logs', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/audit-logs',
+    validateBody(auditLogSchema),
+    mutation((req, res) => {
       const entry = dbInstance.addAuditLog(req.body);
       res.status(201).json(entry);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar log de auditoría';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- INVENTORY: FINISHED GOODS ---
-  app.get('/api/inventory/finished-goods', (req, res) => {
-    try {
+  app.get(
+    '/api/inventory/finished-goods',
+    query((req, res) => {
       res.json(dbInstance.getFinishedGoods());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar productos terminados';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.put('/api/inventory/finished-goods/:id', (req, res) => {
-    try {
-      const updated = dbInstance.updateFinishedGood(req.params.id, req.body);
+    })
+  );
+
+  app.put(
+    '/api/inventory/finished-goods/:id',
+    validateParams(idParamsSchema),
+    validateBody(finishedGoodUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateFinishedGood(routeId(req), req.body);
       if (!updated) {
-        res.status(404).json({ error: 'Producto no encontrado' });
+        res.status(404).json({ error: 'Producto no encontrado', code: 'NOT_FOUND' });
         return;
       }
       res.json(updated);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar producto';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- RECIPES / BOM ---
-  app.get('/api/recipes', (req, res) => {
-    try {
+  app.get(
+    '/api/recipes',
+    query((req, res) => {
       res.json(dbInstance.getRecipes());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar recetas';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/recipes', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/recipes',
+    validateBody(recipeSchema),
+    mutation((req, res) => {
       const created = dbInstance.addRecipe(req.body);
       res.status(201).json(created);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear receta';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- PRODUCTION ORDERS (MTO) ---
-  app.get('/api/production-orders', (req, res) => {
-    try {
+  app.get(
+    '/api/production-orders',
+    query((req, res) => {
       res.json(dbInstance.getProductionOrders());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar órdenes';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/production-orders', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/production-orders',
+    validateBody(productionOrderSchema),
+    mutation((req, res) => {
       const result = dbInstance.createProductionOrder(req.body);
       res.status(201).json(result);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear orden de producción';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/production-orders/:id/process', (req, res) => {
-    try {
-      const result = dbInstance.processProductionOrder(req.params.id);
+    })
+  );
+
+  app.post(
+    '/api/production-orders/:id/process',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const result = dbInstance.processProductionOrder(routeId(req));
       res.json(result);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al procesar orden';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- CUSTOMERS ---
-  app.get('/api/sales/customers', (req, res) => {
-    try {
+  app.get(
+    '/api/sales/customers',
+    query((req, res) => {
       res.json(dbInstance.getCustomers());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar clientes';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/sales/customers', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/sales/customers',
+    validateBody(customerSchema),
+    mutation((req, res) => {
       const created = dbInstance.addCustomer(req.body);
       res.status(201).json(created);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear cliente';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- SALES ORDERS ---
-  app.get('/api/sales/orders', (req, res) => {
-    try {
+  app.get(
+    '/api/sales/orders',
+    query((req, res) => {
       res.json(dbInstance.getSalesOrders());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar pedidos';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/sales/orders', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/sales/orders',
+    validateBody(salesOrderSchema),
+    mutation((req, res) => {
       const created = dbInstance.addSalesOrder(req.body);
       res.status(201).json(created);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear pedido de venta';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.put('/api/sales/orders/:id/status', (req, res) => {
-    try {
-      const updated = dbInstance.updateSalesOrderStatus(req.params.id, req.body.status);
+    })
+  );
+
+  app.put(
+    '/api/sales/orders/:id/status',
+    validateParams(idParamsSchema),
+    validateBody(salesOrderStatusUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateSalesOrderStatus(
+        routeId(req),
+        req.body.status
+      );
       if (!updated) {
-        res.status(404).json({ error: 'Pedido no encontrado' });
+        res.status(404).json({ error: 'Pedido no encontrado', code: 'NOT_FOUND' });
         return;
       }
       res.json(updated);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar estado';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/sales/orders/:id/create-production-order', (req, res) => {
-    try {
-      const so = dbInstance.getSalesOrders().find(s => s.id === req.params.id);
+    })
+  );
+
+  app.post(
+    '/api/sales/orders/:id/create-production-order',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const so = dbInstance.getSalesOrders().find((s) => s.id === routeId(req));
       if (!so) {
-        res.status(404).json({ error: 'Pedido no encontrado' });
+        res.status(404).json({ error: 'Pedido no encontrado', code: 'NOT_FOUND' });
         return;
       }
-  
+
       // Determine recipe by presentation of the first item
       const item = so.items[0];
       const recipes = dbInstance.getRecipes();
-      const recipe = recipes.find(r => r.presentation === item.presentation) || recipes[0];
-  
-      const batchCount = Math.max(1, Math.ceil(item.quantity / recipe.batchSizeUnits));
-  
+      const recipe =
+        recipes.find((r) => r.presentation === item.presentation) || recipes[0];
+
+      const batchCount = Math.max(
+        1,
+        Math.ceil(item.quantity / recipe.batchSizeUnits)
+      );
+
       const result = dbInstance.createProductionOrder({
         recipeId: recipe.id,
         batchCount,
@@ -260,273 +357,259 @@ export function createApiApp(): express.Express {
         lotNumber: `L-MTO-${Date.now().toString().slice(-4)}`,
         operatorNotes: `Orden MTO generada automáticamente para ${so.customerName} (${so.orderNumber})`,
       });
-  
+
       res.status(201).json(result);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear orden MTO';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/sales/orders/:id/create-delivery-note', (req, res) => {
-    try {
-      const note = dbInstance.createDeliveryNote(req.params.id, req.body.transporter);
+    })
+  );
+
+  app.post(
+    '/api/sales/orders/:id/create-delivery-note',
+    validateParams(idParamsSchema),
+    validateBody(deliveryNoteSchema),
+    mutation((req, res) => {
+      const note = dbInstance.createDeliveryNote(
+        routeId(req),
+        req.body.transporter
+      );
       res.status(201).json(note);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al emitir nota de entrega';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.get('/api/sales/delivery-notes', (req, res) => {
-    try {
+    })
+  );
+
+  app.get(
+    '/api/sales/delivery-notes',
+    query((req, res) => {
       res.json(dbInstance.getDeliveryNotes());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar notas de entrega';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- PAYROLL & WEEKS ---
-  app.get('/api/payroll/weeks', (req, res) => {
-    try {
+  app.get(
+    '/api/payroll/weeks',
+    query((req, res) => {
       res.json(dbInstance.getPayrollWeeks());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar nómina';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/payroll/weeks', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/payroll/weeks',
+    validateBody(payrollWeekSchema),
+    mutation((req, res) => {
       const created = dbInstance.addPayrollWeek(req.body);
       res.status(201).json(created);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar semana de nómina';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.get('/api/payroll/employees', (req, res) => {
-    try {
+    })
+  );
+
+  app.get(
+    '/api/payroll/employees',
+    query((req, res) => {
       res.json(dbInstance.getEmployees());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar empleados';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/payroll/employees', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/payroll/employees',
+    validateBody(employeeSchema),
+    mutation((req, res) => {
       const created = dbInstance.addEmployee(req.body);
       res.status(201).json(created);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar empleado';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- COSTING & MARGINS ---
-  app.get('/api/costing/summary', (req, res) => {
-    try {
+  app.get(
+    '/api/costing/summary',
+    query((req, res) => {
       res.json(dbInstance.getCostStructure());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar estructura de costos';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/costing/simulate', (req, res) => {
-    try {
-      const { directMaterial, directPackaging, directLabor, utilityCost, inactiveWeeksCount, targetMarginWholesale, targetMarginRetail } = req.body;
-      
+    })
+  );
+
+  app.post(
+    '/api/costing/simulate',
+    validateBody(costingSimulationSchema),
+    mutation((req, res) => {
+      const {
+        directMaterial,
+        directPackaging,
+        directLabor,
+        utilityCost,
+        inactiveWeeksCount,
+        targetMarginWholesale,
+        targetMarginRetail,
+      } = req.body;
+
       // Prorate inactive weeks fixed cost assumption ($185/wk across 48 weeks, approx $3.85 per production lot)
-      const inactiveAbsorbedPerUnit = (inactiveWeeksCount * 185) / 1000; // estimated absorption factor
-      const totalUnitCost = directMaterial + directPackaging + directLabor + utilityCost + inactiveAbsorbedPerUnit;
-      
+      const inactiveAbsorbedPerUnit = (inactiveWeeksCount * 185) / 1000;
+      const totalUnitCost =
+        directMaterial +
+        directPackaging +
+        directLabor +
+        utilityCost +
+        inactiveAbsorbedPerUnit;
+
       const wholesaleMargin = (targetMarginWholesale || 30) / 100;
       const retailMargin = (targetMarginRetail || 45) / 100;
-  
+
       const suggestedWholesale = totalUnitCost / (1 - wholesaleMargin);
       const suggestedRetail = totalUnitCost / (1 - retailMargin);
-  
+
       res.json({
         totalUnitCost: Number(totalUnitCost.toFixed(2)),
         inactiveAbsorbedPerUnit: Number(inactiveAbsorbedPerUnit.toFixed(2)),
         suggestedWholesalePrice: Number(suggestedWholesale.toFixed(2)),
         suggestedRetailPrice: Number(suggestedRetail.toFixed(2)),
-        wholesaleGrossProfit: Number((suggestedWholesale - totalUnitCost).toFixed(2)),
-        retailGrossProfit: Number((suggestedRetail - totalUnitCost).toFixed(2)),
+        wholesaleGrossProfit: Number(
+          (suggestedWholesale - totalUnitCost).toFixed(2)
+        ),
+        retailGrossProfit: Number(
+          (suggestedRetail - totalUnitCost).toFixed(2)
+        ),
       });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error en simulador de costeo';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- EXPENSES (GASTOS OPERATIVOS, VIAJES, ALQUILER, RETIROS DE SOCIOS) ---
-  app.get('/api/expenses', (req, res) => {
-    try {
+  app.get(
+    '/api/expenses',
+    query((req, res) => {
       res.json(dbInstance.getExpenses());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar gastos';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/expenses', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/expenses',
+    validateBody(expenseSchema),
+    mutation((req, res) => {
       const created = dbInstance.addExpense(req.body);
       res.status(201).json(created);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar gasto';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.delete('/api/expenses/:id', (req, res) => {
-    try {
-      const success = dbInstance.deleteExpense(req.params.id);
+    })
+  );
+
+  app.delete(
+    '/api/expenses/:id',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const success = dbInstance.deleteExpense(routeId(req));
       if (!success) {
-        res.status(404).json({ error: 'Gasto no encontrado' });
+        res.status(404).json({ error: 'Gasto no encontrado', code: 'NOT_FOUND' });
         return;
       }
       res.json({ success: true, message: 'Gasto eliminado exitosamente' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar gasto';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- EXPENSES CATEGORIES & BUDGETS ---
-  app.get('/api/expenses/categories', (req, res) => {
-    try {
+  app.get(
+    '/api/expenses/categories',
+    query((req, res) => {
       res.json(dbInstance.getExpenseCategories());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar categorías de gastos';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/expenses/categories', (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/expenses/categories',
+    validateBody(expenseCategorySchema),
+    mutation((req, res) => {
       const created = dbInstance.addExpenseCategory(req.body);
       res.status(201).json(created);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear categoría de gasto';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.put('/api/expenses/categories/:id', (req, res) => {
-    try {
-      const updated = dbInstance.updateExpenseCategory(req.params.id, req.body);
+    })
+  );
+
+  app.put(
+    '/api/expenses/categories/:id',
+    validateParams(idParamsSchema),
+    validateBody(expenseCategoryUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateExpenseCategory(
+        routeId(req),
+        req.body
+      );
       if (!updated) {
-        res.status(404).json({ error: 'Categoría no encontrada' });
+        res.status(404).json({ error: 'Categoría no encontrada', code: 'NOT_FOUND' });
         return;
       }
       res.json(updated);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar categoría de gasto';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.delete('/api/expenses/categories/:id', (req, res) => {
-    try {
-      const success = dbInstance.deleteExpenseCategory(req.params.id);
+    })
+  );
+
+  app.delete(
+    '/api/expenses/categories/:id',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const success = dbInstance.deleteExpenseCategory(routeId(req));
       if (!success) {
-        res.status(404).json({ error: 'Categoría no encontrada' });
+        res.status(404).json({ error: 'Categoría no encontrada', code: 'NOT_FOUND' });
         return;
       }
       res.json({ success: true, message: 'Categoría eliminada exitosamente' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar categoría de gasto';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- FISCAL SETTINGS ---
-  app.get('/api/fiscal-settings', (req, res) => {
-    try {
+  app.get(
+    '/api/fiscal-settings',
+    query((req, res) => {
       res.json(dbInstance.getFiscalSettings());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar configuración fiscal';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.put('/api/fiscal-settings', (req, res) => {
-    try {
+    })
+  );
+
+  app.put(
+    '/api/fiscal-settings',
+    validateBody(fiscalSettingsSchema),
+    mutation((req, res) => {
       const updated = dbInstance.updateFiscalSettings(req.body);
       res.json(updated);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al guardar configuración fiscal';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- DAILY EXCHANGE RATES (USD & USDT VENEZUELA) ---
-  app.get('/api/exchange-rates', (req, res) => {
-    try {
+  app.get(
+    '/api/exchange-rates',
+    query((req, res) => {
       const rates = dbInstance.getExchangeRates();
       res.json(rates);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar tasas del día';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/exchange-rates/update', (req, res) => {
-    try {
-      const { usdRate, usdtRate, source, notes } = req.body;
-      if (!usdRate || !usdtRate) {
-        res.status(400).json({ error: 'Las tasas USD y USDT son requeridas' });
-        return;
-      }
-      const rates = dbInstance.updateExchangeRate({
-        usdRate: Number(usdRate),
-        usdtRate: Number(usdtRate),
-        source,
-        notes,
-      });
+    })
+  );
+
+  app.post(
+    '/api/exchange-rates/update',
+    validateBody(exchangeRateUpdateSchema),
+    mutation((req, res) => {
+      const rates = dbInstance.updateExchangeRate(req.body);
       res.json(rates);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar tasa';
-      res.status(400).json({ error: msg });
-    }
-  });
-  
-  app.post('/api/exchange-rates/refresh', async (req, res) => {
-    try {
+    })
+  );
+
+  app.post(
+    '/api/exchange-rates/refresh',
+    mutation(async (req, res) => {
       const rates = await dbInstance.fetchLiveExchangeRates();
       res.json(rates);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al sincronizar tasas';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- DASHBOARD REPORT ---
-  app.get('/api/reports/dashboard', (req, res) => {
-    try {
+  app.get(
+    '/api/reports/dashboard',
+    query((req, res) => {
       res.json(dbInstance.getDashboardMetrics());
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al obtener métricas del dashboard';
-      res.status(500).json({ error: msg });
-    }
-  });
-  
+    })
+  );
+
   // --- RESET DEMO DATA ---
-  app.post('/api/system/reset', (req, res) => {
-    try {
+  app.post(
+    '/api/system/reset',
+    mutation((req, res) => {
       dbInstance.reset();
-      res.json({ success: true, message: 'Datos de prueba reiniciados al estado original.' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al reiniciar datos';
-      res.status(500).json({ error: msg });
-    }
-  });
+      res.json({
+        success: true,
+        message: 'Datos de prueba reiniciados al estado original.',
+      });
+    })
+  );
+
+  // --- 404 FOR UNKNOWN API ROUTES + CENTRAL ERROR HANDLER ---
+  app.use('/api', apiNotFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }
