@@ -7,6 +7,7 @@ import {
 import express from 'express';
 import {join} from 'node:path';
 import {dbInstance} from './server/erp-database.js';
+import {getDb, getDbPath} from './server/database/persistence.js';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
@@ -14,6 +15,25 @@ const app = express();
 const angularApp = new AngularNodeAppEngine();
 
 app.use(express.json());
+
+// --- HEALTH CHECK ---
+app.get('/api/health', (req, res) => {
+  try {
+    const db = getDb();
+    const result = db.prepare('SELECT 1 AS ok').get() as { ok: number } | undefined;
+    res.json({
+      status: 'ok',
+      database: {
+        path: getDbPath(),
+        connected: result?.ok === 1,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error desconocido';
+    res.status(500).json({ status: 'error', error: msg });
+  }
+});
 
 // ==========================================
 // REST API ROUTES - PULPACRAFT ERP / MRP

@@ -40,6 +40,18 @@ The system is designed to be modular and extensible: each domain‑specific resp
 
 All agents are **Angular injectables** (provided in the root), except the **PlannerAgent** which is stateless and can be instantiated anywhere. The top‑level service that aggregates them is **AgentsService** (see `src/app/core/agents.service.ts`).
 
+### Persistence (SQLite)
+
+The server persists the full ERP state in a real SQLite database using `better-sqlite3`:
+
+- **Database file:** `data/mermelada.db` (created automatically on first run).
+- **Path override:** set the `DB_PATH` environment variable to any path.
+- **Migrations:** managed in `src/server/database/persistence.ts` (`schema_migrations` table).
+- **Auto‑save:** every mutating operation on `dbInstance` writes the new state to SQLite (via a Proxy that wraps `ErpDatabase`).
+- **Health check:** `GET /api/health` verifies the SQLite connection and returns the database path.
+
+To start fresh, delete `data/mermelada.db` (and the `-wal`/`-shm` files) or call `POST /api/system/reset`.
+
 ---
 
 ## 🚀 Getting Started

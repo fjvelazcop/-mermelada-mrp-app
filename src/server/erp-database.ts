@@ -21,6 +21,7 @@ import {
   Expense,
   ExpenseCategoryConfig,
 } from '../app/core/models/erp.models.js';
+import { loadState, saveState } from './database/persistence.js';
 
 export interface DatabaseState {
   rawMaterials: RawMaterial[];
@@ -1500,11 +1501,23 @@ export class ErpDatabase {
   private state: DatabaseState;
 
   constructor() {
-    this.state = createInitialDatabase();
+    const persisted = loadState();
+    if (persisted) {
+      this.state = persisted;
+    } else {
+      this.state = createInitialDatabase();
+      this.persist();
+    }
+  }
+
+  /** Persist the current state to SQLite. */
+  public persist(): void {
+    saveState(this.state);
   }
 
   public reset(): DatabaseState {
     this.state = createInitialDatabase();
+    this.persist();
     return this.state;
   }
 
@@ -2484,5 +2497,35 @@ export class ErpDatabase {
   }
 }
 
-export const dbInstance = new ErpDatabase();
+const rawDbInstance = new ErpDatabase();
+
+/**
+ * Methods that mutate the state. After any of these finish we automatically
+ * persist the new state to SQLite. Read‑only `get*` methods are left untouched.
+ */
+const MUTATING_METHOD = /^(add|update|delete|create|process|reset|fetch)/;
+
+export const dbInstance = new Proxy(rawDbInstance, {
+  get(target, prop, receiver) {
+    const value = Reflect.get(target, prop, receiver);
+    if (
+      typeof value === 'function' &&
+      typeof prop === 'string' &&
+      MUTATING_METHOD.test(prop)
+    ) {
+      return (...args: unknown[]) => {
+        const result = (value as (...a: unknown[]) => unknown).apply(target, args);
+        if (result instanceof Promise) {
+          return result.then((res: unknown) => {
+            target.persist();
+            return res;
+          });
+        }
+        target.persist();
+        return result;
+      };
+    }
+    return value;
+  },
+}) as ErpDatabase;
 
