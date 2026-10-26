@@ -2,7 +2,11 @@
 
 # Env variables
 .env*
-!.env.example
+!.env*.example
+
+# Runtime data
+/logs
+/backups
 
 # Compiled output
 /dist

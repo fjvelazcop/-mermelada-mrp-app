@@ -12,9 +12,17 @@
     "test:server:watch": "vitest --config vitest.config.ts",
     "test:server:coverage": "vitest run --config vitest.config.ts --coverage",
     "lint": "ng lint",
-    "serve:ssr:app": "node dist/app/server/server.mjs"
+    "serve:ssr:app": "node dist/app/server/server.mjs",
+    "start:prod": "node dist/app/server/server.mjs",
+    "start:pm2": "pm2 start ecosystem.config.cjs --update-env",
+    "backup:db": "node scripts/backup-db.mjs",
+    "healthcheck": "node scripts/healthcheck.mjs",
+    "smoke:prod": "node scripts/smoke-test.mjs"
   },
   "private": true,
+  "engines": {
+    "node": ">=20.19"
+  },
   "dependencies": {
     "@angular/cdk": "^21.0.0",
     "@angular/common": "^21.0.0",

@@ -50,11 +50,19 @@ describe('GET /api/health', () => {
 
     const body = (await response.json()) as {
       status: string;
+      version: string;
+      environment: string;
+      uptimeSeconds: number;
+      authEnabled: boolean;
       database: { path: string; connected: boolean };
       timestamp: string;
     };
 
     expect(body.status).toBe('ok');
+    expect(body.version).toBeTruthy();
+    expect(body.environment).toBeTruthy();
+    expect(body.uptimeSeconds).toBeGreaterThanOrEqual(0);
+    expect(typeof body.authEnabled).toBe('boolean');
     expect(body.database.connected).toBe(true);
     expect(body.database.path).toBe(dbPath);
     expect(Date.parse(body.timestamp)).not.toBeNaN();

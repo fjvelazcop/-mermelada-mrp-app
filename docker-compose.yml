@@ -1,0 +1,71 @@
+name: mermelada
+
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    image: ${IMAGE_NAME:-mermelada-erp:latest}
+    container_name: mermelada-erp
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DB_PATH: /app/data/mermelada.db
+      BACKUP_DIR: /app/backups
+    ports:
+      # Bind to loopback only; Nginx/Caddy terminates HTTPS and proxies here.
+      - "127.0.0.1:${APP_PORT:-4000}:4000"
+    volumes:
+      - mermelada-data:/app/data
+      - ./backups:/app/backups
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+
+  # Optional automated backups: docker compose --profile backup up -d
+  # Runs the same image once per day; requires app to be healthy.
+  backup:
+    image: ${IMAGE_NAME:-mermelada-erp:latest}
+    profiles: ["backup"]
+    container_name: mermelada-backup
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DB_PATH: /app/data/mermelada.db
+      BACKUP_DIR: /app/backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - mermelada-data:/app/data:ro
+      - ./backups:/app/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do node scripts/backup-db.mjs; sleep 86400; done"]
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mermelada-data:
+    name: mermelada-data

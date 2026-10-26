@@ -62,7 +62,7 @@ The server persists the full ERP state in a real SQLite database using `better-s
 
 - **Auto‑save:** every mutating operation on `dbInstance` writes the new snapshot to the relational tables in a single transaction (via a Proxy that wraps `ErpDatabase`). See `src/server/database/relational-persistence.ts`.
 - **Legacy migration:** databases created before the relational schema are imported once from the old `app_state` JSON table.
-- **Health check:** `GET /api/health` verifies the SQLite connection and returns the database path.
+- **Health check:** `GET /api/health` verifies the SQLite connection and returns the database path, version, environment and uptime.
 
 To start fresh, delete `data/mermelada.db` (and the `-wal`/`-shm` files) or call `POST /api/system/reset`.
 
@@ -133,6 +133,42 @@ bun run build    # Angular SSR build → dist/
 - **Express SSR**: `http://localhost:4000` (or `PORT` env var)
 
 The Angular app bootstraps with `provideHttpClient(withFetch())` and the `AgentsService` is automatically available for injection.
+
+---
+
+## 📦 Production deployment
+
+Production artifacts are included in the repository:
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile` / `docker-compose.yml` | Multi-stage image, non-root runtime, `restart: unless-stopped`, healthcheck and log rotation. |
+| `ecosystem.config.cjs` | PM2 supervisor with `autorestart`, memory limit and exponential backoff. |
+| `deploy/systemd/` | Native systemd service + daily backup timer. |
+| `deploy/nginx/`, `deploy/caddy/` | HTTPS reverse-proxy examples. |
+| `.env.production.example` | Production environment template (secrets stay out of git). Set `NG_ALLOWED_HOSTS` to your domain so Angular SSR accepts the public Host header. |
+| `scripts/backup-db.mjs` | Consistent SQLite backup with integrity check and retention. |
+| `scripts/healthcheck.mjs` | Container/uptime health probe. |
+| `scripts/smoke-test.mjs` | Post-deploy functional smoke test. |
+| `.github/workflows/` | CI (lint, tests, build, Docker) and tag-based CD to GHCR + SSH deploy. |
+
+```bash
+# Build once
+npm ci && npm run build
+
+# Run the compiled server
+npm run start:prod
+
+# Operations
+npm run backup:db
+npm run healthcheck
+npm run smoke:prod
+```
+
+Graceful shutdown (`SIGTERM`/`SIGINT`) drains in-flight requests and closes
+SQLite before the process exits, so Docker/PM2/systemd can restart it safely.
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the full step-by-step procedure,
+backups/restore, HTTPS, monitoring, CI/CD secrets and rollback.
 
 ---
 

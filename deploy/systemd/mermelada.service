@@ -1,0 +1,49 @@
+# systemd unit for bare-metal production deployment.
+#
+# Install:
+#   sudo useradd --system --home /opt/mermelada --shell /usr/sbin/nologin mermelada
+#   sudo mkdir -p /opt/mermelada/data /opt/mermelada/backups /etc/mermelada
+#   sudo cp -r . /opt/mermelada
+#   sudo cp .env.production /etc/mermelada/mermelada.env
+#   sudo chown -R mermelada:mermelada /opt/mermelada/data /opt/mermelada/backups
+#   sudo cp deploy/systemd/mermelada.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now mermelada
+#
+# Restart=always is the process-level auto-restart (in addition to PM2/Docker
+# options in the repository). Adjust paths, user and Node binary as needed.
+
+[Unit]
+Description=Mermelada ERP (Angular SSR + Express API)
+Documentation=file:///opt/mermelada/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mermelada
+Group=mermelada
+WorkingDirectory=/opt/mermelada
+EnvironmentFile=/etc/mermelada/mermelada.env
+ExecStart=/usr/bin/node /opt/mermelada/dist/app/server/server.mjs
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=20
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mermelada
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mermelada/data /opt/mermelada/backups
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

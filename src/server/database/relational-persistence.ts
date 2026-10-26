@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Database } from 'better-sqlite3';
 import type { DatabaseState } from '../erp-database.js';
 import {

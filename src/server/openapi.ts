@@ -663,6 +663,10 @@ const schemas: Record<string, JsonObject> = {
     type: 'object',
     properties: {
       status: { type: 'string', example: 'ok' },
+      version: { type: 'string', example: '1.2.0' },
+      environment: { type: 'string', example: 'production' },
+      uptimeSeconds: { type: 'integer', example: 3600 },
+      authEnabled: { type: 'boolean', example: true },
       database: {
         type: 'object',
         properties: { path: string, connected: boolean },

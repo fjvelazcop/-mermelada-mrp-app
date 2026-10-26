@@ -112,6 +112,9 @@ export function createApiApp(): express.Express {
         | undefined;
       res.json({
         status: 'ok',
+        version: process.env['APP_VERSION'] || 'dev',
+        environment: process.env['NODE_ENV'] || 'development',
+        uptimeSeconds: Math.round(process.uptime()),
         authEnabled: isAuthEnabled(),
         database: {
           path: getDbPath(),

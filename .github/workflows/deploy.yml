@@ -1,0 +1,137 @@
+name: Deploy production
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ${{ vars.CONTAINER_IMAGE || format('ghcr.io/{0}/mermelada-mrp-app', github.repository_owner) }}
+
+jobs:
+  build-and-push:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      version: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Backend tests
+        run: npm run test:server
+
+      - name: Angular unit tests
+        run: npm test -- --watch=false
+        env:
+          CI: 'true'
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy over SSH
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    # Enable after configuring the DEPLOY_* secrets/vars described in DEPLOYMENT.md.
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    environment: production
+    timeout-minutes: 15
+
+    steps:
+      - name: Deploy with docker compose
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/mermelada' }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_PORT: ${{ vars.APP_PORT || '4000' }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          envs: DEPLOY_PATH,GHCR_USER,GHCR_TOKEN,APP_PORT
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            # Compose interpolates IMAGE_NAME/APP_PORT from the env file; the
+            # service-level env_file only injects variables into the container.
+            COMPOSE="docker compose --env-file .env.production"
+
+            # Safety backup before replacing the container (skip on first deploy).
+            if [ -n "$($COMPOSE ps -q app)" ]; then
+              $COMPOSE exec -T app node scripts/backup-db.mjs
+            fi
+
+            $COMPOSE pull app
+            $COMPOSE up -d --no-deps --remove-orphans app
+            $COMPOSE ps
+
+            for i in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:${APP_PORT}/api/health"; then
+                echo "Deployment healthy"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Health check failed, recent logs:"
+            docker compose logs --tail=100 app
+            exit 1

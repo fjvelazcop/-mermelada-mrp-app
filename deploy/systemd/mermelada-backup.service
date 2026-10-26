@@ -1,0 +1,15 @@
+[Unit]
+Description=Mermelada ERP SQLite backup
+Documentation=file:///opt/mermelada/DEPLOYMENT.md
+After=mermelada.service
+
+[Service]
+Type=oneshot
+User=mermelada
+Group=mermelada
+WorkingDirectory=/opt/mermelada
+EnvironmentFile=/etc/mermelada/mermelada.env
+ExecStart=/usr/bin/node /opt/mermelada/scripts/backup-db.mjs
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
