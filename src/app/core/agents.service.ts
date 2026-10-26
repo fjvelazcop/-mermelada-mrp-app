@@ -18,13 +18,13 @@ import { DocumentationRegistrationAgent } from './agents/documentation-registrat
 
 @Injectable({ providedIn: 'root' })
 export class AgentsService {
-  private planner: PlannerAgent = new PlannerAgent();
-  private database: DatabaseExpertAgent = new DatabaseExpertAgent();
-  private test: TestAgent = new TestAgent();
-  private security: CybersecurityAgent = new CybersecurityAgent();
-  private info: InformationGatheringAgent = new InformationGatheringAgent(this.database);
-  private memory: MemoryAgent = new MemoryAgent();
-  private docs: DocumentationRegistrationAgent = new DocumentationRegistrationAgent();
+  private planner = inject(PlannerAgent);
+  private database = inject(DatabaseExpertAgent);
+  private test = inject(TestAgent);
+  private security = inject(CybersecurityAgent);
+  private info = inject(InformationGatheringAgent);
+  private memory = inject(MemoryAgent);
+  private docs = inject(DocumentationRegistrationAgent);
 
   // ------------------------------------------------------------------
   // Planner

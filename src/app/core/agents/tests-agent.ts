@@ -12,6 +12,9 @@ function first(str: string): string {
  * Integrates with the project's Vitest setup and can scaffold test files,
  * execute suites, and produce coverage reports.
  */
+import { Injectable } from '@angular/core';
+
+@Injectable({ providedIn: 'root' })
 export class TestAgent {
   /** Scaffold a basic Vitest test file for a given component or service. */
   scaffoldTestFile(name: string, type: 'component' | 'service' | 'pipe' = 'service'): string {

@@ -5,6 +5,9 @@
  * This agent can parse a high‑level objective into smaller, actionable steps
  * and assign them to specialized agents (database, cybersecurity, testing, etc.).
  */
+import { Injectable } from '@angular/core';
+
+@Injectable({ providedIn: 'root' })
 export class PlannerAgent {
   private taskQueue: string[] = [];
   private completedTasks: string[] = [];

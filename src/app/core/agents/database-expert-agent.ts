@@ -19,11 +19,14 @@ import {
   Expense,
 } from '../models/erp.models';
 
+import { Injectable } from '@angular/core';
+
 export interface QueryOptions {
   limit?: number;
   offset?: number;
 }
 
+@Injectable({ providedIn: 'root' })
 export class DatabaseExpertAgent {
   private rawMaterials: RawMaterial[] = [
     {
@@ -96,6 +99,7 @@ export class DatabaseExpertAgent {
 
   /** Inventory movements */
   getInventoryMovements(opts?: QueryOptions): InventoryMovement[] {
+    void opts;
     return [];
   }
 
@@ -105,6 +109,7 @@ export class DatabaseExpertAgent {
 
   /** Finished goods */
   getFinishedGoods(opts?: QueryOptions): FinishedGood[] {
+    void opts;
     return [];
   }
 
@@ -220,6 +225,7 @@ export class DatabaseExpertAgent {
 
   /** Audit logs */
   getAuditLogs(moduleFilter?: string): AuditLogEntry[] {
+    void moduleFilter;
     return [];
   }
 
@@ -237,6 +243,7 @@ export class DatabaseExpertAgent {
   }
 
   deleteExpense(id: string): boolean {
+    void id;
     return true;
   }
 
@@ -246,5 +253,8 @@ export class DatabaseExpertAgent {
   }
 
   /** Reset demo data */
-  reset(): void {}
+  reset(): void {
+    // Reset state to initial demo data
+    this.rawMaterials = [];
+  }
 }

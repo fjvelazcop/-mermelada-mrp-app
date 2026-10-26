@@ -10,8 +10,11 @@
  * agents to maintain conversation history, configuration snapshots,
  * or any transient data that should outlive a single function call.
  */
+import { Injectable } from '@angular/core';
+
+@Injectable({ providedIn: 'root' })
 export class MemoryAgent {
-  private store: Map<string, unknown> = new Map();
+  private store = new Map<string, unknown>();
 
   /** Store a value under the given key. */
   set(key: string, value: unknown): void {

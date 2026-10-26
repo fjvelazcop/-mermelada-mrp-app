@@ -60,7 +60,10 @@ export function generateTableOfContents(docsFolder: string): string {
   return '# Documentation\n\n' + tocLines.join('\n');
 }
 
+import { Injectable } from '@angular/core';
+
 /** Class-based Documentation Agent for Dependency Injection */
+@Injectable({ providedIn: 'root' })
 export class DocumentationRegistrationAgent {
   scaffoldDoc(meta: DocMetadata): string {
     return scaffoldDoc(meta);

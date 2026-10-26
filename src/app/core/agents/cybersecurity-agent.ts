@@ -6,6 +6,9 @@
  * This agent can be invoked by the planner or other agents whenever
  * data enters the system or when sensitive operations are performed.
  */
+import { Injectable } from '@angular/core';
+
+@Injectable({ providedIn: 'root' })
 export class CybersecurityAgent {
   /** Validate that a string is not empty and does not contain suspicious patterns. */
   validateInput(value: string, allowList?: RegExp[]): { valid: boolean; reason?: string } {

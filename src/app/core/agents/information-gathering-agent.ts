@@ -55,10 +55,8 @@ export interface DashboardSummary {
  */
 @Injectable({ providedIn: 'root' })
 export class InformationGatheringAgent {
-  private readonly memory: MemoryAgent = new MemoryAgent();
-
-  /** Dependencia a la base de datos (singleton del servidor). */
-  constructor(private db: DatabaseExpertAgent) {}
+  private readonly memory = inject(MemoryAgent);
+  private readonly db = inject(DatabaseExpertAgent);
 
   /**
    * Obtiene un reporte de materiales con stock bajo, usando cacheo en memoria.
@@ -114,7 +112,7 @@ export class InformationGatheringAgent {
     let usdt = dbRates.currentUsdt;
     let source: 'database' | 'external API' = 'database';
 
-    // 3. Intento de API externa (exchangerate.host). Funciona en navegador y en Node SSR con fetch.
+    // 3. Intento de API externa (exchangerate.host). Funciona en navegador y en Node SSR con fetch.
     try {
       const resp = await fetch('https://api.exchangerate.host/latest?usd,usdt');
       if (resp.ok) {

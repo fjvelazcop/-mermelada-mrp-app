@@ -2,29 +2,30 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { CybersecurityAgent } from './agents/cybersecurity-agent';
 import { MemoryAgent } from './agents/memory-agent';
+import { ErpApiService } from './services/erp-api.service';
 
-export const authGuard: CanActivateFn = (route, state) => {
+export const authGuard: CanActivateFn = (route) => {
   const security = inject(CybersecurityAgent);
   const memory = inject(MemoryAgent);
   const router = inject(Router);
+  const api = inject(ErpApiService);
 
   // Read allowed roles from route data; default to ['admin']
-  const allowedRoles: string[] = route.data?.['allowedRoles'] as string[] || ['admin'];
+  const allowedRoles: string[] = (route.data?.['allowedRoles'] as string[]) || ['admin'];
 
-  // Retrieve the current user role from memory (in a real app this would come from auth store)
-  const userRole: string | undefined = memory.get<string>('userRole');
-
+  // Retrieve the current user role from memory or fallback to ERP active user role
+  let userRole = memory.get<string>('userRole');
   if (!userRole) {
-    // No role set – deny access and navigate to login
-    router.navigate(['/login']);
-    return false;
+    userRole = api.currentRole();
+    memory.set('userRole', userRole);
   }
 
-  if (security.isAuthorized(userRole, allowedRoles)) {
+  if (userRole && security.isAuthorized(userRole, allowedRoles)) {
     return true;
   }
 
-  // Unauthorized – navigate to access‑denied page
-  router.navigate(['/access-denied']);
+  // Unauthorized – notify and navigate to dashboard
+  api.showToast(`Acceso restringido: El rol ${userRole} no tiene permisos para esta ruta.`, 'error');
+  router.navigate(['/dashboard']);
   return false;
 };

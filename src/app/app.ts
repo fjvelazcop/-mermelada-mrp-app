@@ -1,4 +1,6 @@
 import {ChangeDetectionStrategy, Component, inject, signal, OnInit, effect} from '@angular/core';
+import {NavigationEnd, Router} from '@angular/router';
+import {filter} from 'rxjs';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from './core/services/erp-api.service';
 import {DashboardComponent} from './features/dashboard/dashboard';
@@ -44,9 +46,22 @@ export type MainNavigationTab =
 })
 export class App implements OnInit {
   public api = inject(ErpApiService);
+  private router = inject(Router);
 
   public currentTab = signal<MainNavigationTab>('dashboard');
   public mobileMenuOpen = signal<boolean>(false);
+
+  private readonly validTabs: ReadonlySet<string> = new Set<string>([
+    'dashboard',
+    'inventory',
+    'production',
+    'costing',
+    'sales',
+    'payroll',
+    'expenses',
+    'settings',
+    'architecture',
+  ]);
 
   constructor() {
     effect(() => {
@@ -56,10 +71,29 @@ export class App implements OnInit {
         this.api.requestedTab.set(null);
       }
     });
+
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe((e) => {
+        const seg = e.urlAfterRedirects.replace(/^\//, '').split('?')[0].split('/')[0];
+        const targetTab = seg === 'admin' ? 'settings' : seg;
+        if (this.validTabs.has(targetTab) && targetTab !== this.currentTab()) {
+          if (this.api.canViewModule(targetTab as MainNavigationTab)) {
+            this.currentTab.set(targetTab as MainNavigationTab);
+          }
+        }
+      });
   }
 
   public ngOnInit() {
     this.api.refreshAllData();
+    const initialSeg = this.router.url.replace(/^\//, '').split('?')[0].split('/')[0];
+    const targetTab = initialSeg === 'admin' ? 'settings' : initialSeg;
+    if (this.validTabs.has(targetTab) && targetTab !== this.currentTab()) {
+      if (this.api.canViewModule(targetTab as MainNavigationTab)) {
+        this.currentTab.set(targetTab as MainNavigationTab);
+      }
+    }
   }
 
   public setTab(tab: MainNavigationTab) {
@@ -69,6 +103,7 @@ export class App implements OnInit {
     }
     this.currentTab.set(tab);
     this.mobileMenuOpen.set(false);
+    this.router.navigate([tab], { replaceUrl: true });
     if (typeof window !== 'undefined') {
       window.scrollTo({top: 0, behavior: 'smooth'});
     }

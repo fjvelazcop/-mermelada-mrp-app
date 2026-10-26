@@ -1,9 +1,9 @@
 import {ChangeDetectionStrategy, Component, computed, inject, signal} from '@angular/core';
-import {CommonModule, DecimalPipe} from '@angular/common';
+import {CommonModule} from '@angular/common';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {Expense, ExpenseCategory, ExpenseCategoryConfig, ExpenseTaxCategory} from '../../core/models/erp.models';
+import {Expense, ExpenseCategoryConfig, ExpenseTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel} from '../../core/utils/export.utils';
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
@@ -23,7 +23,7 @@ export interface CategoryBudgetAnalysis {
 @Component({
   selector: 'app-expenses',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, DecimalPipe, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog],
+  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog],
   templateUrl: './expenses.html',
 })
 export class ExpensesComponent {
