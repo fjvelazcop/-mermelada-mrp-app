@@ -47,10 +47,37 @@ The server persists the full ERP state in a real SQLite database using `better-s
 - **Database file:** `data/mermelada.db` (created automatically on first run).
 - **Path override:** set the `DB_PATH` environment variable to any path.
 - **Migrations:** managed in `src/server/database/persistence.ts` (`schema_migrations` table).
-- **Auto‑save:** every mutating operation on `dbInstance` writes the new state to SQLite (via a Proxy that wraps `ErpDatabase`).
+- **Normalized schema:** every entity has its own table and 1:N relations use child tables:
+
+  | Domain | Tables |
+  |--------|--------|
+  | Inventory | `raw_materials`, `inventory_movements`, `finished_goods` |
+  | Recipes / BOM | `recipes`, `recipe_items` |
+  | Production | `production_orders`, `production_order_materials` |
+  | Sales | `customers`, `sales_orders`, `sales_order_items`, `delivery_notes`, `delivery_note_items` |
+  | Payroll | `employees`, `payroll_weeks`, `payroll_payments` |
+  | Expenses | `expenses`, `expense_categories` |
+  | Configuration | `fiscal_settings`, `exchange_rates`, `exchange_rate_history`, `audit_logs` |
+
+- **Auto‑save:** every mutating operation on `dbInstance` writes the new snapshot to the relational tables in a single transaction (via a Proxy that wraps `ErpDatabase`). See `src/server/database/relational-persistence.ts`.
+- **Legacy migration:** databases created before the relational schema are imported once from the old `app_state` JSON table.
 - **Health check:** `GET /api/health` verifies the SQLite connection and returns the database path.
 
 To start fresh, delete `data/mermelada.db` (and the `-wal`/`-shm` files) or call `POST /api/system/reset`.
+
+### Server tests
+
+```bash
+npm run test:server        # run the backend integration tests once
+npm run test:server:watch  # watch mode
+```
+
+The backend suite (`src/server/**/*.spec.ts`, Vitest) uses a real temporary SQLite file and covers:
+
+- creation of the normalized schema and migration history,
+- relational roundtrip of the full seed state,
+- persistence of mutations and reload after a simulated restart,
+- HTTP API integration tests (health, inventory, reset and read-only endpoints).
 
 ---
 
@@ -63,8 +90,9 @@ bun install      # or npm install
 # 2️⃣ Start the development server (Angular + Express SSR)
 bun run dev      # runs on http://localhost:4000 (default) or PORT env var
 
-# 3️⃣ Run the test suite
-bun run test     # Vitest, see coverage in coverage/
+# 3️⃣ Run the test suites
+bun run test             # Angular unit tests
+npm run test:server      # backend integration tests (SQLite + API)
 
 # 4️⃣ Build for production
 bun run build    # Angular SSR build → dist/
@@ -81,7 +109,7 @@ The Angular app bootstraps with `provideHttpClient(withFetch())` and the `Agents
 
 ## 🔌 API Endpoints (Express)
 
-The server (`src/server.ts`) exposes a RESTful API under `/api/*`. The most frequently used groups are:
+The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `/api/*`. The most frequently used groups are:
 
 | Category | Key Endpoints |
 |----------|---------------|

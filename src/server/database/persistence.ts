@@ -6,12 +6,16 @@ import type { DatabaseState } from '../erp-database.js';
 /**
  * Persistence layer for the ERP.
  *
- * This first iteration persists the entire `DatabaseState` as a JSON document
- * inside a SQLite database. It provides:
+ * The database uses a normalized relational schema (one table per entity plus
+ * child tables for BOM items, order lines, payroll payments, etc.). The legacy
+ * `app_state` JSON table is kept for backwards compatibility and one-time
+ * migration of databases created before the relational schema existed.
+ *
+ * It provides:
  *  - a real on-disk database (SQLite),
  *  - simple schema migrations,
  *  - safe load/save helpers,
- *  - a stable place to grow into a normalized relational schema.
+ *  - a stable place to grow the data model.
  *
  * Environment variables:
  *  - `DB_PATH` (optional): absolute or relative path to the SQLite file.
@@ -19,7 +23,7 @@ import type { DatabaseState } from '../erp-database.js';
  */
 
 const DEFAULT_DB_PATH = join(process.cwd(), 'data', 'mermelada.db');
-const dbPath = process.env['DB_PATH'] || DEFAULT_DB_PATH;
+let dbPath = process.env['DB_PATH'] || DEFAULT_DB_PATH;
 
 let connection: Database.Database | null = null;
 
@@ -29,12 +33,22 @@ export function getDb(): Database.Database {
     mkdirSync(dirname(dbPath), { recursive: true });
     connection = new Database(dbPath);
     connection.pragma('journal_mode = WAL');
+    connection.pragma('foreign_keys = ON');
     migrate(connection);
   }
   return connection;
 }
 
-/** Run schema migrations. Currently version 1 creates the state table. */
+/**
+ * Point the persistence layer at another database file.
+ * Intended for tests and tooling; closes any open connection first.
+ */
+export function setDbPath(path: string): void {
+  closeDb();
+  dbPath = path;
+}
+
+/** Run schema migrations. */
 function migrate(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -47,6 +61,340 @@ function migrate(db: Database.Database): void {
       state_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    -- ==========================================================
+    -- Normalized relational schema (migration v2)
+    -- ==========================================================
+
+    CREATE TABLE IF NOT EXISTS raw_materials (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      current_stock REAL NOT NULL,
+      min_stock REAL NOT NULL,
+      unit TEXT NOT NULL,
+      cost_per_unit REAL NOT NULL,
+      supplier TEXT,
+      last_restock_date TEXT NOT NULL,
+      notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS inventory_movements (
+      id TEXT PRIMARY KEY,
+      material_id TEXT NOT NULL,
+      material_name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      cost_per_unit REAL NOT NULL,
+      total_cost REAL NOT NULL,
+      exchange_rate_used REAL NOT NULL,
+      cost_per_unit_bs REAL,
+      total_cost_bs REAL,
+      reference_doc TEXT,
+      movement_date TEXT NOT NULL,
+      performed_by TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS finished_goods (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      flavor TEXT NOT NULL,
+      presentation TEXT NOT NULL,
+      presentation_label TEXT NOT NULL,
+      weight_grams INTEGER NOT NULL,
+      stock_units INTEGER NOT NULL,
+      reserved_units INTEGER NOT NULL,
+      available_units INTEGER NOT NULL,
+      base_cost REAL NOT NULL,
+      suggested_wholesale_price REAL NOT NULL,
+      suggested_retail_price REAL NOT NULL,
+      suggested_special_price REAL NOT NULL,
+      min_stock INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS recipes (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      flavor TEXT NOT NULL,
+      presentation TEXT NOT NULL,
+      batch_size_units INTEGER NOT NULL,
+      direct_labor_minutes INTEGER NOT NULL,
+      estimated_utility_cost REAL NOT NULL,
+      instructions TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS recipe_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+      material_id TEXT NOT NULL,
+      material_name TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      unit TEXT NOT NULL,
+      estimated_cost REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS production_orders (
+      id TEXT PRIMARY KEY,
+      order_number TEXT NOT NULL,
+      recipe_id TEXT NOT NULL,
+      recipe_name TEXT NOT NULL,
+      flavor TEXT NOT NULL,
+      presentation TEXT NOT NULL,
+      target_units INTEGER NOT NULL,
+      batch_count INTEGER NOT NULL,
+      lot_number TEXT NOT NULL,
+      status TEXT NOT NULL,
+      sales_order_id TEXT,
+      customer_name TEXT,
+      start_date TEXT NOT NULL,
+      completion_date TEXT,
+      created_at TEXT,
+      exchange_rate_used REAL,
+      direct_material_cost REAL NOT NULL,
+      direct_labor_cost REAL NOT NULL,
+      indirect_cost REAL NOT NULL,
+      total_production_cost REAL NOT NULL,
+      total_cost REAL,
+      unit_cost REAL NOT NULL,
+      total_production_cost_bs REAL,
+      unit_cost_bs REAL,
+      operator_notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS production_order_materials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id TEXT NOT NULL REFERENCES production_orders(id) ON DELETE CASCADE,
+      material_id TEXT NOT NULL,
+      material_name TEXT NOT NULL,
+      quantity_consumed REAL NOT NULL,
+      unit TEXT NOT NULL,
+      unit_cost REAL NOT NULL,
+      total_cost REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      business_name TEXT NOT NULL,
+      tax_id TEXT NOT NULL,
+      contact_person TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT NOT NULL,
+      address TEXT NOT NULL,
+      client_type TEXT NOT NULL,
+      credit_limit REAL NOT NULL,
+      payment_terms TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sales_orders (
+      id TEXT PRIMARY KEY,
+      order_number TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_tax_id TEXT NOT NULL,
+      order_date TEXT NOT NULL,
+      delivery_date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      exchange_rate_used REAL NOT NULL,
+      subtotal REAL NOT NULL,
+      tax_amount REAL NOT NULL,
+      total REAL NOT NULL,
+      subtotal_bs REAL,
+      tax_amount_bs REAL,
+      total_bs REAL,
+      has_delivery_note INTEGER NOT NULL,
+      delivery_note_number TEXT,
+      production_order_id TEXT,
+      notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sales_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id TEXT NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
+      finished_good_id TEXT NOT NULL,
+      flavor TEXT NOT NULL,
+      presentation TEXT NOT NULL,
+      presentation_label TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      unit_price REAL NOT NULL,
+      subtotal REAL NOT NULL,
+      unit_price_bs REAL,
+      subtotal_bs REAL,
+      price_tier TEXT,
+      profit_margin_percent REAL,
+      base_cost REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS delivery_notes (
+      id TEXT PRIMARY KEY,
+      note_number TEXT NOT NULL,
+      sales_order_id TEXT NOT NULL,
+      sales_order_number TEXT NOT NULL,
+      customer_name TEXT NOT NULL,
+      customer_tax_id TEXT NOT NULL,
+      customer_address TEXT NOT NULL,
+      customer_phone TEXT NOT NULL,
+      dispatch_date TEXT NOT NULL,
+      exchange_rate_used REAL NOT NULL,
+      subtotal REAL NOT NULL,
+      tax_included INTEGER NOT NULL,
+      tax_amount REAL NOT NULL,
+      total REAL NOT NULL,
+      subtotal_bs REAL,
+      tax_amount_bs REAL,
+      total_bs REAL,
+      transporter TEXT,
+      received_by_name TEXT,
+      received_by_id TEXT,
+      signature_date TEXT,
+      status TEXT NOT NULL,
+      observations TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS delivery_note_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id TEXT NOT NULL REFERENCES delivery_notes(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      presentation_label TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      lot_number TEXT,
+      unit_price REAL NOT NULL,
+      subtotal REAL NOT NULL,
+      unit_price_bs REAL,
+      subtotal_bs REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS employees (
+      id TEXT PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      national_id TEXT NOT NULL,
+      role_title TEXT NOT NULL,
+      weekly_base_salary REAL NOT NULL,
+      hourly_rate REAL NOT NULL,
+      status TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS payroll_weeks (
+      id TEXT PRIMARY KEY,
+      week_number INTEGER NOT NULL,
+      year INTEGER NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      is_active_production INTEGER NOT NULL,
+      inactivity_reason TEXT,
+      total_payroll_paid REAL NOT NULL,
+      fixed_absorption_cost REAL NOT NULL,
+      notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS payroll_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      week_id TEXT NOT NULL REFERENCES payroll_weeks(id) ON DELETE CASCADE,
+      employee_id TEXT NOT NULL,
+      employee_name TEXT NOT NULL,
+      role_title TEXT NOT NULL,
+      base_amount REAL NOT NULL,
+      production_bonus REAL NOT NULL,
+      deductions REAL NOT NULL,
+      net_paid REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS expenses (
+      id TEXT PRIMARY KEY,
+      expense_number TEXT NOT NULL,
+      expense_date TEXT NOT NULL,
+      concept TEXT NOT NULL,
+      category TEXT NOT NULL,
+      category_label TEXT NOT NULL,
+      amount_usd REAL NOT NULL,
+      exchange_rate_used REAL NOT NULL,
+      amount_bs REAL NOT NULL,
+      supplier_or_beneficiary TEXT NOT NULL,
+      tax_id TEXT,
+      document_type TEXT NOT NULL,
+      document_number TEXT,
+      payment_method TEXT NOT NULL,
+      payment_reference TEXT,
+      notes TEXT,
+      registered_by TEXT NOT NULL,
+      tax_category TEXT NOT NULL,
+      tax_rate_percent REAL,
+      tax_amount_usd REAL,
+      tax_amount_bs REAL,
+      accounting_account_code TEXT,
+      accounting_account_name TEXT,
+      fiscal_book_eligible INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS expense_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      icon TEXT NOT NULL,
+      color TEXT NOT NULL,
+      monthly_budget_usd REAL NOT NULL,
+      accounting_account_code TEXT,
+      accounting_account_name TEXT,
+      default_tax_category TEXT,
+      description TEXT,
+      is_system INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS fiscal_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled INTEGER NOT NULL,
+      company_name TEXT NOT NULL,
+      company_tax_id TEXT NOT NULL,
+      fiscal_address TEXT NOT NULL,
+      tax_rate_percent REAL NOT NULL,
+      invoice_prefix TEXT NOT NULL,
+      next_invoice_number INTEGER NOT NULL,
+      authorization_code TEXT NOT NULL,
+      print_notes TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS exchange_rates (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      current_usd REAL NOT NULL,
+      current_usdt REAL NOT NULL,
+      last_updated TEXT NOT NULL,
+      is_in_active_window INTEGER NOT NULL,
+      active_window_name TEXT NOT NULL,
+      next_scheduled_check TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS exchange_rate_history (
+      id TEXT PRIMARY KEY,
+      rate_date TEXT NOT NULL,
+      rate_time TEXT NOT NULL,
+      usd_rate REAL NOT NULL,
+      usdt_rate REAL NOT NULL,
+      source TEXT NOT NULL,
+      rate_window TEXT NOT NULL,
+      variation_usd_percent REAL,
+      variation_usdt_percent REAL,
+      notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      logged_at TEXT NOT NULL,
+      audit_module TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      user_role TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      details_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
+    CREATE INDEX IF NOT EXISTS idx_production_materials_order ON production_order_materials(order_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_items_order ON sales_order_items(order_id);
+    CREATE INDEX IF NOT EXISTS idx_delivery_items_note ON delivery_note_items(note_id);
+    CREATE INDEX IF NOT EXISTS idx_payroll_payments_week ON payroll_payments(week_id);
   `);
 
   const row = db
@@ -54,15 +402,16 @@ function migrate(db: Database.Database): void {
     .get() as { version: number | null } | undefined;
   const currentVersion = row?.version ?? 0;
 
+  const insert = db.prepare(
+    'INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)'
+  );
+
   if (currentVersion < 1) {
-    const insert = db.prepare(
-      'INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)'
-    );
     insert.run(1, new Date().toISOString());
   }
-
-  // Future migrations:
-  // if (currentVersion < 2) { ... }
+  if (currentVersion < 2) {
+    insert.run(2, new Date().toISOString());
+  }
 }
 
 /** Load the persisted state, or `null` if the database has no state yet. */

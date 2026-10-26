@@ -8,6 +8,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "test:server": "vitest run --config vitest.config.ts",
+    "test:server:watch": "vitest --config vitest.config.ts",
     "lint": "ng lint",
     "serve:ssr:app": "node dist/app/server/server.mjs"
   },

@@ -21,7 +21,11 @@ import {
   Expense,
   ExpenseCategoryConfig,
 } from '../app/core/models/erp.models.js';
-import { loadState, saveState } from './database/persistence.js';
+import { loadState } from './database/persistence.js';
+import {
+  loadRelationalState,
+  saveRelationalState,
+} from './database/relational-persistence.js';
 
 export interface DatabaseState {
   rawMaterials: RawMaterial[];
@@ -1501,18 +1505,21 @@ export class ErpDatabase {
   private state: DatabaseState;
 
   constructor() {
-    const persisted = loadState();
+    const persisted = loadRelationalState();
     if (persisted) {
       this.state = persisted;
-    } else {
-      this.state = createInitialDatabase();
-      this.persist();
+      return;
     }
+
+    // One-time migration of databases created before the relational schema.
+    const legacy = loadState();
+    this.state = legacy ?? createInitialDatabase();
+    this.persist();
   }
 
-  /** Persist the current state to SQLite. */
+  /** Persist the current state to the normalized SQLite schema. */
   public persist(): void {
-    saveState(this.state);
+    saveRelationalState(this.state);
   }
 
   public reset(): DatabaseState {
