@@ -6,7 +6,7 @@ export const routes: Routes = [
     path: 'admin',
     canActivate: [authGuard],
     data: { allowedRoles: ['admin', 'supervisor'] },
-    loadChildren: () => import('./features/settings/settings').then((m) => m.Settings),
+    loadComponent: () => import('./features/settings/settings').then((m) => m.Settings),
   },
   {
     path: '',

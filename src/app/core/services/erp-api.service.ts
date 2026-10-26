@@ -27,6 +27,7 @@ import {
   SystemUser,
   AuditLogEntry,
   Expense,
+  ExpenseCategoryConfig,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 import {computed} from '@angular/core';
@@ -366,6 +367,7 @@ export class ErpApiService {
   public employees = signal<Employee[]>([]);
   public payrollWeeks = signal<PayrollWeek[]>([]);
   public expenses = signal<Expense[]>([]);
+  public expenseCategories = signal<ExpenseCategoryConfig[]>([]);
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
   public dashboardData = signal<any | null>(null);
@@ -650,6 +652,7 @@ export class ErpApiService {
         staff,
         weeks,
         expensesList,
+        expenseCategoriesList,
         costing,
         fiscal,
         dash,
@@ -667,6 +670,7 @@ export class ErpApiService {
         firstValueFrom(this.http.get<Employee[]>('/api/payroll/employees')),
         firstValueFrom(this.http.get<PayrollWeek[]>('/api/payroll/weeks')),
         firstValueFrom(this.http.get<Expense[]>('/api/expenses')).catch(() => []),
+        firstValueFrom(this.http.get<ExpenseCategoryConfig[]>('/api/expenses/categories')).catch(() => []),
         firstValueFrom(this.http.get<CostStructureAnalysis>('/api/costing/summary')),
         firstValueFrom(this.http.get<FiscalSettings>('/api/fiscal-settings')),
         firstValueFrom(this.http.get<any>('/api/reports/dashboard')),
@@ -685,6 +689,7 @@ export class ErpApiService {
       this.employees.set(staff);
       this.payrollWeeks.set(weeks);
       this.expenses.set(expensesList || []);
+      this.expenseCategories.set(expenseCategoriesList || []);
       this.costStructure.set(costing);
       this.fiscalSettings.set(fiscal);
       this.dashboardData.set(dash);
@@ -1110,6 +1115,50 @@ export class ErpApiService {
       await this.refreshAllData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al eliminar gasto';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  // --- EXPENSE CATEGORIES & BUDGET MANAGEMENT ---
+  public async addExpenseCategory(data: Omit<ExpenseCategoryConfig, 'id'>) {
+    try {
+      const res = await firstValueFrom<ExpenseCategoryConfig>(
+        this.http.post<ExpenseCategoryConfig>('/api/expenses/categories', data)
+      );
+      this.expenseCategories.update(list => [...list, res]);
+      this.showToast(`Categoría "${res.name}" creada con éxito (Presupuesto: $${res.monthlyBudgetUsd.toFixed(2)}).`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al crear categoría de egreso';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updateExpenseCategory(id: string, data: Partial<ExpenseCategoryConfig>) {
+    try {
+      const res = await firstValueFrom<ExpenseCategoryConfig>(
+        this.http.put<ExpenseCategoryConfig>(`/api/expenses/categories/${id}`, data)
+      );
+      this.expenseCategories.update(list => list.map(c => (c.id === id ? res : c)));
+      this.showToast(`Categoría "${res.name}" actualizada con éxito.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar categoría de egreso';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteExpenseCategory(id: string) {
+    try {
+      await firstValueFrom(this.http.delete(`/api/expenses/categories/${id}`));
+      this.expenseCategories.update(list => list.filter(c => c.id !== id));
+      this.showToast('Categoría eliminada exitosamente.');
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar categoría';
       this.showToast(msg, 'error');
       throw err;
     }

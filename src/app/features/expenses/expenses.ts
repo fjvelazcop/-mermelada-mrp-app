@@ -3,19 +3,21 @@ import {CommonModule, DecimalPipe} from '@angular/common';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {Expense, ExpenseCategory, ExpenseTaxCategory} from '../../core/models/erp.models';
+import {Expense, ExpenseCategory, ExpenseCategoryConfig, ExpenseTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel} from '../../core/utils/export.utils';
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
 
-export interface CategoryOption {
-  value: ExpenseCategory;
-  label: string;
-  icon: string;
-  color: string;
-  defaultAccountCode: string;
-  defaultAccountName: string;
-  defaultTaxCategory: ExpenseTaxCategory;
+export interface CategoryBudgetAnalysis {
+  category: ExpenseCategoryConfig;
+  actualAmountUsd: number;
+  actualAmountBs: number;
+  monthlyBudgetUsd: number;
+  differenceUsd: number; // monthlyBudgetUsd - actualAmountUsd (positive = within budget, negative = exceeded)
+  percentageConsumed: number;
+  status: 'normal' | 'warning' | 'danger';
+  expenseCount: number;
+  barWidthPercent: number; // 0 to 100 for visual bar
 }
 
 @Component({
@@ -32,101 +34,57 @@ export class ExpensesComponent {
   public categoryFilter = signal<string>('all');
   public searchQuery = signal<string>('');
 
+  // Monthly Filter: e.g. '2026-10' or 'all'
+  public selectedMonthFilter = signal<string>('2026-10');
+
   // Modals state
   public isCreateModalOpen = signal<boolean>(false);
   public isDetailModalOpen = signal<boolean>(false);
+  public isCategoryModalOpen = signal<boolean>(false);
+  public isBudgetModalOpen = signal<boolean>(false);
   public selectedExpenseForDetail = signal<Expense | null>(null);
+  public editingCategoryForBudget = signal<ExpenseCategoryConfig | null>(null);
 
-  // Categories metadata
-  public categories: CategoryOption[] = [
-    {
-      value: 'alquiler_instalaciones',
-      label: 'Alquiler de Instalaciones / Planta',
-      icon: 'warehouse',
-      color: 'bg-amber-100 text-amber-900 border-amber-200',
-      defaultAccountCode: '5.1.01.01',
-      defaultAccountName: 'Alquileres de Planta de Producción',
-      defaultTaxCategory: 'con_factura_iva',
-    },
-    {
-      value: 'servicios_basicos',
-      label: 'Servicios Básicos (Luz, Gas, Agua)',
-      icon: 'bolt',
-      color: 'bg-sky-100 text-sky-900 border-sky-200',
-      defaultAccountCode: '5.1.03.02',
-      defaultAccountName: 'Combustible, Gas y Servicios de Cocción',
-      defaultTaxCategory: 'con_factura_iva',
-    },
-    {
-      value: 'viajes_viaticos',
-      label: 'Viajes, Combustible & Viáticos',
-      icon: 'directions_car',
-      color: 'bg-emerald-100 text-emerald-900 border-emerald-200',
-      defaultAccountCode: '5.1.02.04',
-      defaultAccountName: 'Gastos de Viaje, Combustible y Viáticos',
-      defaultTaxCategory: 'no_sujeto',
-    },
-    {
-      value: 'gastos_personales_socios',
-      label: 'Gastos Personales & Retiros de Socios',
-      icon: 'person_pin',
-      color: 'bg-purple-100 text-purple-900 border-purple-200',
-      defaultAccountCode: '5.2.01.01',
-      defaultAccountName: 'Retiros Personales y Anticipos de Socios',
-      defaultTaxCategory: 'no_sujeto',
-    },
-    {
-      value: 'mantenimiento_reparacion',
-      label: 'Mantenimiento & Reparación',
-      icon: 'build',
-      color: 'bg-orange-100 text-orange-900 border-orange-200',
-      defaultAccountCode: '5.1.03.01',
-      defaultAccountName: 'Mantenimiento de Maquinaria y Marmitas',
-      defaultTaxCategory: 'con_factura_iva',
-    },
-    {
-      value: 'ventas_fletes_marketing',
-      label: 'Ventas, Fletes & Marketing',
-      icon: 'local_shipping',
-      color: 'bg-indigo-100 text-indigo-900 border-indigo-200',
-      defaultAccountCode: '5.1.04.01',
-      defaultAccountName: 'Fletes en Ventas y Publicidad Comercial',
-      defaultTaxCategory: 'con_factura_iva',
-    },
-    {
-      value: 'honorarios_profesionales',
-      label: 'Honorarios Profesionales & Asesoría',
-      icon: 'badge',
-      color: 'bg-rose-100 text-rose-900 border-rose-200',
-      defaultAccountCode: '5.2.02.01',
-      defaultAccountName: 'Honorarios Contables y Legales',
-      defaultTaxCategory: 'con_factura_iva',
-    },
-    {
-      value: 'suministros_oficina_planta',
-      label: 'Suministros de Oficina & Planta',
-      icon: 'inventory',
-      color: 'bg-teal-100 text-teal-900 border-teal-200',
-      defaultAccountCode: '5.2.03.01',
-      defaultAccountName: 'Materiales y Artículos de Oficina/Limpieza',
-      defaultTaxCategory: 'con_factura_iva',
-    },
-    {
-      value: 'otros',
-      label: 'Otros Egresos Operativos',
-      icon: 'more_horiz',
-      color: 'bg-stone-100 text-stone-800 border-stone-200',
-      defaultAccountCode: '5.3.01.01',
-      defaultAccountName: 'Otros Gastos Generales',
-      defaultTaxCategory: 'con_factura_iva',
-    },
+  // Available icon options for custom categories
+  public availableIcons: string[] = [
+    'warehouse',
+    'bolt',
+    'directions_car',
+    'person_pin',
+    'build',
+    'local_shipping',
+    'badge',
+    'inventory',
+    'more_horiz',
+    'storefront',
+    'precision_manufacturing',
+    'science',
+    'local_gas_station',
+    'water_drop',
+    'security',
+    'verified',
+    'restaurant',
+    'campaign',
   ];
 
-  // Expense Reactive Form
+  // Available color options for custom categories
+  public availableColors: { id: string; label: string; bg: string; text: string; border: string }[] = [
+    { id: 'amber', label: 'Ámbar', bg: 'bg-amber-100', text: 'text-amber-900', border: 'border-amber-300' },
+    { id: 'sky', label: 'Cielo', bg: 'bg-sky-100', text: 'text-sky-900', border: 'border-sky-300' },
+    { id: 'emerald', label: 'Esmeralda', bg: 'bg-emerald-100', text: 'text-emerald-900', border: 'border-emerald-300' },
+    { id: 'purple', label: 'Púrpura', bg: 'bg-purple-100', text: 'text-purple-900', border: 'border-purple-300' },
+    { id: 'orange', label: 'Naranja', bg: 'bg-orange-100', text: 'text-orange-900', border: 'border-orange-300' },
+    { id: 'indigo', label: 'Índigo', bg: 'bg-indigo-100', text: 'text-indigo-900', border: 'border-indigo-300' },
+    { id: 'rose', label: 'Rosa', bg: 'bg-rose-100', text: 'text-rose-900', border: 'border-rose-300' },
+    { id: 'teal', label: 'Turquesa', bg: 'bg-teal-100', text: 'text-teal-900', border: 'border-teal-300' },
+    { id: 'stone', label: 'Piedra', bg: 'bg-stone-100', text: 'text-stone-900', border: 'border-stone-300' },
+  ];
+
+  // Reactive Form: Expense
   public expenseForm = new FormGroup({
     concept: new FormControl<string>('', {nonNullable: true, validators: [Validators.required, Validators.minLength(4)]}),
-    category: new FormControl<ExpenseCategory>('alquiler_instalaciones', {nonNullable: true, validators: [Validators.required]}),
-    amountUsd: new FormControl<number>(100.00, {nonNullable: true, validators: [Validators.required, Validators.min(0.01)]}),
+    category: new FormControl<string>('alquiler_instalaciones', {nonNullable: true, validators: [Validators.required]}),
+    amountUsd: new FormControl<number>(150.00, {nonNullable: true, validators: [Validators.required, Validators.min(0.01)]}),
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     supplierOrBeneficiary: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
     taxId: new FormControl<string>('', {nonNullable: true}),
@@ -143,15 +101,162 @@ export class ExpensesComponent {
     notes: new FormControl<string>('', {nonNullable: true}),
   });
 
+  // Reactive Form: Custom Category Definition
+  public categoryForm = new FormGroup({
+    name: new FormControl<string>('', {nonNullable: true, validators: [Validators.required, Validators.minLength(3)]}),
+    icon: new FormControl<string>('storefront', {nonNullable: true, validators: [Validators.required]}),
+    color: new FormControl<string>('amber', {nonNullable: true, validators: [Validators.required]}),
+    monthlyBudgetUsd: new FormControl<number>(200.00, {nonNullable: true, validators: [Validators.required, Validators.min(0)]}),
+    accountingAccountCode: new FormControl<string>('5.1.05.01', {nonNullable: true}),
+    accountingAccountName: new FormControl<string>('Gastos Operativos Generales', {nonNullable: true}),
+    defaultTaxCategory: new FormControl<ExpenseTaxCategory>('con_factura_iva', {nonNullable: true}),
+    description: new FormControl<string>('', {nonNullable: true}),
+  });
+
+  // Reactive Form: Quick Budget Edit
+  public budgetEditForm = new FormGroup({
+    monthlyBudgetUsd: new FormControl<number>(0, {nonNullable: true, validators: [Validators.required, Validators.min(0)]}),
+  });
+
   public expensesList = computed<Expense[]>(() => this.api.expenses());
 
-  // Filtered Expenses
+  // Distinct Months available for filtering
+  public availableMonths = computed<{ value: string; label: string }[]>(() => {
+    const exps = this.expensesList();
+    const monthsSet = new Set<string>();
+    for (const e of exps) {
+      if (e.date && e.date.length >= 7) {
+        monthsSet.add(e.date.slice(0, 7));
+      }
+    }
+    const currentMonthStr = '2026-10';
+    monthsSet.add(currentMonthStr);
+
+    const sorted = Array.from(monthsSet).sort().reverse();
+    const monthNames: Record<string, string> = {
+      '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril',
+      '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08': 'Agosto',
+      '09': 'Septiembre', '10': 'Octubre', '11': 'Noviembre', '12': 'Diciembre',
+    };
+
+    return sorted.map(m => {
+      const [year, month] = m.split('-');
+      const name = monthNames[month] || month;
+      return {
+        value: m,
+        label: `${name} ${year}`,
+      };
+    });
+  });
+
+  // Comparative Category Budget Analysis (For selected month)
+  public categoryBudgetAnalyses = computed<CategoryBudgetAnalysis[]>(() => {
+    const month = this.selectedMonthFilter();
+    const allExpenses = this.expensesList();
+    const categories = this.api.expenseCategories();
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+
+    // Filter expenses by selected month (or all)
+    const monthExpenses = month === 'all'
+      ? allExpenses
+      : allExpenses.filter(e => e.date?.startsWith(month));
+
+    return categories.map(cat => {
+      const matchingExpenses = monthExpenses.filter(
+        e => e.category === cat.id || e.categoryLabel?.toLowerCase() === cat.name.toLowerCase()
+      );
+      const actualAmountUsd = matchingExpenses.reduce((sum, e) => sum + (Number(e.amountUsd) || 0), 0);
+      const actualAmountBs = actualAmountUsd * rate;
+      const monthlyBudgetUsd = Number(cat.monthlyBudgetUsd) || 0;
+      const differenceUsd = monthlyBudgetUsd - actualAmountUsd;
+      const percentageConsumed = monthlyBudgetUsd > 0
+        ? Number(((actualAmountUsd / monthlyBudgetUsd) * 100).toFixed(1))
+        : (actualAmountUsd > 0 ? 100 : 0);
+
+      let status: 'normal' | 'warning' | 'danger' = 'normal';
+      if (percentageConsumed >= 100) {
+        status = 'danger';
+      } else if (percentageConsumed >= 70) {
+        status = 'warning';
+      }
+
+      const barWidthPercent = Math.min(100, percentageConsumed);
+
+      return {
+        category: cat,
+        actualAmountUsd,
+        actualAmountBs,
+        monthlyBudgetUsd,
+        differenceUsd,
+        percentageConsumed,
+        status,
+        expenseCount: matchingExpenses.length,
+        barWidthPercent,
+      };
+    });
+  });
+
+  // Overall Monthly Budget Summary
+  public budgetSummary = computed(() => {
+    const analyses = this.categoryBudgetAnalyses();
+    const totalActualUsd = analyses.reduce((sum, a) => sum + a.actualAmountUsd, 0);
+    const totalBudgetUsd = analyses.reduce((sum, a) => sum + a.monthlyBudgetUsd, 0);
+    const totalDifferenceUsd = totalBudgetUsd - totalActualUsd;
+    const overallPercentage = totalBudgetUsd > 0
+      ? Number(((totalActualUsd / totalBudgetUsd) * 100).toFixed(1))
+      : 0;
+    const exceededCategories = analyses.filter(a => a.status === 'danger');
+    const warningCategories = analyses.filter(a => a.status === 'warning');
+
+    return {
+      totalActualUsd,
+      totalBudgetUsd,
+      totalDifferenceUsd,
+      overallPercentage,
+      exceededCount: exceededCategories.length,
+      warningCount: warningCategories.length,
+      exceededCategories,
+    };
+  });
+
+  // Contextual budget check for selected category in registration form
+  public selectedCategoryBudgetWarning = computed(() => {
+    const catId = this.expenseForm.controls.category.value;
+    const amount = Number(this.expenseForm.controls.amountUsd.value) || 0;
+    const analyses = this.categoryBudgetAnalyses();
+    const target = analyses.find(a => a.category.id === catId);
+
+    if (!target) return null;
+
+    const projectedTotal = target.actualAmountUsd + amount;
+    const isCurrentlyExceeded = target.status === 'danger';
+    const willExceed = target.monthlyBudgetUsd > 0 && projectedTotal > target.monthlyBudgetUsd;
+
+    return {
+      categoryName: target.category.name,
+      currentActual: target.actualAmountUsd,
+      monthlyBudget: target.monthlyBudgetUsd,
+      projectedTotal,
+      percentageNow: target.percentageConsumed,
+      isCurrentlyExceeded,
+      willExceed,
+      remaining: target.differenceUsd,
+    };
+  });
+
+  // Filtered Expenses for List
   public filteredExpenses = computed<Expense[]>(() => {
     const all = this.expensesList();
     const cat = this.categoryFilter();
+    const month = this.selectedMonthFilter();
     const query = this.searchQuery().trim().toLowerCase();
 
     return all.filter(exp => {
+      // Month match
+      if (month !== 'all' && !exp.date?.startsWith(month)) {
+        return false;
+      }
+
       // Category match
       let matchesCat = true;
       if (cat !== 'all') {
@@ -186,39 +291,33 @@ export class ExpensesComponent {
 
   // KPI Computations
   public totalAmountUsd = computed<number>(() => {
-    return this.expensesList().reduce((acc, e) => acc + (Number(e.amountUsd) || 0), 0);
+    return this.filteredExpenses().reduce((acc, e) => acc + (Number(e.amountUsd) || 0), 0);
   });
 
   public totalAmountBs = computed<number>(() => {
-    return this.expensesList().reduce((acc, e) => acc + (Number(e.amountBs) || 0), 0);
+    return this.filteredExpenses().reduce((acc, e) => acc + (Number(e.amountBs) || 0), 0);
   });
 
   public operationalAmountUsd = computed<number>(() => {
-    return this.expensesList()
+    return this.filteredExpenses()
       .filter(e => e.category !== 'gastos_personales_socios')
       .reduce((acc, e) => acc + (Number(e.amountUsd) || 0), 0);
   });
 
   public personalPartnersAmountUsd = computed<number>(() => {
-    return this.expensesList()
+    return this.filteredExpenses()
       .filter(e => e.category === 'gastos_personales_socios')
       .reduce((acc, e) => acc + (Number(e.amountUsd) || 0), 0);
   });
 
-  public travelAndLogisticsAmountUsd = computed<number>(() => {
-    return this.expensesList()
-      .filter(e => e.category === 'viajes_viaticos' || e.category === 'ventas_fletes_marketing')
-      .reduce((acc, e) => acc + (Number(e.amountUsd) || 0), 0);
-  });
-
   public fiscalCreditIvaAmountUsd = computed<number>(() => {
-    return this.expensesList()
+    return this.filteredExpenses()
       .filter(e => e.fiscalBookEligible && e.taxAmountUsd)
       .reduce((acc, e) => acc + (Number(e.taxAmountUsd) || 0), 0);
   });
 
   public fiscalCreditIvaAmountBs = computed<number>(() => {
-    return this.expensesList()
+    return this.filteredExpenses()
       .filter(e => e.fiscalBookEligible && e.taxAmountBs)
       .reduce((acc, e) => acc + (Number(e.taxAmountBs) || 0), 0);
   });
@@ -227,18 +326,47 @@ export class ExpensesComponent {
     return this.api.auditLogs().filter(l => l.module === 'gastos').length;
   });
 
-  // Helper: on category change in form, auto-suggest account code and tax eligibility
-  public onCategoryChange(catValue: ExpenseCategory) {
-    const cat = this.categories.find(c => c.value === catValue);
+  // Category Color Badge Helpers
+  public getCategoryColorClass(color?: string): string {
+    switch (color) {
+      case 'amber': return 'bg-amber-100 text-amber-900 border-amber-200';
+      case 'sky': return 'bg-sky-100 text-sky-900 border-sky-200';
+      case 'emerald': return 'bg-emerald-100 text-emerald-900 border-emerald-200';
+      case 'purple': return 'bg-purple-100 text-purple-900 border-purple-200';
+      case 'orange': return 'bg-orange-100 text-orange-900 border-orange-200';
+      case 'indigo': return 'bg-indigo-100 text-indigo-900 border-indigo-200';
+      case 'rose': return 'bg-rose-100 text-rose-900 border-rose-200';
+      case 'teal': return 'bg-teal-100 text-teal-900 border-teal-200';
+      default: return 'bg-stone-100 text-stone-900 border-stone-200';
+    }
+  }
+
+  public getCategoryBarColor(status: 'normal' | 'warning' | 'danger', color?: string): string {
+    if (status === 'danger') return 'bg-rose-500';
+    if (status === 'warning') return 'bg-amber-500';
+    switch (color) {
+      case 'emerald': return 'bg-emerald-500';
+      case 'sky': return 'bg-sky-500';
+      case 'purple': return 'bg-purple-500';
+      case 'indigo': return 'bg-indigo-500';
+      case 'teal': return 'bg-teal-500';
+      case 'orange': return 'bg-orange-500';
+      default: return 'bg-amber-600';
+    }
+  }
+
+  // Auto-fill form on category change
+  public onCategoryChange(catId: string) {
+    const cat = this.api.expenseCategories().find(c => c.id === catId);
     if (!cat) return;
 
-    const isPartner = catValue === 'gastos_personales_socios';
-    const isTravel = catValue === 'viajes_viaticos';
+    const isPartner = cat.id === 'gastos_personales_socios';
+    const isTravel = cat.id === 'viajes_viaticos';
 
     this.expenseForm.patchValue({
-      accountingAccountCode: cat.defaultAccountCode,
-      accountingAccountName: cat.defaultAccountName,
-      taxCategory: cat.defaultTaxCategory,
+      accountingAccountCode: cat.accountingAccountCode || '5.1.01.01',
+      accountingAccountName: cat.accountingAccountName || cat.name,
+      taxCategory: cat.defaultTaxCategory || 'con_factura_iva',
       fiscalBookEligible: !isPartner && !isTravel,
       documentType: isPartner ? 'vale_caja' : (isTravel ? 'recibo_pago' : 'factura_fiscal'),
     });
@@ -246,9 +374,10 @@ export class ExpensesComponent {
 
   public openCreateModal() {
     const activeRate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const defaultCat = this.api.expenseCategories()[0]?.id || 'alquiler_instalaciones';
     this.expenseForm.reset({
       concept: '',
-      category: 'alquiler_instalaciones',
+      category: defaultCat,
       amountUsd: 150.00,
       exchangeRateUsed: activeRate,
       supplierOrBeneficiary: '',
@@ -265,6 +394,7 @@ export class ExpensesComponent {
       date: new Date().toISOString().slice(0, 10),
       notes: '',
     });
+    this.onCategoryChange(defaultCat);
     this.isCreateModalOpen.set(true);
   }
 
@@ -282,6 +412,79 @@ export class ExpensesComponent {
     this.selectedExpenseForDetail.set(null);
   }
 
+  // Categories & Budget Modal Handlers
+  public openCategoryModal() {
+    this.categoryForm.reset({
+      name: '',
+      icon: 'storefront',
+      color: 'amber',
+      monthlyBudgetUsd: 250.00,
+      accountingAccountCode: '5.1.05.01',
+      accountingAccountName: 'Gastos de Operación y Logística',
+      defaultTaxCategory: 'con_factura_iva',
+      description: '',
+    });
+    this.isCategoryModalOpen.set(true);
+  }
+
+  public closeCategoryModal() {
+    this.isCategoryModalOpen.set(false);
+  }
+
+  public async submitCategory() {
+    if (this.categoryForm.invalid) return;
+    const v = this.categoryForm.getRawValue();
+
+    await this.api.addExpenseCategory({
+      name: v.name,
+      icon: v.icon,
+      color: v.color,
+      monthlyBudgetUsd: Number(v.monthlyBudgetUsd) || 0,
+      accountingAccountCode: v.accountingAccountCode || undefined,
+      accountingAccountName: v.accountingAccountName || undefined,
+      defaultTaxCategory: v.defaultTaxCategory,
+      description: v.description || undefined,
+      isSystem: false,
+    });
+
+    this.closeCategoryModal();
+  }
+
+  public openBudgetModal(cat: ExpenseCategoryConfig) {
+    this.editingCategoryForBudget.set(cat);
+    this.budgetEditForm.reset({
+      monthlyBudgetUsd: cat.monthlyBudgetUsd || 0,
+    });
+    this.isBudgetModalOpen.set(true);
+  }
+
+  public closeBudgetModal() {
+    this.isBudgetModalOpen.set(false);
+    this.editingCategoryForBudget.set(null);
+  }
+
+  public async saveBudgetEdit() {
+    const cat = this.editingCategoryForBudget();
+    if (!cat) return;
+    const newBudget = Number(this.budgetEditForm.controls.monthlyBudgetUsd.value) || 0;
+
+    await this.api.updateExpenseCategory(cat.id, {
+      monthlyBudgetUsd: newBudget,
+    });
+
+    this.closeBudgetModal();
+  }
+
+  public async deleteCategory(cat: ExpenseCategoryConfig) {
+    if (cat.isSystem) {
+      this.api.showToast('No se pueden eliminar las categorías base del sistema.', 'error');
+      return;
+    }
+    if (confirm(`¿Deseas eliminar la categoría personalizada "${cat.name}"? Los egresos existentes conservarán su registro.`)) {
+      await this.api.deleteExpenseCategory(cat.id);
+    }
+  }
+
   public async submitExpense() {
     if (this.expenseForm.invalid) return;
     const v = this.expenseForm.getRawValue();
@@ -289,15 +492,13 @@ export class ExpensesComponent {
     const amountUsd = Number(v.amountUsd) || 0;
     const amountBs = Number((amountUsd * rate).toFixed(2));
 
-    const catMeta = this.categories.find(c => c.value === v.category);
-    const categoryLabel = catMeta ? catMeta.label : 'Gasto General';
+    const catMeta = this.api.expenseCategories().find(c => c.id === v.category);
+    const categoryLabel = catMeta ? catMeta.name : 'Gasto General';
 
     // Tax calculation
     let taxAmountUsd: number | undefined = undefined;
     let taxAmountBs: number | undefined = undefined;
     if (v.taxCategory === 'con_factura_iva' && v.taxRatePercent) {
-      // In Venezuela, invoice total is base + IVA (or total includes IVA)
-      // Base = total / (1 + rate/100)
       const base = amountUsd / (1 + (v.taxRatePercent / 100));
       taxAmountUsd = Number((amountUsd - base).toFixed(2));
       taxAmountBs = Number((taxAmountUsd * rate).toFixed(2));

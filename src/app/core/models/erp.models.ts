@@ -567,7 +567,21 @@ export type ExpenseCategory =
   | 'ventas_fletes_marketing'
   | 'honorarios_profesionales'
   | 'suministros_oficina_planta'
-  | 'otros';
+  | 'otros'
+  | string;
+
+export interface ExpenseCategoryConfig {
+  id: string; // ej: 'alquiler_instalaciones', 'viajes_viaticos', o id personalizado 'cat-xxx'
+  name: string; // ej: 'Alquiler de Instalaciones / Planta'
+  icon: string; // Material Icon name
+  color: string; // Tailwind color token or hex, ej: 'amber', 'sky', 'emerald', 'purple', 'rose', 'indigo'
+  monthlyBudgetUsd: number; // Presupuesto mensual asignado en USD
+  accountingAccountCode?: string; // ej: 5.1.01.01
+  accountingAccountName?: string;
+  defaultTaxCategory?: ExpenseTaxCategory;
+  description?: string;
+  isSystem?: boolean; // True si es una de las categorías base del ERP
+}
 
 export type ExpenseTaxCategory =
   | 'con_factura_iva' // Con crédito fiscal para futuro Libro de Compras (Art. 56 Ley IVA)
@@ -603,3 +617,4 @@ export interface Expense {
   accountingAccountName?: string;
   fiscalBookEligible: boolean; // True si califica para el Libro de Compras formal SENIAT
 }
+

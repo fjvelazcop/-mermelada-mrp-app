@@ -1,3 +1,12 @@
+function capitalize(str: string): string {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function first(str: string): string {
+  return str.split(' ')[0];
+}
+
 /**
  * TestAgent - Agent in charge of generating, running, and reporting tests.
  * Integrates with the project's Vitest setup and can scaffold test files,
@@ -42,15 +51,5 @@ describe('${capitalize(first(lower))}', () => {
   /** Generate a coverage report (placeholder). */
   generateCoverageReport(): string {
     return 'Coverage report generation placeholder';
-  }
-
-  /** Helper: capitalize first letter */
-  private capitalize(str: string): string {
-    if (!str) return str;
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-
-  private first(str: string): string {
-    return str.split(' ')[0];
   }
 }

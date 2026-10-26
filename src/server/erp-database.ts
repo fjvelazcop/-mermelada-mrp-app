@@ -19,6 +19,7 @@ import {
   ExchangeRateRecord,
   AuditLogEntry,
   Expense,
+  ExpenseCategoryConfig,
 } from '../app/core/models/erp.models.js';
 
 export interface DatabaseState {
@@ -33,6 +34,7 @@ export interface DatabaseState {
   employees: Employee[];
   payrollWeeks: PayrollWeek[];
   expenses: Expense[];
+  expenseCategories: ExpenseCategoryConfig[];
   fiscalSettings: FiscalSettings;
   exchangeRates: DailyExchangeRates;
   auditLogs: AuditLogEntry[];
@@ -1364,6 +1366,117 @@ export function createInitialDatabase(): DatabaseState {
     },
   ];
 
+  const expenseCategories: ExpenseCategoryConfig[] = [
+    {
+      id: 'alquiler_instalaciones',
+      name: 'Alquiler de Instalaciones / Planta',
+      icon: 'warehouse',
+      color: 'amber',
+      monthlyBudgetUsd: 1600.00,
+      accountingAccountCode: '5.1.01.01',
+      accountingAccountName: 'Arrendamientos y Alquileres de Planta',
+      defaultTaxCategory: 'con_factura_iva',
+      description: 'Canon mensual de arrendamiento de galpón y áreas de cocción',
+      isSystem: true,
+    },
+    {
+      id: 'servicios_basicos',
+      name: 'Servicios Básicos (Luz, Gas, Agua)',
+      icon: 'bolt',
+      color: 'sky',
+      monthlyBudgetUsd: 120.00,
+      accountingAccountCode: '5.1.03.02',
+      accountingAccountName: 'Combustible y Gas de Operación en Marmitas',
+      defaultTaxCategory: 'con_factura_iva',
+      description: 'Cilindros de gas GLP, electricidad trifásica y agua industrial',
+      isSystem: true,
+    },
+    {
+      id: 'viajes_viaticos',
+      name: 'Viajes, Combustible & Viáticos',
+      icon: 'directions_car',
+      color: 'emerald',
+      monthlyBudgetUsd: 200.00,
+      accountingAccountCode: '5.1.02.04',
+      accountingAccountName: 'Gastos de Viaje, Combustible y Viáticos',
+      defaultTaxCategory: 'no_sujeto',
+      description: 'Peajes, gasolina, viáticos de ventas y reparto a panaderías',
+      isSystem: true,
+    },
+    {
+      id: 'gastos_personales_socios',
+      name: 'Gastos Personales & Retiros de Socios',
+      icon: 'person_pin',
+      color: 'purple',
+      monthlyBudgetUsd: 300.00,
+      accountingAccountCode: '5.2.01.01',
+      accountingAccountName: 'Retiros Personales y Anticipos de Socios',
+      defaultTaxCategory: 'no_sujeto',
+      description: 'Adelantos de utilidades de socios directivos',
+      isSystem: true,
+    },
+    {
+      id: 'mantenimiento_reparacion',
+      name: 'Mantenimiento & Reparación',
+      icon: 'build',
+      color: 'orange',
+      monthlyBudgetUsd: 150.00,
+      accountingAccountCode: '5.1.03.01',
+      accountingAccountName: 'Mantenimiento de Maquinaria y Equipos de Cocción',
+      defaultTaxCategory: 'con_factura_iva',
+      description: 'Mantenimiento preventivo de marmitas, pailas y dosificadoras',
+      isSystem: true,
+    },
+    {
+      id: 'ventas_fletes_marketing',
+      name: 'Ventas, Fletes & Marketing',
+      icon: 'local_shipping',
+      color: 'indigo',
+      monthlyBudgetUsd: 180.00,
+      accountingAccountCode: '5.1.04.01',
+      accountingAccountName: 'Fletes en Ventas y Publicidad Comercial',
+      defaultTaxCategory: 'con_factura_iva',
+      description: 'Fletes interurbanos de producto terminado y pauta publicitaria',
+      isSystem: true,
+    },
+    {
+      id: 'honorarios_profesionales',
+      name: 'Honorarios Profesionales & Asesoría',
+      icon: 'badge',
+      color: 'rose',
+      monthlyBudgetUsd: 250.00,
+      accountingAccountCode: '5.2.02.01',
+      accountingAccountName: 'Honorarios Contables y Legales',
+      defaultTaxCategory: 'con_factura_iva',
+      description: 'Asesoría contable, balance fiscal y auditoría bromatológica',
+      isSystem: true,
+    },
+    {
+      id: 'suministros_oficina_planta',
+      name: 'Suministros de Oficina & Planta',
+      icon: 'inventory',
+      color: 'teal',
+      monthlyBudgetUsd: 100.00,
+      accountingAccountCode: '5.2.03.01',
+      accountingAccountName: 'Materiales y Artículos de Oficina/Limpieza',
+      defaultTaxCategory: 'con_factura_iva',
+      description: 'Papelería, productos de desinfección sanitaria y guantes',
+      isSystem: true,
+    },
+    {
+      id: 'otros',
+      name: 'Otros Egresos Operativos',
+      icon: 'more_horiz',
+      color: 'stone',
+      monthlyBudgetUsd: 100.00,
+      accountingAccountCode: '5.3.01.01',
+      accountingAccountName: 'Otros Gastos Generales',
+      defaultTaxCategory: 'con_factura_iva',
+      description: 'Gastos menores imprevistos de operación diaria',
+      isSystem: true,
+    },
+  ];
+
   return {
     rawMaterials,
     inventoryMovements,
@@ -1376,6 +1489,7 @@ export function createInitialDatabase(): DatabaseState {
     employees,
     payrollWeeks,
     expenses,
+    expenseCategories,
     fiscalSettings,
     exchangeRates,
     auditLogs,
@@ -2324,6 +2438,51 @@ export class ErpDatabase {
     this.state.expenses.splice(idx, 1);
     return true;
   }
+
+  // --- EXPENSE CATEGORIES & BUDGETS ---
+  public getExpenseCategories(): ExpenseCategoryConfig[] {
+    return this.state.expenseCategories || [];
+  }
+
+  public addExpenseCategory(data: Omit<ExpenseCategoryConfig, 'id'>): ExpenseCategoryConfig {
+    if (!this.state.expenseCategories) {
+      this.state.expenseCategories = [];
+    }
+    const newCategory: ExpenseCategoryConfig = {
+      ...data,
+      id: 'cat-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5),
+      monthlyBudgetUsd: Number(data.monthlyBudgetUsd) || 0,
+      isSystem: false,
+    };
+    this.state.expenseCategories.push(newCategory);
+    return newCategory;
+  }
+
+  public updateExpenseCategory(id: string, updates: Partial<ExpenseCategoryConfig>): ExpenseCategoryConfig | null {
+    if (!this.state.expenseCategories) return null;
+    const idx = this.state.expenseCategories.findIndex(c => c.id === id);
+    if (idx === -1) return null;
+
+    if (updates.monthlyBudgetUsd !== undefined) {
+      updates.monthlyBudgetUsd = Number(updates.monthlyBudgetUsd) || 0;
+    }
+
+    this.state.expenseCategories[idx] = {
+      ...this.state.expenseCategories[idx],
+      ...updates,
+    };
+    return this.state.expenseCategories[idx];
+  }
+
+  public deleteExpenseCategory(id: string): boolean {
+    if (!this.state.expenseCategories) return false;
+    const idx = this.state.expenseCategories.findIndex(c => c.id === id);
+    if (idx === -1) return false;
+    // Don't allow deletion of system categories if requested, or delete if custom
+    this.state.expenseCategories.splice(idx, 1);
+    return true;
+  }
 }
 
 export const dbInstance = new ErpDatabase();
+

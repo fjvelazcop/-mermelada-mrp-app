@@ -24,8 +24,7 @@ export class AgentsService {
   private security: CybersecurityAgent = new CybersecurityAgent();
   private info: InformationGatheringAgent = new InformationGatheringAgent(this.database);
   private memory: MemoryAgent = new MemoryAgent();
-  private docs: DocumentationRegistrationAgent =
-    DocumentationRegistrationAgent;
+  private docs: DocumentationRegistrationAgent = new DocumentationRegistrationAgent();
 
   // ------------------------------------------------------------------
   // Planner
@@ -72,7 +71,7 @@ export class AgentsService {
   // ------------------------------------------------------------------
   // Documentation
   // ------------------------------------------------------------------
-  get documentationAgent(): typeof DocumentationRegistrationAgent {
+  get documentationAgent(): DocumentationRegistrationAgent {
     return this.docs;
   }
 
@@ -98,13 +97,13 @@ export class AgentsService {
   // Example helper: register a markdown doc from a metadata object
   // ------------------------------------------------------------------
   registerFeatureDoc(title: string, description: string, tags: string[]): void {
-    const markdown = DocumentationRegistrationAgent.scaffoldDoc({
+    const markdown = this.docs.scaffoldDoc({
       title,
       description,
       category: 'feature',
       tags,
     });
     // Write under docs/features/; the folder is created if missing.
-    DocumentationRegistrationAgent.registerDoc(markdown, 'docs/features/${title.toLowerCase().replace(/\s+/g, "-")}.md');
+    this.docs.registerDoc(markdown, `docs/features/${title.toLowerCase().replace(/\s+/g, "-")}.md`);
   }
 }

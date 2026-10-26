@@ -382,6 +382,54 @@ app.delete('/api/expenses/:id', (req, res) => {
   }
 });
 
+// --- EXPENSES CATEGORIES & BUDGETS ---
+app.get('/api/expenses/categories', (req, res) => {
+  try {
+    res.json(dbInstance.getExpenseCategories());
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al consultar categorías de gastos';
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.post('/api/expenses/categories', (req, res) => {
+  try {
+    const created = dbInstance.addExpenseCategory(req.body);
+    res.status(201).json(created);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al crear categoría de gasto';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.put('/api/expenses/categories/:id', (req, res) => {
+  try {
+    const updated = dbInstance.updateExpenseCategory(req.params.id, req.body);
+    if (!updated) {
+      res.status(404).json({ error: 'Categoría no encontrada' });
+      return;
+    }
+    res.json(updated);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al actualizar categoría de gasto';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.delete('/api/expenses/categories/:id', (req, res) => {
+  try {
+    const success = dbInstance.deleteExpenseCategory(req.params.id);
+    if (!success) {
+      res.status(404).json({ error: 'Categoría no encontrada' });
+      return;
+    }
+    res.json({ success: true, message: 'Categoría eliminada exitosamente' });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al eliminar categoría de gasto';
+    res.status(400).json({ error: msg });
+  }
+});
+
 // --- FISCAL SETTINGS ---
 app.get('/api/fiscal-settings', (req, res) => {
   try {
