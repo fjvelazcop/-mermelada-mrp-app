@@ -186,8 +186,10 @@ npm run build
 npm prune --omit=dev
 
 sudo npm i -g pm2
-# Ajusta DB_PATH=/opt/mermelada/data/mermelada.db en .env.production
-set -a && . ./.env.production && set +a
+# ecosystem.config.cjs carga .env.production (o .env si no existe) de forma
+# automática. Ajusta DB_PATH=/opt/mermelada/data/mermelada.db en ese fichero.
+# Usa ENV_FILE=.env.otro para elegir un fichero distinto; las variables ya
+# exportadas en la shell tienen prioridad.
 mkdir -p logs data
 pm2 start ecosystem.config.cjs --update-env
 pm2 save
@@ -206,7 +208,7 @@ pm2 monit
 ```
 
 `ecosystem.config.cjs` define `cwd`, logs en `logs/`, `kill_timeout: 15000` y
-`max_memory_restart: 512M`. Si `TUNNEL_ENABLED=true` al cargar el entorno,
+`max_memory_restart: 512M`. Si `TUNNEL_ENABLED=true` en el fichero de entorno,
 también arranca `mermelada-tunnel`; con `false` solo se inicia la app.
 
 ### 5.1 Cloudflare Tunnel (gratis)
@@ -236,10 +238,12 @@ TUNNEL_TOKEN=token-del-tunel
 TUNNEL_PUBLIC_URL=https://erp.example.com
 ```
 
-Con el entorno cargado, `pm2 start ecosystem.config.cjs --update-env` levanta
-ambos procesos. El supervisor espera a `/api/health`, arranca `cloudflared`,
-extrae la URL pública, la registra en `tunnel_sessions` y dispara el correo.
-Si cloudflared cae o el health check público falla 3 veces, PM2 lo reinicia.
+Al ejecutar `pm2 start ecosystem.config.cjs --update-env`, PM2 carga el fichero
+`.env.production` (o `.env` como respaldo) y levanta ambos procesos; no hace
+falta exportar las variables a mano. El supervisor espera a `/api/health`,
+arranca `cloudflared`, extrae la URL pública, la registra en
+`tunnel_sessions` y dispara el correo. Si cloudflared cae o el health check
+público falla 3 veces, PM2 lo reinicia.
 
 La URL vigente se consulta (admin) en `GET /api/system/tunnel` y en
 `logs/tunnel-out.log`; el histórico queda en la base de datos.
