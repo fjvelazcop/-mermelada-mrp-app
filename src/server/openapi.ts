@@ -147,6 +147,143 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/auth/change-password': {
+    post: {
+      tags: ['Autenticación'],
+      summary: 'Cambiar la contraseña del usuario autenticado',
+      description:
+        'Verifica la contraseña actual y actualiza el hash. Los tokens emitidos antes del cambio dejan de ser válidos.',
+      requestBody: requestBody(ref('ChangePasswordRequest')),
+      responses: {
+        200: jsonResponse('Contraseña actualizada', {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            requiresLogin: { type: 'boolean' },
+          },
+        }),
+        400: jsonResponse('La contraseña actual no es correcta', ref('Error')),
+        401: errorResponses[401],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/auth/roles': {
+    get: {
+      tags: ['Seguridad'],
+      summary: 'Listar roles y su matriz de permisos',
+      responses: {
+        200: jsonResponse('Roles del sistema', arrayOf('Role')),
+        401: errorResponses[401],
+      },
+    },
+    post: {
+      tags: ['Seguridad'],
+      summary: 'Crear un rol personalizado (solo administrador)',
+      requestBody: requestBody(ref('RoleCreateRequest')),
+      responses: {
+        201: jsonResponse('Rol creado', ref('Role')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/auth/roles/{id}': {
+    put: {
+      tags: ['Seguridad'],
+      summary: 'Actualizar metadatos de un rol (solo administrador)',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('RoleUpdateRequest')),
+      responses: {
+        200: jsonResponse('Rol actualizado', ref('Role')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+    delete: {
+      tags: ['Seguridad'],
+      summary: 'Eliminar un rol personalizado sin usuarios asignados',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Rol eliminado'),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
+  '/api/auth/roles/{id}/permissions': {
+    put: {
+      tags: ['Seguridad'],
+      summary: 'Actualizar los permisos de un rol en un módulo',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('RolePermissionUpdateRequest')),
+      responses: {
+        200: jsonResponse('Permisos actualizados', ref('Role')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/auth/users': {
+    get: {
+      tags: ['Seguridad'],
+      summary: 'Listar usuarios del sistema (solo administrador)',
+      responses: {
+        200: jsonResponse('Usuarios', arrayOf('AuthUser')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Seguridad'],
+      summary: 'Crear un usuario y asignarle un rol (solo administrador)',
+      requestBody: requestBody(ref('UserCreateRequest')),
+      responses: {
+        201: jsonResponse('Usuario creado', ref('AuthUser')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/auth/users/{id}': {
+    put: {
+      tags: ['Seguridad'],
+      summary: 'Actualizar un usuario (solo administrador)',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('UserUpdateRequest')),
+      responses: {
+        200: jsonResponse('Usuario actualizado', ref('AuthUser')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+    delete: {
+      tags: ['Seguridad'],
+      summary: 'Eliminar un usuario (solo administrador)',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Usuario eliminado'),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
   '/api/banks': {
     get: {
       tags: ['Localización'],
@@ -968,11 +1105,14 @@ const schemas: Record<string, JsonObject> = {
       nationalId: string,
       roleId: {
         type: 'string',
-        enum: ['admin', 'supervisor_planta', 'operator', 'analista_costos', 'almacenista'],
+        description: 'Identificador del rol asignado (puede ser un rol personalizado)',
+        example: 'operator',
       },
+      roleName: { type: 'string', example: 'Operador de Producción' },
       department: string,
       status: { type: 'string', example: 'activo' },
       createdAt: dateTime,
+      avatarBg: { type: 'string', example: 'bg-blue-600' },
     },
   },
   PasswordResetRequest: {
@@ -1006,6 +1146,106 @@ const schemas: Record<string, JsonObject> = {
       token: { type: 'string', example: 'reset_1a2b3c...' },
       newPassword: { type: 'string', minLength: 8, example: 'nuevaClave2026' },
     },
+  },
+  ChangePasswordRequest: {
+    type: 'object',
+    required: ['currentPassword', 'newPassword'],
+    properties: {
+      currentPassword: { type: 'string', example: 'mermelada123' },
+      newPassword: { type: 'string', minLength: 8, example: 'nuevaClave2026' },
+    },
+  },
+  RolePermissionFlags: {
+    type: 'object',
+    properties: {
+      canView: boolean,
+      canCreate: boolean,
+      canEdit: boolean,
+      canDelete: boolean,
+      canExport: boolean,
+    },
+  },
+  Role: {
+    type: 'object',
+    properties: {
+      id: string,
+      name: string,
+      description: string,
+      color: { type: 'string', example: 'amber' },
+      isSystem: { type: 'boolean', example: false },
+      permissions: {
+        type: 'object',
+        description: 'Matriz de permisos indexada por identificador de módulo',
+        additionalProperties: ref('RolePermissionFlags'),
+      },
+    },
+  },
+  RoleCreateRequest: {
+    type: 'object',
+    required: ['name', 'description'],
+    properties: {
+      name: { type: 'string', example: 'Inspector de Calidad HACCP' },
+      description: { type: 'string', example: 'Verifica BPM y trazabilidad de lotes' },
+      color: { type: 'string', example: 'amber' },
+      permissions: {
+        type: 'object',
+        additionalProperties: ref('RolePermissionFlags'),
+      },
+    },
+  },
+  RoleUpdateRequest: {
+    type: 'object',
+    properties: {
+      name: string,
+      description: string,
+      color: string,
+    },
+  },
+  RolePermissionUpdateRequest: {
+    type: 'object',
+    required: ['moduleId', 'permissions'],
+    properties: {
+      moduleId: {
+        type: 'string',
+        enum: [
+          'dashboard',
+          'inventory',
+          'production',
+          'costing',
+          'sales',
+          'payroll',
+          'expenses',
+          'suppliers',
+          'settings',
+          'architecture',
+        ],
+      },
+      permissions: ref('RolePermissionFlags'),
+    },
+  },
+  UserCreateRequest: {
+    type: 'object',
+    required: ['fullName', 'username', 'email', 'roleId'],
+    properties: {
+      fullName: { type: 'string', example: 'Carlos Mendoza' },
+      username: { type: 'string', example: 'cmendoza' },
+      email: { type: 'string', example: 'cmendoza@pulpacraft.com' },
+      nationalId: { type: 'string', example: 'V-19.876.543' },
+      roleId: { type: 'string', example: 'operator' },
+      department: { type: 'string', example: 'Planta de Elaboración' },
+      status: { type: 'string', enum: ['activo', 'inactivo'] },
+      avatarBg: { type: 'string', example: 'bg-blue-600' },
+      password: {
+        type: 'string',
+        minLength: 8,
+        description: 'Contraseña inicial. Si se omite se usa la de siembra.',
+      },
+    },
+  },
+  UserUpdateRequest: {
+    type: 'object',
+    description:
+      'Cualquier subconjunto de UserCreateRequest. Un `password` nuevo invalida los tokens anteriores.',
   },
   Bank: {
     type: 'object',

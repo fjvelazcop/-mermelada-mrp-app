@@ -208,6 +208,14 @@
               <span class="block text-[10px] text-stone-500">{{ auth.currentUser()?.roleId }}</span>
             </div>
             <button
+              (click)="openPasswordModal()"
+              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100 font-semibold min-h-[36px]"
+              title="Cambiar mi contraseña"
+            >
+              <mat-icon class="text-sm">key</mat-icon>
+              <span class="hidden lg:inline">Clave</span>
+            </button>
+            <button
               (click)="logout()"
               class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100 font-semibold min-h-[36px]"
               title="Cerrar sesión"
@@ -508,6 +516,14 @@
 
         @if (auth.authEnabled()) {
           <button
+            (click)="openPasswordModal()"
+            class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold min-h-[44px]"
+          >
+            <mat-icon class="text-xs">key</mat-icon>
+            <span>Cambiar Contraseña</span>
+          </button>
+
+          <button
             (click)="logout()"
             class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold min-h-[44px]"
           >
@@ -515,6 +531,90 @@
             <span>Cerrar Sesión ({{ auth.currentUser()?.fullName }})</span>
           </button>
         }
+      </div>
+    </div>
+  }
+
+  <!-- CHANGE PASSWORD MODAL -->
+  @if (showPasswordModal()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-stone-200">
+        <div class="flex items-center justify-between pb-3 border-b border-stone-200 mb-4">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-amber-600">key</mat-icon>
+            <h3 class="font-bold text-stone-900 text-base">Cambiar Contraseña</h3>
+          </div>
+          <button
+            type="button"
+            (click)="closePasswordModal()"
+            class="p-1 text-stone-400 hover:text-stone-700 rounded-lg"
+            aria-label="Cerrar"
+          >
+            <mat-icon class="text-base">close</mat-icon>
+          </button>
+        </div>
+
+        <p class="text-xs text-stone-500 mb-4">
+          Al cambiar la contraseña se cerrarán todas las sesiones activas y deberás
+          iniciar sesión nuevamente.
+        </p>
+
+        @if (passwordError()) {
+          <div class="mb-4 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium">
+            {{ passwordError() }}
+          </div>
+        }
+
+        <form [formGroup]="passwordForm" (ngSubmit)="submitPasswordChange()" class="space-y-4 text-xs">
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Contraseña Actual *</label>
+            <input
+              type="password"
+              formControlName="currentPassword"
+              autocomplete="current-password"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs min-h-[44px]"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Nueva Contraseña *</label>
+            <input
+              type="password"
+              formControlName="newPassword"
+              autocomplete="new-password"
+              placeholder="Mínimo 8 caracteres"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs min-h-[44px]"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-stone-700 mb-1">Confirmar Nueva Contraseña *</label>
+            <input
+              type="password"
+              formControlName="confirmPassword"
+              autocomplete="new-password"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs min-h-[44px]"
+            />
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-200">
+            <button
+              type="button"
+              (click)="closePasswordModal()"
+              [disabled]="changingPassword()"
+              class="px-4 py-2 border border-stone-300 text-stone-700 hover:bg-stone-50 rounded-xl font-medium min-h-[44px] disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="passwordForm.invalid || changingPassword()"
+              class="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-semibold shadow-xs transition-colors min-h-[44px]"
+            >
+              {{ changingPassword() ? 'Guardando…' : 'Actualizar Contraseña' }}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   }

@@ -99,6 +99,7 @@ export class Settings {
     department: new FormControl('Producción & Cocción', {nonNullable: true, validators: [Validators.required]}),
     status: new FormControl<'activo' | 'inactivo'>('activo', {nonNullable: true, validators: [Validators.required]}),
     avatarBg: new FormControl('bg-stone-900', {nonNullable: true}),
+    password: new FormControl('', {nonNullable: true, validators: [Validators.minLength(8)]}),
   });
 
   // Role Reactive Form
@@ -141,6 +142,8 @@ export class Settings {
   // --- USER ACTIONS ---
   public openCreateUserModal() {
     this.editingUserId.set(null);
+    this.userForm.controls.password.setValidators([Validators.required, Validators.minLength(8)]);
+    this.userForm.controls.password.updateValueAndValidity();
     this.userForm.reset({
       fullName: '',
       username: '',
@@ -150,12 +153,15 @@ export class Settings {
       department: 'Planta de Elaboración',
       status: 'activo',
       avatarBg: 'bg-stone-900',
+      password: '',
     });
     this.showUserModal.set(true);
   }
 
   public openEditUserModal(user: SystemUser) {
     this.editingUserId.set(user.id);
+    this.userForm.controls.password.setValidators([Validators.minLength(8)]);
+    this.userForm.controls.password.updateValueAndValidity();
     this.userForm.setValue({
       fullName: user.fullName,
       username: user.username,
@@ -165,6 +171,7 @@ export class Settings {
       department: user.department,
       status: user.status,
       avatarBg: user.avatarBg || 'bg-stone-900',
+      password: '',
     });
     this.showUserModal.set(true);
   }
@@ -174,7 +181,7 @@ export class Settings {
     this.editingUserId.set(null);
   }
 
-  public saveUser() {
+  public async saveUser() {
     if (this.userForm.invalid) {
       this.userForm.markAllAsTouched();
       return;
@@ -182,32 +189,54 @@ export class Settings {
     const formVal = this.userForm.getRawValue();
     const editingId = this.editingUserId();
 
-    if (editingId) {
-      this.api.updateUser(editingId, formVal);
-    } else {
-      this.api.addUser({
-        fullName: formVal.fullName,
-        username: formVal.username.toLowerCase(),
-        email: formVal.email,
-        nationalId: formVal.nationalId,
-        roleId: formVal.roleId,
-        roleName: '',
-        department: formVal.department,
-        status: formVal.status,
-        avatarBg: formVal.avatarBg,
-      });
+    try {
+      if (editingId) {
+        await this.api.updateUser(editingId, {
+          fullName: formVal.fullName,
+          username: formVal.username,
+          email: formVal.email,
+          nationalId: formVal.nationalId,
+          roleId: formVal.roleId,
+          department: formVal.department,
+          status: formVal.status,
+          avatarBg: formVal.avatarBg,
+          password: formVal.password || undefined,
+        });
+      } else {
+        await this.api.addUser({
+          fullName: formVal.fullName,
+          username: formVal.username.toLowerCase(),
+          email: formVal.email,
+          nationalId: formVal.nationalId,
+          roleId: formVal.roleId,
+          department: formVal.department,
+          status: formVal.status,
+          avatarBg: formVal.avatarBg,
+          password: formVal.password,
+        });
+      }
+      this.closeUserModal();
+    } catch {
+      // The API service already surfaced a toast with the failure reason.
     }
-    this.closeUserModal();
   }
 
-  public toggleUserStatus(user: SystemUser) {
+  public async toggleUserStatus(user: SystemUser) {
     const newStatus = user.status === 'activo' ? 'inactivo' : 'activo';
-    this.api.updateUser(user.id, {status: newStatus});
+    try {
+      await this.api.updateUser(user.id, {status: newStatus});
+    } catch {
+      // Toast handled by the API service.
+    }
   }
 
-  public deleteUser(user: SystemUser) {
+  public async deleteUser(user: SystemUser) {
     if (confirm(`¿Estás seguro de eliminar al usuario "${user.fullName}" (${user.username})?`)) {
-      this.api.deleteUser(user.id);
+      try {
+        await this.api.deleteUser(user.id);
+      } catch {
+        // Toast handled by the API service.
+      }
     }
   }
 
@@ -229,7 +258,7 @@ export class Settings {
     this.showRoleModal.set(false);
   }
 
-  public saveRole() {
+  public async saveRole() {
     if (this.roleForm.invalid) {
       this.roleForm.markAllAsTouched();
       return;
@@ -250,14 +279,18 @@ export class Settings {
       architecture: {canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false},
     };
 
-    const newRole = this.api.addRole({
-      name: val.name,
-      description: val.description,
-      color: val.color,
-      permissions: defaultPerms,
-    });
-    this.selectedRoleIdForMatrix.set(newRole.id);
-    this.closeRoleModal();
+    try {
+      const newRole = await this.api.addRole({
+        name: val.name,
+        description: val.description,
+        color: val.color,
+        permissions: defaultPerms,
+      });
+      this.selectedRoleIdForMatrix.set(newRole.id);
+      this.closeRoleModal();
+    } catch {
+      // Toast handled by the API service.
+    }
   }
 
   public togglePermission(roleId: string, moduleId: AppModuleId, action: keyof ModulePermissions) {
@@ -289,14 +322,14 @@ export class Settings {
       updatedPerm.canExport = false;
     }
 
-    this.api.updateRolePermissions(roleId, moduleId, updatedPerm);
+    void this.api.updateRolePermissions(roleId, moduleId, updatedPerm);
   }
 
   public toggleAllModulePermissions(roleId: string, moduleId: AppModuleId, enable: boolean) {
     const role = this.api.systemRoles().find(r => r.id === roleId);
     if (!role || role.id === 'admin') return;
 
-    this.api.updateRolePermissions(roleId, moduleId, {
+    void this.api.updateRolePermissions(roleId, moduleId, {
       canView: enable,
       canCreate: enable,
       canEdit: enable,

@@ -58,7 +58,7 @@ The server persists the full ERP state in a real SQLite database using `better-s
   | Payroll | `employees`, `payroll_weeks`, `payroll_payments` |
   | Expenses | `expenses`, `expense_categories` |
   | Configuration | `fiscal_settings`, `exchange_rates`, `exchange_rate_history`, `audit_logs` |
-  | Security | `auth_users` (scrypt password hashes + role) |
+  | Security | `auth_users` (scrypt password hashes + role), `auth_roles`, `auth_role_permissions`, `password_reset_tokens` |
 
 - **Auto‑save:** every mutating operation on `dbInstance` writes the new snapshot to the relational tables in a single transaction (via a Proxy that wraps `ErpDatabase`). See `src/server/database/relational-persistence.ts`.
 - **Legacy migration:** databases created before the relational schema are imported once from the old `app_state` JSON table.
@@ -90,7 +90,41 @@ curl http://localhost:4000/api/inventory/raw-materials \
   -H "Authorization: Bearer <token>"
 ```
 
-Passwords are hashed with Node's `scrypt` (random salt, timing‑safe comparison) and tokens are stateless `base64url(payload).base64url(HMAC-SHA256)`. Permissions are defined per role and module in `src/server/auth.ts`.
+Passwords are hashed with Node's `scrypt` (random salt, timing‑safe comparison) and tokens are stateless `base64url(payload).base64url(HMAC-SHA256)`.
+
+#### Roles & permissions (stored in SQLite)
+
+The role catalog and the full role × module permission matrix live in the
+database, not only in code:
+
+- `auth_roles` stores built-in and custom roles (`id`, `name`, `description`, `color`, `is_system`).
+- `auth_role_permissions` stores one row per role and module with the `can_view`, `can_create`, `can_edit`, `can_delete` and `can_export` flags.
+- On first startup the five built-in roles (`admin`, `supervisor_planta`, `operator`, `analista_costos`, `almacenista`) and their current matrices (50 rows) are seeded with `INSERT OR IGNORE`. Restarting the server never overwrites permissions edited from the UI.
+- `authorizeRequest` resolves permissions from `auth_role_permissions` on every request, so a change applies immediately to all users with that role.
+- New users inherit the permissions of whichever role is assigned to them (built-in or custom). Custom roles can be created, edited and deleted from **Configuración & Permisología**; built-in roles and roles still assigned to users are protected from deletion.
+- `admin` keeps unrestricted access and its matrix cannot be restricted.
+
+#### Password changes
+
+Authenticated users can change their own password from the header (**Clave**) or
+the mobile menu. The form asks for the current and new password, verifies the
+current one, rotates the scrypt hash and invalidates every older JWT (the token
+`iat` is compared against `auth_users.password_changed_at`). Outstanding
+password-reset links are also invalidated. After a successful change the client
+clears the local session and asks the user to sign in again.
+
+| Endpoint | Access | Purpose |
+|----------|--------|---------|
+| `POST /api/auth/change-password` | authenticated | Change own password (`currentPassword`, `newPassword`). |
+| `GET /api/auth/roles` | authenticated | List roles with their permission matrix. |
+| `POST /api/auth/roles` | admin | Create a custom role. |
+| `PUT /api/auth/roles/:id` | admin | Update role name/description/colour. |
+| `PUT /api/auth/roles/:id/permissions` | admin | Update one module's permissions for a role. |
+| `DELETE /api/auth/roles/:id` | admin | Delete an unused custom role. |
+| `GET /api/auth/users` | admin | List users with their role. |
+| `POST /api/auth/users` | admin | Create a user, assign a role and optional initial password. |
+| `PUT /api/auth/users/:id` | admin | Update a user (a new password rotates the hash). |
+| `DELETE /api/auth/users/:id` | admin | Delete a user (the last active admin is protected). |
 
 ### Server tests
 
@@ -106,6 +140,8 @@ The backend suite (`src/server/**/*.spec.ts`, Vitest) uses a real temporary SQLi
 - relational roundtrip of the full seed state,
 - persistence of mutations and reload after a simulated restart,
 - HTTP API integration tests (health, auth/RBAC, validation, CRUD, docs, reset),
+- role seeding, custom roles, role deletion protection and immediate permission changes,
+- new-user role inheritance, admin-only user/role management and password rotation/token invalidation,
 - payload validation errors (HTTP 422) and uniform error responses.
 
 ---
@@ -179,7 +215,8 @@ The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `
 | Category | Key Endpoints |
 |----------|---------------|
 | **Docs** | `GET /api/openapi.json` (OpenAPI 3.0), `GET /api/docs` (Swagger UI) |
-| **Auth** | `POST /api/auth/login`, `GET /api/auth/me` |
+| **Auth** | `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`, `POST /api/auth/change-password`, `POST /api/auth/reset-password`, `POST /api/auth/reset-password/confirm` |
+| **Security (RBAC)** | `GET /api/auth/roles`, `POST /api/auth/roles`, `PUT/DELETE /api/auth/roles/:id`, `PUT /api/auth/roles/:id/permissions`, `GET/POST /api/auth/users`, `PUT/DELETE /api/auth/users/:id` |
 | **Inventory → Raw Materials** | `GET /api/inventory/raw-materials`, `POST /api/inventory/raw-materials`, `PUT /api/inventory/raw-materials/:id` |
 | **Inventory → Movements** | `GET /api/inventory/movements`, `POST /api/inventory/movements` |
 | **Finished Goods** | `GET /api/inventory/finished-goods`, `PUT /api/inventory/finished-goods/:id` |

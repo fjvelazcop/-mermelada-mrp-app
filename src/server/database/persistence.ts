@@ -441,6 +441,26 @@ function migrate(db: Database.Database): void {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS auth_roles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      color TEXT NOT NULL DEFAULT 'stone',
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_role_permissions (
+      role_id TEXT NOT NULL REFERENCES auth_roles(id) ON DELETE CASCADE,
+      module_id TEXT NOT NULL,
+      can_view INTEGER NOT NULL DEFAULT 0,
+      can_create INTEGER NOT NULL DEFAULT 0,
+      can_edit INTEGER NOT NULL DEFAULT 0,
+      can_delete INTEGER NOT NULL DEFAULT 0,
+      can_export INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (role_id, module_id)
+    );
+
     CREATE TABLE IF NOT EXISTS suppliers (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
@@ -488,6 +508,7 @@ function migrate(db: Database.Database): void {
   // Apply additive column migrations for databases created before the
   // newer modules existed. SQLite does not support ADD COLUMN IF NOT EXISTS.
   ensureColumn(db, 'auth_users', 'password_changed_at', 'TEXT');
+  ensureColumn(db, 'auth_users', 'avatar_bg', 'TEXT');
   ensureColumn(db, 'production_orders', 'mode', "TEXT NOT NULL DEFAULT 'automatico'");
   ensureColumn(db, 'production_orders', 'formulas_json', 'TEXT');
   ensureColumn(db, 'production_orders', 'commitment_reference', 'TEXT');
@@ -519,6 +540,9 @@ function migrate(db: Database.Database): void {
   }
   if (currentVersion < 3) {
     insert.run(3, new Date().toISOString());
+  }
+  if (currentVersion < 4) {
+    insert.run(4, new Date().toISOString());
   }
 }
 

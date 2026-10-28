@@ -72,6 +72,8 @@ describe('normalized SQLite schema', () => {
         'exchange_rate_history',
         'audit_logs',
         'auth_users',
+        'auth_roles',
+        'auth_role_permissions',
       ])
     );
 
@@ -81,7 +83,7 @@ describe('normalized SQLite schema', () => {
         .all() as { version: number }[]
     ).map((row) => row.version);
 
-    expect(versions).toEqual([1, 2, 3]);
+    expect(versions).toEqual([1, 2, 3, 4]);
   });
 
   it('writes the seed data into the relational tables', () => {

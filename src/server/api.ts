@@ -10,18 +10,29 @@ import { getDb, getDbPath } from './database/persistence.js';
 import {
   authenticate,
   authorizeRequest,
+  changePasswordHandler,
   confirmResetPasswordHandler,
+  createRoleHandler,
+  createUserHandler,
+  deleteRoleHandler,
+  deleteUserHandler,
   ensureSeedUsers,
   isAuthEnabled,
+  listRolesHandler,
+  listUsersHandler,
   loginHandler,
   logoutHandler,
   meHandler,
   requireAdmin,
   resetPasswordHandler,
+  updateRoleHandler,
+  updateRolePermissionsHandler,
+  updateUserHandler,
 } from './auth.js';
 import { ApiError, apiNotFoundHandler, errorHandler } from './errors.js';
 import {
   auditLogSchema,
+  changePasswordSchema,
   costingSimulationSchema,
   customerSchema,
   deliveryNoteSchema,
@@ -44,12 +55,17 @@ import {
   rawMaterialSchema,
   rawMaterialUpdateSchema,
   recipeSchema,
+  roleCreateSchema,
+  rolePermissionUpdateSchema,
+  roleUpdateSchema,
   salesCollectionSchema,
   salesOrderSchema,
   salesOrderStatusUpdateSchema,
   supplierPriceSchema,
   supplierSchema,
   supplierUpdateSchema,
+  userCreateSchema,
+  userUpdateSchema,
   validateBody,
   validateParams,
 } from './validation.js';
@@ -191,6 +207,61 @@ export function createApiApp(): express.Express {
     '/api/auth/reset-password/confirm',
     validateBody(passwordResetConfirmSchema),
     confirmResetPasswordHandler
+  );
+  app.post(
+    '/api/auth/change-password',
+    validateBody(changePasswordSchema),
+    changePasswordHandler
+  );
+
+  // --- USERS AND ROLE PERMISSIONS (DB-BACKED RBAC) ---
+  app.get('/api/auth/roles', query(listRolesHandler));
+  app.post(
+    '/api/auth/roles',
+    requireAdmin,
+    validateBody(roleCreateSchema),
+    mutation(createRoleHandler)
+  );
+  app.put(
+    '/api/auth/roles/:id/permissions',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    validateBody(rolePermissionUpdateSchema),
+    mutation(updateRolePermissionsHandler)
+  );
+  app.put(
+    '/api/auth/roles/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    validateBody(roleUpdateSchema),
+    mutation(updateRoleHandler)
+  );
+  app.delete(
+    '/api/auth/roles/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    mutation(deleteRoleHandler)
+  );
+
+  app.get('/api/auth/users', requireAdmin, query(listUsersHandler));
+  app.post(
+    '/api/auth/users',
+    requireAdmin,
+    validateBody(userCreateSchema),
+    mutation(createUserHandler)
+  );
+  app.put(
+    '/api/auth/users/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    validateBody(userUpdateSchema),
+    mutation(updateUserHandler)
+  );
+  app.delete(
+    '/api/auth/users/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    mutation(deleteUserHandler)
   );
 
   // --- VENEZUELAN BANK CATALOG (SUDEBAN) ---

@@ -209,7 +209,12 @@ export class ErpApiService {
 
   public activeUserId = signal<string>('usr-admin');
 
+  /** Set when a real JWT session is active; overrides the demo user list. */
+  public authenticatedUser = signal<SystemUser | null>(null);
+
   public currentUser = computed<SystemUser>(() => {
+    const authenticated = this.authenticatedUser();
+    if (authenticated) return authenticated;
     const list = this.systemUsers();
     return list.find(u => u.id === this.activeUserId()) || list[0];
   });
@@ -287,108 +292,231 @@ export class ErpApiService {
    * local permission matrix, so the UI guards match the server-side RBAC.
    */
   public applyAuthenticatedRole(roleId: string, fullName?: string) {
-    const role = this.systemRoles().find(r => r.id === roleId);
-    if (!role) return;
     this.currentRole.set(roleId as UserRole);
-    const user =
-      this.systemUsers().find(u => u.roleId === roleId) ||
-      this.systemUsers().find(u => u.id === 'usr-admin');
-    if (user) {
-      this.activeUserId.set(user.id);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('mermelada-demo-user', user.id);
-        localStorage.setItem('mermelada-demo-role', roleId);
-        localStorage.setItem(
-          'mermelada-demo-user-name',
-          fullName || user.fullName
-        );
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mermelada-demo-role', roleId);
+      if (fullName) {
+        localStorage.setItem('mermelada-demo-user-name', fullName);
       }
     }
   }
 
-  public addUser(userData: Omit<SystemUser, 'id' | 'createdAt'>) {
-    const id = 'usr-' + Date.now().toString(36);
-    const role = this.systemRoles().find(r => r.id === userData.roleId);
-    const newUser: SystemUser = {
-      ...userData,
-      id,
-      roleName: role ? role.name : 'Usuario',
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    this.systemUsers.update(list => [...list, newUser]);
-    this.showToast(`Usuario "${newUser.fullName}" creado exitosamente.`);
-    return newUser;
-  }
-
-  public updateUser(userId: string, data: Partial<SystemUser>) {
-    this.systemUsers.update(list =>
-      list.map(u => {
-        if (u.id !== userId) return u;
-        const role = data.roleId ? this.systemRoles().find(r => r.id === data.roleId) : null;
-        return {
-          ...u,
-          ...data,
-          roleName: role ? role.name : u.roleName,
-        };
-      })
-    );
-    this.showToast('Usuario actualizado con éxito.');
-  }
-
-  public deleteUser(userId: string) {
-    if (userId === 'usr-admin') {
-      this.showToast('No se puede eliminar el usuario Administrador principal.', 'error');
-      return;
+  /** Apply the full profile of the user authenticated with a JWT. */
+  public applyAuthenticatedUser(user: {
+    id: string;
+    username: string;
+    email: string;
+    fullName: string;
+    nationalId?: string;
+    roleId: string;
+    roleName?: string;
+    department?: string;
+    status: string;
+    createdAt: string;
+    avatarBg?: string;
+  }): void {
+    const role = this.systemRoles().find(r => r.id === user.roleId);
+    const mapped = this.mapUser({
+      ...user,
+      status: user.status === 'inactivo' ? 'inactivo' : 'activo',
+      roleName: user.roleName || role?.name,
+    });
+    this.authenticatedUser.set(mapped);
+    this.activeUserId.set(mapped.id);
+    this.currentRole.set(user.roleId as UserRole);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mermelada-demo-user', mapped.id);
+      localStorage.setItem('mermelada-demo-role', mapped.roleId);
+      localStorage.setItem('mermelada-demo-user-name', mapped.fullName);
     }
-    this.systemUsers.update(list => list.filter(u => u.id !== userId));
-    if (this.activeUserId() === userId) {
-      this.setActiveUser('usr-admin');
-    }
-    this.showToast('Usuario eliminado del sistema.');
   }
 
-  public addRole(roleData: Omit<SystemRole, 'id'>) {
-    const id = 'role-' + Date.now().toString(36);
-    const newRole: SystemRole = {
-      ...roleData,
-      id,
-      isSystem: false,
+  public clearAuthenticatedUser(): void {
+    this.authenticatedUser.set(null);
+  }
+
+  private mapUser(
+    user: Partial<SystemUser> & { roleId: string }
+  ): SystemUser {
+    const role = this.systemRoles().find(r => r.id === user.roleId);
+    return {
+      id: user.id || `usr-${Date.now().toString(36)}`,
+      fullName: user.fullName || '',
+      username: user.username || '',
+      email: user.email || '',
+      nationalId: user.nationalId || '',
+      roleId: user.roleId,
+      roleName: user.roleName || role?.name || user.roleId,
+      department: user.department || '',
+      status: user.status === 'inactivo' ? 'inactivo' : 'activo',
+      avatarBg: user.avatarBg || 'bg-stone-900',
+      createdAt: (user.createdAt || new Date().toISOString()).slice(0, 10),
     };
-    this.systemRoles.update(roles => [...roles, newRole]);
-    this.showToast(`Rol "${newRole.name}" creado con éxito.`);
-    return newRole;
   }
 
-  public updateRolePermissions(roleId: string, moduleId: AppModuleId, perm: Partial<ModulePermissions>) {
-    this.systemRoles.update(roles =>
-      roles.map(r => {
-        if (r.id !== roleId) return r;
-        const currentModPerm = r.permissions[moduleId] || {
-          canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false,
-        };
-        return {
-          ...r,
-          permissions: {
-            ...r.permissions,
-            [moduleId]: {
-              ...currentModPerm,
-              ...perm,
-            },
-          },
-        };
-      })
+  private apiErrorMessage(err: unknown): string {
+    const failure = err as {
+      error?: { error?: string; message?: string };
+      message?: string;
+    };
+    return (
+      failure?.error?.error ||
+      failure?.error?.message ||
+      failure?.message ||
+      'No se pudo completar la operación'
     );
-    this.showToast('Permisos actualizados para el rol.');
   }
 
-  public deleteRole(roleId: string) {
-    const role = this.systemRoles().find(r => r.id === roleId);
+  /**
+   * Load the role/permission matrix (and the user directory when the caller is
+   * an administrator) from the backend. Falls back to the bundled seed when
+   * the API is unreachable, so demo mode keeps working offline.
+   */
+  public async refreshSecurityData(): Promise<void> {
+    const [rolesResult, usersResult] = await Promise.allSettled([
+      firstValueFrom(this.http.get<SystemRole[]>('/api/auth/roles')),
+      firstValueFrom(this.http.get<SystemUser[]>('/api/auth/users')),
+    ]);
+
+    if (
+      rolesResult.status === 'fulfilled' &&
+      Array.isArray(rolesResult.value) &&
+      rolesResult.value.length > 0
+    ) {
+      this.systemRoles.set(
+        rolesResult.value.map((role) => ({
+          ...role,
+          permissions: role.permissions || ({} as SystemRole['permissions']),
+        }))
+      );
+    }
+
+    if (usersResult.status === 'fulfilled' && Array.isArray(usersResult.value)) {
+      this.systemUsers.set(usersResult.value.map((user) => this.mapUser(user)));
+      const current = this.authenticatedUser();
+      if (current) {
+        const fresh = this.systemUsers().find((user) => user.id === current.id);
+        if (fresh) this.authenticatedUser.set(this.mapUser(fresh));
+      }
+    }
+  }
+
+  public async addUser(
+    userData: Omit<SystemUser, 'id' | 'createdAt' | 'roleName'> & {
+      password?: string;
+    }
+  ): Promise<SystemUser> {
+    try {
+      const created = await firstValueFrom(
+        this.http.post<SystemUser>('/api/auth/users', {
+          fullName: userData.fullName,
+          username: userData.username,
+          email: userData.email,
+          nationalId: userData.nationalId,
+          roleId: userData.roleId,
+          department: userData.department,
+          status: userData.status,
+          avatarBg: userData.avatarBg,
+          password: userData.password,
+        })
+      );
+      const newUser = this.mapUser(created);
+      this.systemUsers.update((list) => [...list, newUser]);
+      this.showToast(`Usuario "${newUser.fullName}" creado exitosamente.`);
+      return newUser;
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async updateUser(
+    userId: string,
+    data: Partial<SystemUser> & { password?: string }
+  ): Promise<void> {
+    try {
+      const updated = await firstValueFrom(
+        this.http.put<SystemUser>(`/api/auth/users/${userId}`, data)
+      );
+      const mapped = this.mapUser(updated);
+      this.systemUsers.update((list) =>
+        list.map((user) => (user.id === userId ? mapped : user))
+      );
+      const authenticated = this.authenticatedUser();
+      if (authenticated?.id === userId) {
+        this.authenticatedUser.set(mapped);
+      }
+      this.showToast('Usuario actualizado con éxito.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async deleteUser(userId: string): Promise<void> {
+    try {
+      await firstValueFrom(this.http.delete(`/api/auth/users/${userId}`));
+      this.systemUsers.update((list) => list.filter((u) => u.id !== userId));
+      if (this.activeUserId() === userId) {
+        this.setActiveUser('usr-admin');
+      }
+      this.showToast('Usuario eliminado del sistema.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async addRole(
+    roleData: Omit<SystemRole, 'id' | 'isSystem'> & { isSystem?: boolean }
+  ): Promise<SystemRole> {
+    try {
+      const created = await firstValueFrom(
+        this.http.post<SystemRole>('/api/auth/roles', roleData)
+      );
+      this.systemRoles.update((roles) => [...roles, created]);
+      this.showToast(`Rol "${created.name}" creado con éxito.`);
+      return created;
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async updateRolePermissions(
+    roleId: string,
+    moduleId: AppModuleId,
+    perm: Partial<ModulePermissions>
+  ): Promise<void> {
+    try {
+      const updated = await firstValueFrom(
+        this.http.put<SystemRole>(`/api/auth/roles/${roleId}/permissions`, {
+          moduleId,
+          permissions: perm,
+        })
+      );
+      this.systemRoles.update((roles) =>
+        roles.map((role) => (role.id === roleId ? updated : role))
+      );
+      this.showToast('Permisos actualizados para el rol.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+    }
+  }
+
+  public async deleteRole(roleId: string): Promise<void> {
+    const role = this.systemRoles().find((r) => r.id === roleId);
     if (role?.isSystem) {
       this.showToast('No se pueden eliminar los roles base del sistema.', 'error');
       return;
     }
-    this.systemRoles.update(roles => roles.filter(r => r.id !== roleId));
-    this.showToast('Rol eliminado con éxito.');
+    try {
+      await firstValueFrom(this.http.delete(`/api/auth/roles/${roleId}`));
+      this.systemRoles.update((roles) => roles.filter((r) => r.id !== roleId));
+      this.showToast('Rol eliminado con éxito.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+    }
   }
 
   // Signals for responsive application state
@@ -678,6 +806,7 @@ export class ErpApiService {
   public async refreshAllData() {
     this.isLoading.set(true);
     try {
+      await this.refreshSecurityData();
       const [
         materials,
         movements,

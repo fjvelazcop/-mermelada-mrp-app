@@ -479,6 +479,82 @@ export const passwordResetConfirmSchema = z.object({
   newPassword: z.string().min(8).max(200),
 });
 
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(500),
+    newPassword: z.string().min(8).max(200),
+  })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    path: ['newPassword'],
+    message: 'La nueva contraseña debe ser diferente a la actual',
+  });
+
+export const authModuleSchema = z.enum([
+  'dashboard',
+  'inventory',
+  'production',
+  'costing',
+  'sales',
+  'payroll',
+  'expenses',
+  'suppliers',
+  'settings',
+  'architecture',
+]);
+
+export const rolePermissionFlagsSchema = z
+  .object({
+    canView: z.boolean(),
+    canCreate: z.boolean(),
+    canEdit: z.boolean(),
+    canDelete: z.boolean(),
+    canExport: z.boolean(),
+  })
+  .partial();
+
+export const roleCreateSchema = z.object({
+  name: z.string().trim().min(3).max(120),
+  description: z.string().trim().min(3).max(500),
+  color: z.string().trim().min(1).max(40).default('amber'),
+  permissions: z
+    .partialRecord(authModuleSchema, rolePermissionFlagsSchema)
+    .optional(),
+});
+
+export const roleUpdateSchema = z
+  .object({
+    name: z.string().trim().min(3).max(120),
+    description: z.string().trim().min(3).max(500),
+    color: z.string().trim().min(1).max(40),
+  })
+  .partial();
+
+export const rolePermissionUpdateSchema = z.object({
+  moduleId: authModuleSchema,
+  permissions: rolePermissionFlagsSchema,
+});
+
+export const authUserStatusSchema = z.enum(['activo', 'inactivo']);
+
+export const userCreateSchema = z.object({
+  fullName: z.string().trim().min(3).max(200),
+  username: z
+    .string()
+    .trim()
+    .min(3)
+    .max(80)
+    .regex(/^[a-zA-Z0-9._-]+$/, 'Solo se permiten letras, números, punto, guion y guion bajo'),
+  email: z.string().trim().email().max(200),
+  nationalId: z.string().trim().max(60).optional(),
+  roleId: z.string().trim().min(1).max(120),
+  department: z.string().trim().max(200).optional(),
+  status: authUserStatusSchema.optional(),
+  avatarBg: z.string().trim().max(60).optional(),
+  password: z.string().min(8).max(200).optional(),
+});
+
+export const userUpdateSchema = userCreateSchema.partial();
+
 export const idParamsSchema = z.object({
   id: z.string().trim().min(1).max(200),
 });

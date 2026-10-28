@@ -1,6 +1,7 @@
 import {ChangeDetectionStrategy, Component, inject, signal, OnInit, effect} from '@angular/core';
 import {NavigationEnd, Router} from '@angular/router';
 import {filter} from 'rxjs';
+import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from './core/services/erp-api.service';
 import {DashboardComponent} from './features/dashboard/dashboard';
@@ -34,6 +35,7 @@ export type MainNavigationTab =
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatIconModule,
+    ReactiveFormsModule,
     DashboardComponent,
     InventoryComponent,
     ProductionComponent,
@@ -57,6 +59,25 @@ export class App implements OnInit {
 
   public currentTab = signal<MainNavigationTab>('dashboard');
   public mobileMenuOpen = signal<boolean>(false);
+
+  // Change-password dialog state (real sessions only)
+  public showPasswordModal = signal<boolean>(false);
+  public changingPassword = signal<boolean>(false);
+  public passwordError = signal<string>('');
+  public passwordForm = new FormGroup({
+    currentPassword: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+    newPassword: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(8)],
+    }),
+    confirmPassword: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+  });
 
   private readonly validTabs: ReadonlySet<string> = new Set<string>([
     'dashboard',
@@ -118,6 +139,55 @@ export class App implements OnInit {
   public async logout() {
     await this.auth.logout();
     this.currentTab.set('dashboard');
+  }
+
+  public openPasswordModal() {
+    this.passwordForm.reset({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+    this.passwordError.set('');
+    this.showPasswordModal.set(true);
+  }
+
+  public closePasswordModal() {
+    if (this.changingPassword()) return;
+    this.showPasswordModal.set(false);
+    this.passwordError.set('');
+  }
+
+  public async submitPasswordChange() {
+    if (this.passwordForm.invalid) {
+      this.passwordForm.markAllAsTouched();
+      return;
+    }
+
+    const value = this.passwordForm.getRawValue();
+    if (value.newPassword !== value.confirmPassword) {
+      this.passwordError.set('La confirmación no coincide con la nueva contraseña');
+      return;
+    }
+
+    this.changingPassword.set(true);
+    this.passwordError.set('');
+    try {
+      const result = await this.auth.changePassword(
+        value.currentPassword,
+        value.newPassword
+      );
+      this.showPasswordModal.set(false);
+      this.api.showToast(result.message, 'success');
+    } catch (err) {
+      const failure = err as {error?: {error?: string; message?: string}};
+      this.passwordError.set(
+        failure?.error?.error ||
+          failure?.error?.message ||
+          'No se pudo cambiar la contraseña'
+      );
+    } finally {
+      this.changingPassword.set(false);
+    }
   }
 
   public setTab(tab: MainNavigationTab) {

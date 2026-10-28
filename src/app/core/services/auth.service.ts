@@ -10,9 +10,11 @@ export interface AuthUser {
   fullName: string;
   nationalId?: string;
   roleId: string;
+  roleName?: string;
   department?: string;
   status: string;
   createdAt: string;
+  avatarBg?: string;
 }
 
 interface LoginResponse {
@@ -73,6 +75,7 @@ export class AuthService {
         const user = await firstValueFrom(
           this.http.get<AuthUser>('/api/auth/me')
         );
+        await this.erp.refreshSecurityData();
         this.applyUser(user);
       } catch {
         this.clearSession();
@@ -94,6 +97,7 @@ export class AuthService {
       localStorage.setItem(TOKEN_KEY, res.token);
     }
     this.token.set(res.token);
+    await this.erp.refreshSecurityData();
     this.applyUser(res.user);
     await this.erp.refreshAllData();
   }
@@ -131,9 +135,27 @@ export class AuthService {
     );
   }
 
+  /**
+   * Change the password of the authenticated user. The backend invalidates the
+   * current token, so the local session is cleared and login is required again.
+   */
+  public async changePassword(
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{message: string; requiresLogin: boolean}> {
+    const response = await firstValueFrom(
+      this.http.post<{message: string; requiresLogin: boolean}>(
+        '/api/auth/change-password',
+        {currentPassword, newPassword}
+      )
+    );
+    this.clearSession();
+    return response;
+  }
+
   private applyUser(user: AuthUser): void {
     this.currentUser.set(user);
-    this.erp.applyAuthenticatedRole(user.roleId, user.fullName);
+    this.erp.applyAuthenticatedUser(user);
   }
 
   private clearSession(): void {
@@ -142,5 +164,6 @@ export class AuthService {
     }
     this.token.set(null);
     this.currentUser.set(null);
+    this.erp.clearAuthenticatedUser();
   }
 }
