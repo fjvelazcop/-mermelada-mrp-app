@@ -96,7 +96,21 @@ chmod 600 .env.production
 | `TUNNEL_HEALTHCHECK_FAILURES` | `3` | No | Fallos consecutivos antes de reiniciar cloudflared. |
 | `TUNNEL_CLOUDFLARED` | `cloudflared` | No | Ruta absoluta del binario si no está en `PATH`. |
 | `BACKUP_DIR` | `/app/backups` | No | Destino de los backups. |
-| `BACKUP_RETENTION_DAYS` | `14` | No | Retención; `0` desactiva la purga. |
+| `BACKUP_RETENTION_DAYS` | `14` | No | Retención local; `0` desactiva la purga. |
+| `BACKUP_REMOTE` | `none` | No | Copia externa: `none`, `s3` o `gdrive` (alternativas). |
+| `BACKUP_REMOTE_RETENTION_DAYS` | `BACKUP_RETENTION_DAYS` | No | Retención de las copias remotas; `0` desactiva la purga. |
+| `BACKUP_S3_BUCKET` | — | Si `s3` | Bucket de destino. |
+| `BACKUP_S3_REGION` | `us-east-1` | No | Región del bucket. |
+| `BACKUP_S3_PREFIX` | `mermelada/backups` | No | Prefijo (carpeta) dentro del bucket. |
+| `BACKUP_S3_ACCESS_KEY_ID` | — | No | Clave de acceso; vacío usa la cadena de credenciales del SDK. |
+| `BACKUP_S3_SECRET_ACCESS_KEY` | — | No | Clave secreta. |
+| `BACKUP_S3_SESSION_TOKEN` | — | No | Token temporal (STS). |
+| `BACKUP_S3_ENDPOINT` | — | No | Endpoint para S3 compatible (R2, MinIO, B2). |
+| `BACKUP_S3_FORCE_PATH_STYLE` | `false` | No | `true` para MinIO y otros compatibles. |
+| `BACKUP_GDRIVE_FOLDER_ID` | — | Si `gdrive` | ID de la carpeta de Drive. |
+| `BACKUP_GDRIVE_SERVICE_ACCOUNT_FILE` | — | No | Ruta al JSON del service account. |
+| `BACKUP_GDRIVE_CLIENT_EMAIL` | — | No | Alternativa inline al JSON. |
+| `BACKUP_GDRIVE_PRIVATE_KEY` | — | No | Clave PEM inline (usa `\n` para los saltos). |
 | `TZ` | `America/Bogota` | No | Zona horaria del contenedor. |
 
 Genera secretos reales antes del primer arranque:
@@ -397,14 +411,88 @@ docker compose --env-file .env.production logs backup
 0 2,14 * * * PATH=/ruta/a/node/bin:/usr/local/bin:/usr/bin:/bin /opt/mermelada/scripts/backup-cron.sh
 ```
 
-La retención se controla con `BACKUP_RETENTION_DAYS` (por ejemplo `15` borra
-las copias con más de 15 días; `0` desactiva la purga).
+La retención local se controla con `BACKUP_RETENTION_DAYS` (por ejemplo `15`
+borra las copias con más de 15 días; `0` desactiva la purga).
 
-Formato: `backups/mermelada-<ISO>.db`. Añade copia externa (S3, rclone,
-restic) para protección ante pérdida del servidor:
+Formato: `backups/mermelada-<ISO>.db`.
+
+### Copia externa (S3 o Google Drive)
+
+`BACKUP_REMOTE` elige **una** alternativa; el backup local siempre se crea
+primero. Tras subir la copia se purgan las remotas más antiguas que
+`BACKUP_REMOTE_RETENTION_DAYS` (por defecto, el valor de
+`BACKUP_RETENTION_DAYS`). Si la subida falla, la copia local **no** se borra:
+el error queda en `logs/backup.log` y el proceso termina con código 1 para que
+el cron/monitorización lo detecte.
+
+Solo se valida el destino elegido, así que puedes dejar preparados los dos
+bloques de variables y cambiar `BACKUP_REMOTE` cuando quieras.
+
+#### S3 o almacenamiento compatible
+
+```dotenv
+BACKUP_REMOTE=s3
+BACKUP_S3_BUCKET=mermelada-backups
+BACKUP_S3_REGION=us-east-1
+BACKUP_S3_PREFIX=mermelada/backups
+BACKUP_S3_ACCESS_KEY_ID=...
+BACKUP_S3_SECRET_ACCESS_KEY=...
+# Opcional para Cloudflare R2 / MinIO / Backblaze B2:
+# BACKUP_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+# BACKUP_S3_FORCE_PATH_STYLE=true
+# BACKUP_REMOTE_RETENTION_DAYS=15
+```
+
+Si dejas `BACKUP_S3_ACCESS_KEY_ID` y `BACKUP_S3_SECRET_ACCESS_KEY` vacías, el
+SDK usa su cadena por defecto (rol IAM de la instancia, `~/.aws`, etc.).
+Permisos mínimos sobre el bucket/prefijo: `s3:PutObject`, `s3:ListBucket` y
+`s3:DeleteObject`.
+
+#### Google Drive (service account)
+
+1. En Google Cloud habilita **Google Drive API** y crea una **cuenta de
+   servicio**; descarga su clave JSON.
+2. Crea una carpeta en Drive y compártela como **Editor** con el correo de la
+   cuenta de servicio (`...@....iam.gserviceaccount.com`).
+3. Copia el ID de la carpeta desde la URL
+   (`https://drive.google.com/drive/folders/<ID>`).
+4. Configura:
+
+```dotenv
+BACKUP_REMOTE=gdrive
+BACKUP_GDRIVE_FOLDER_ID=<ID-de-la-carpeta>
+BACKUP_GDRIVE_SERVICE_ACCOUNT_FILE=./secrets/gdrive-service-account.json
+# BACKUP_REMOTE_RETENTION_DAYS=15
+```
+
+En Docker, `docker-compose.yml` ya monta `./secrets` en `/app/secrets:ro` solo
+para el servicio de backup; usa
+`BACKUP_GDRIVE_SERVICE_ACCOUNT_FILE=/app/secrets/gdrive-service-account.json`.
+Como alternativa puedes usar `BACKUP_GDRIVE_CLIENT_EMAIL` +
+`BACKUP_GDRIVE_PRIVATE_KEY` (con los saltos de línea escapados como `\n`).
+
+> Las cuentas de servicio no tienen cuota propia en “Mi unidad”. Usa una
+> **unidad compartida** de Google Workspace (recomendado) o delegación de
+> dominio; si no, la subida puede fallar con `storageQuotaExceeded`.
+
+La purga remota solo considera archivos con el patrón
+`mermelada-<ISO>.db`, de modo que no toca otros archivos de la carpeta o del
+prefijo.
+
+#### Probar la copia externa
+
+El wrapper de cron ya sube automáticamente. Para validar credenciales sin
+esperar a las 02:00/14:00:
 
 ```bash
-rclone sync /opt/mermelada/backups remote:mermelada-backups
+# Sube el backup más reciente de BACKUP_DIR y aplica la retención remota
+npm run backup:remote
+
+# O un archivo concreto
+npm run backup:remote -- backups/mermelada-2026-10-28T18-00-00-000Z.db
+
+# Ejecución completa (local + remoto) con el mismo entorno del cron
+./scripts/backup-cron.sh && tail -20 logs/backup.log
 ```
 
 ### Restauración (Docker)

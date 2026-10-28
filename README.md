@@ -241,10 +241,11 @@ Production artifacts are included in the repository:
 |------|---------|
 | `Dockerfile` / `docker-compose.yml` | Multi-stage image, non-root runtime, `restart: unless-stopped`, healthcheck and log rotation. |
 | `ecosystem.config.cjs` | PM2 supervisor with `autorestart`, memory limit and exponential backoff. |
-| `deploy/systemd/` | Native systemd service + daily backup timer. |
+| `deploy/systemd/` | Native systemd service + twice-daily backup timer. |
 | `deploy/nginx/`, `deploy/caddy/` | HTTPS reverse-proxy examples. |
 | `.env.production.example` | Production environment template (secrets stay out of git). Set `NG_ALLOWED_HOSTS` to your domain so Angular SSR accepts the public Host header. |
-| `scripts/backup-db.mjs` | Consistent SQLite backup with integrity check and retention. |
+| `scripts/backup-db.mjs` | Consistent SQLite backup with integrity check, retention and optional off-site upload. |
+| `scripts/backup-remote.mjs` | Optional S3 or Google Drive copy (`BACKUP_REMOTE=s3|gdrive`). |
 | `scripts/backup-cron.sh` | Cron wrapper: loads `.env`/`.env.production`, backs up and prunes old copies. |
 | `scripts/healthcheck.mjs` | Container/uptime health probe. |
 | `scripts/smoke-test.mjs` | Post-deploy functional smoke test. |
@@ -259,6 +260,7 @@ npm run start:prod
 
 # Operations
 npm run backup:db
+npm run backup:remote          # sube el último backup a S3 o Google Drive
 npm run healthcheck
 npm run smoke:prod
 ```

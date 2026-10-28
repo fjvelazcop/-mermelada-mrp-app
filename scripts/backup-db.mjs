@@ -6,6 +6,8 @@
  *  - DB_PATH                 Database to back up (default: <cwd>/data/mermelada.db)
  *  - BACKUP_DIR              Destination directory (default: <cwd>/backups)
  *  - BACKUP_RETENTION_DAYS   Delete matching backups older than N days (default: 14, 0 disables)
+ *  - BACKUP_REMOTE           Optional off-site copy: none (default), s3 or gdrive.
+ *                            See scripts/backup-remote.mjs for its variables.
  */
 import Database from 'better-sqlite3';
 import {
@@ -16,6 +18,11 @@ import {
   unlinkSync,
 } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import {
+  pruneRemoteBackups,
+  readRemoteConfig,
+  uploadBackup,
+} from './backup-remote.mjs';
 
 const dbPath = resolve(
   process.env.DB_PATH || join(process.cwd(), 'data', 'mermelada.db')
@@ -65,6 +72,32 @@ try {
     }`
   );
   process.exit(1);
+}
+
+// Off-site copy is optional. A failure here must not delete or invalidate the
+// local backup; the process exits non-zero so cron/monitoring can alert.
+try {
+  const remote = readRemoteConfig();
+  if (remote.mode !== 'none') {
+    const uploaded = await uploadBackup(target, remote);
+    console.log(
+      `[backup] Uploaded ${basename(target)} to ${uploaded.location}`
+    );
+
+    const pruned = await pruneRemoteBackups(remote);
+    if (pruned > 0) {
+      console.log(
+        `[backup] Pruned ${pruned} remote backup(s) older than ${remote.retentionDays} day(s).`
+      );
+    }
+  }
+} catch (error) {
+  console.error(
+    `[backup] Remote upload failed: ${
+      error instanceof Error ? error.message : String(error)
+    }. Local backup kept at ${target}`
+  );
+  process.exitCode = 1;
 }
 
 if (retentionDays > 0) {

@@ -1,9 +1,9 @@
 [Unit]
-Description=Daily Mermelada ERP backup at 02:30
+Description=Mermelada ERP SQLite backup at 02:30 and 14:30
 Documentation=file:///opt/mermelada/DEPLOYMENT.md
 
 [Timer]
-OnCalendar=*-*-* 02:30:00
+OnCalendar=*-*-* 02,14:30:00
 RandomizedDelaySec=300
 Persistent=true
 Unit=mermelada-backup.service

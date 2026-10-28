@@ -171,18 +171,30 @@ describe('PM2 process supervisor configuration', () => {
   it('enables automatic restarts and memory limits', async () => {
     const { createRequire } = await import('node:module');
     const require = createRequire(import.meta.url);
-    const config = require(join(repoRoot, 'ecosystem.config.cjs')) as {
-      apps: Record<string, unknown>[];
-    };
-    const app = config.apps[0];
+    // The repository's real .env may enable the optional tunnel app. Isolate
+    // the test so it always checks the base ERP process.
+    const previousEnvFile = process.env['ENV_FILE'];
+    process.env['ENV_FILE'] = '.env.test-does-not-exist';
+    try {
+      const config = require(join(repoRoot, 'ecosystem.config.cjs')) as {
+        apps: Record<string, unknown>[];
+      };
+      const app = config.apps[0];
 
-    expect(config.apps).toHaveLength(1);
-    expect(app['name']).toBe('mermelada-erp');
-    expect(app['script']).toBe('dist/app/server/server.mjs');
-    expect(app['autorestart']).toBe(true);
-    expect(app['max_memory_restart']).toBeTruthy();
-    expect(app['kill_timeout']).toBeGreaterThan(0);
-    expect(app['env']).toMatchObject({ NODE_ENV: 'production' });
+      expect(config.apps).toHaveLength(1);
+      expect(app['name']).toBe('mermelada-erp');
+      expect(app['script']).toBe('dist/app/server/server.mjs');
+      expect(app['autorestart']).toBe(true);
+      expect(app['max_memory_restart']).toBeTruthy();
+      expect(app['kill_timeout']).toBeGreaterThan(0);
+      expect(app['env']).toMatchObject({ NODE_ENV: 'production' });
+    } finally {
+      if (previousEnvFile === undefined) {
+        delete process.env['ENV_FILE'];
+      } else {
+        process.env['ENV_FILE'] = previousEnvFile;
+      }
+    }
   });
 });
 

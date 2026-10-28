@@ -38,7 +38,7 @@ services:
     stop_grace_period: 15s
 
   # Optional automated backups: docker compose --profile backup up -d
-  # Runs the same image once per day; requires app to be healthy.
+  # Runs the same image twice per day (every 12 h); requires app to be healthy.
   backup:
     image: ${IMAGE_NAME:-mermelada-erp:latest}
     profiles: ["backup"]
@@ -47,15 +47,19 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    env_file:
+      - .env.production
     environment:
       DB_PATH: /app/data/mermelada.db
       BACKUP_DIR: /app/backups
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-15}
     volumes:
       - mermelada-data:/app/data:ro
       - ./backups:/app/backups
+      # Google Drive service account JSON (optional; see DEPLOYMENT.md).
+      - ./secrets:/app/secrets:ro
     entrypoint: ["/bin/sh", "-c"]
-    command: ["while true; do node scripts/backup-db.mjs; sleep 86400; done"]
+    command: ["while true; do node scripts/backup-db.mjs; sleep 43200; done"]
     healthcheck:
       disable: true
     security_opt:
