@@ -2808,7 +2808,11 @@ export class ErpDatabase {
     return this.state.salesOrders;
   }
 
-  public addSalesOrder(data: Omit<SalesOrder, 'id' | 'orderNumber' | 'hasDeliveryNote'>): SalesOrder {
+  public addSalesOrder(
+    data: Omit<SalesOrder, 'id' | 'orderNumber' | 'hasDeliveryNote'>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): SalesOrder {
+    const actor = this.manualOrderActor(actorInput);
     const nextNum = 'PED-2026-0' + (this.state.salesOrders.length + 44);
     const rate = data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
 
@@ -2832,6 +2836,7 @@ export class ErpDatabase {
       taxAmountBs,
       totalBs,
       hasDeliveryNote: false,
+      createdBy: actor.userName,
     };
     this.state.salesOrders.unshift(newOrder);
 
@@ -2843,6 +2848,24 @@ export class ErpDatabase {
         fg.availableUnits = Math.max(0, fg.stockUnits - fg.reservedUnits);
       }
     }
+
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'pedido_venta_creado',
+      title: `Pedido de venta creado: ${newOrder.orderNumber}`,
+      description: `${newOrder.customerName} · ${newOrder.items.length} ítem(s) · Total $${newOrder.total.toFixed(2)}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: newOrder.id,
+        targetCode: newOrder.orderNumber,
+        itemName: newOrder.customerName,
+        costUsd: newOrder.total,
+        salesOrderId: newOrder.id,
+      },
+    });
 
     return newOrder;
   }

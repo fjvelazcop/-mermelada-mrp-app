@@ -493,24 +493,40 @@ describe('user administration edge cases', () => {
     expect(operator.avatarBg).toBe('bg-blue-600');
   });
 
-  it('uses the environment seed password and then the default one', () => {
+  it('uses inicio123 as the initial password for new users', () => {
     vi.stubEnv('AUTH_SEED_PASSWORD', 'env-password-123');
-    const fromEnv = auth.createUser({
-      fullName: 'Clave de Entorno',
-      username: 'env-password-user',
-      email: 'env-password@pulpacraft.local',
-      roleId: 'operator',
-    });
-    expect(auth.verifyPassword('env-password-123', auth.findUserById(fromEnv.id)!.password_hash)).toBe(true);
-
-    vi.stubEnv('AUTH_SEED_PASSWORD', '');
-    const fromDefault = auth.createUser({
+    const user = auth.createUser({
       fullName: 'Clave por Defecto',
       username: 'default-password-user',
       email: 'default-password@pulpacraft.local',
       roleId: 'operator',
     });
-    expect(auth.verifyPassword('mermelada123', auth.findUserById(fromDefault.id)!.password_hash)).toBe(true);
+    expect(
+      auth.verifyPassword(
+        'inicio123',
+        auth.findUserById(user.id)!.password_hash
+      )
+    ).toBe(true);
+    expect(
+      auth.verifyPassword(
+        'env-password-123',
+        auth.findUserById(user.id)!.password_hash
+      )
+    ).toBe(false);
+
+    const blankPassword = auth.createUser({
+      fullName: 'Clave en Blanco',
+      username: 'blank-password-user',
+      email: 'blank-password@pulpacraft.local',
+      roleId: 'operator',
+      password: '   ',
+    });
+    expect(
+      auth.verifyPassword(
+        'inicio123',
+        auth.findUserById(blankPassword.id)!.password_hash
+      )
+    ).toBe(true);
   });
 
   it('rejects invalid updates and preserves omitted fields', () => {
@@ -576,6 +592,40 @@ describe('user administration edge cases', () => {
       roleId: 'operator',
     });
     expect(auth.deleteUser(operator.id)).toBe(true);
+  });
+
+  it('blocks deletion when the user already has audited activity', () => {
+    const user = auth.createUser({
+      fullName: 'Usuario Con Historial',
+      username: 'user-with-history',
+      email: 'user-with-history@pulpacraft.local',
+      roleId: 'operator',
+    });
+    expect(auth.getUserActivity(user.id)).toEqual([]);
+
+    getDb()
+      .prepare(
+        `INSERT INTO audit_logs (
+          id, logged_at, audit_module, action_type, title, description,
+          user_id, user_name, user_role, severity, details_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        'audit-history-test',
+        new Date().toISOString(),
+        'ventas',
+        'pedido_venta_creado',
+        'Pedido de prueba',
+        'Registro de prueba para bloquear el borrado',
+        user.id,
+        user.fullName,
+        'operator',
+        'info',
+        null
+      );
+
+    expect(auth.getUserActivity(user.id)).toContain('auditoría');
+    expect(() => auth.deleteUser(user.id)).toThrow(/actividad registrada/);
   });
 
   it('resolves missing role names and avatar defaults gracefully', () => {

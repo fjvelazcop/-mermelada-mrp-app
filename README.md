@@ -78,6 +78,8 @@ Authentication is **opt-in** so the demo keeps working without a login screen:
 | `AUTH_TOKEN_TTL_SECONDS` | `28800` (8 h) | Token lifetime. |
 | `AUTH_SEED_PASSWORD` | `mermelada123` | Password assigned to the five demo users on first run. |
 
+New users created from **Configuración → Usuarios** without an explicit password receive the temporary password `inicio123` and must change it after their first login. Users that already have activity in sales, inventory, production, expenses or the audit log cannot be deleted; deactivate them instead to preserve the audit trail.
+
 Demo users (seeded into `auth_users` once): `admin` (admin), `supervisor` (supervisor_planta), `operador` (operator), `costos` (analista_costos) and `almacen` (almacenista).
 
 ```bash

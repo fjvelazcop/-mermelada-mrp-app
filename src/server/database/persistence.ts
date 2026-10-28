@@ -231,6 +231,7 @@ function migrate(db: Database.Database): void {
       delivery_note_number TEXT,
       production_order_id TEXT,
       notes TEXT,
+      created_by TEXT,
       collection_json TEXT
     );
 
@@ -565,6 +566,7 @@ function migrate(db: Database.Database): void {
   ensureColumn(db, 'expenses', 'issuing_bank_code', 'TEXT');
   ensureColumn(db, 'expenses', 'issuing_bank_name', 'TEXT');
   ensureColumn(db, 'sales_orders', 'collection_json', 'TEXT');
+  ensureColumn(db, 'sales_orders', 'created_by', 'TEXT');
 
   const row = db
     .prepare('SELECT MAX(version) AS version FROM schema_migrations')

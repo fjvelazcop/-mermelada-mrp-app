@@ -289,6 +289,8 @@ export interface SalesOrder {
   deliveryNoteNumber?: string;
   productionOrderId?: string;
   notes?: string;
+  /** Full name of the user that registered the order (audit trail). */
+  createdBy?: string;
   collection?: {
     bankCode: string;
     bankName: string;
@@ -648,6 +650,7 @@ export interface AuditLogEntry {
     | 'proveedor_actualizado'
     | 'proveedor_eliminado'
     | 'precio_proveedor_registrado'
+    | 'pedido_venta_creado'
     | 'cobro_registrado';
   title: string;
   description: string;

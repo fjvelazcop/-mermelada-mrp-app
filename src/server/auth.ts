@@ -279,6 +279,11 @@ declare module 'express-serve-static-core' {
 }
 
 const DEFAULT_SEED_PASSWORD = 'mermelada123';
+/**
+ * Initial password for users created without one. It is intentionally public
+ * and must be changed by the user after the first login.
+ */
+export const DEFAULT_NEW_USER_PASSWORD = 'inicio123';
 const DEFAULT_TOKEN_TTL_SECONDS = 8 * 60 * 60;
 const DEFAULT_SECRET = 'mermelada-dev-secret-change-me';
 
@@ -801,10 +806,7 @@ export function createUser(input: UserInput): AuthUser {
 
   const id = `usr-${randomBytes(6).toString('hex')}`;
   const createdAt = new Date().toISOString();
-  const password =
-    input.password ||
-    process.env['AUTH_SEED_PASSWORD'] ||
-    DEFAULT_SEED_PASSWORD;
+  const password = input.password?.trim() || DEFAULT_NEW_USER_PASSWORD;
 
   db.prepare(`
     INSERT INTO auth_users (
@@ -887,6 +889,112 @@ export function updateUser(
   return toPublicUser(findUserById(userId)!);
 }
 
+/**
+ * Modules where a user already produced records. Such users must be
+ * deactivated instead of deleted so the audit trail and historical documents
+ * keep pointing at a real person.
+ */
+export function getUserActivity(userId: string): string[] {
+  const user = findUserById(userId);
+  if (!user) return [];
+
+  const db = getDb();
+  const fullName = user.full_name.trim();
+  if (!fullName) return [];
+
+  const exact = fullName.toLowerCase();
+  const withRole = `${fullName} (%)`.toLowerCase();
+  const nameMatch = (column: string) =>
+    `lower(trim(${column})) = ? OR lower(trim(${column})) LIKE ?`;
+
+  const hasTable = (table: string): boolean =>
+    Boolean(
+      db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(table)
+    );
+
+  const hasRows = (sql: string, params: (string | number)[]): boolean => {
+    const row = db.prepare(sql).get(...params) as { count: number };
+    return row.count > 0;
+  };
+
+  const modules: string[] = [];
+
+  if (
+    hasTable('audit_logs') &&
+    hasRows(
+      `SELECT COUNT(*) AS count FROM audit_logs
+       WHERE user_id = ? OR ${nameMatch('user_name')}`,
+      [userId, exact, withRole]
+    )
+  ) {
+    modules.push('auditoría');
+  }
+
+  if (
+    hasTable('inventory_movements') &&
+    hasRows(
+      `SELECT COUNT(*) AS count FROM inventory_movements
+       WHERE ${nameMatch('performed_by')}`,
+      [exact, withRole]
+    )
+  ) {
+    modules.push('inventario');
+  }
+
+  if (hasTable('production_orders')) {
+    const clauses = ['created_by', 'updated_by', 'processed_by', 'annulled_by']
+      .map((column) => nameMatch(column))
+      .join(' OR ');
+    if (
+      hasRows(
+        `SELECT COUNT(*) AS count FROM production_orders WHERE ${clauses}`,
+        [exact, withRole, exact, withRole, exact, withRole, exact, withRole]
+      )
+    ) {
+      modules.push('producción');
+    }
+  }
+
+  if (
+    hasTable('expenses') &&
+    hasRows(
+      `SELECT COUNT(*) AS count FROM expenses WHERE ${nameMatch('registered_by')}`,
+      [exact, withRole]
+    )
+  ) {
+    modules.push('gastos');
+  }
+
+  if (
+    hasTable('supplier_prices') &&
+    hasRows(
+      `SELECT COUNT(*) AS count FROM supplier_prices WHERE ${nameMatch('created_by')}`,
+      [exact, withRole]
+    )
+  ) {
+    modules.push('proveedores');
+  }
+
+  if (hasTable('sales_orders')) {
+    const salesClauses = [
+      nameMatch('created_by'),
+      'collection_json LIKE ?',
+    ].join(' OR ');
+    if (
+      hasRows(
+        `SELECT COUNT(*) AS count FROM sales_orders WHERE ${salesClauses}`,
+        [exact, withRole, `%${fullName}%`]
+      )
+    ) {
+      modules.push('ventas');
+    }
+  }
+
+  return modules;
+}
+
 export function deleteUser(userId: string): boolean {
   const current = findUserById(userId);
   if (!current) return false;
@@ -900,6 +1008,15 @@ export function deleteUser(userId: string): boolean {
     if (admins.count <= 1) {
       throw new Error('No se puede eliminar el último administrador activo');
     }
+  }
+
+  const activity = getUserActivity(userId);
+  if (activity.length > 0) {
+    throw new Error(
+      `No se puede eliminar al usuario "${current.full_name}" porque tiene actividad registrada en ${activity.join(
+        ', '
+      )}. Desactívelo para conservar la trazabilidad y la auditoría.`
+    );
   }
 
   getDb().prepare('DELETE FROM auth_users WHERE id = ?').run(userId);

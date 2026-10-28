@@ -261,6 +261,7 @@ export function loadRelationalState(): DatabaseState | null {
       deliveryNoteNumber: o(r['delivery_note_number']),
       productionOrderId: o(r['production_order_id']),
       notes: o(r['notes']),
+      createdBy: o(r['created_by']),
       collection: r['collection_json'] ? JSON.parse(r['collection_json']) : undefined,
     })
   );
@@ -769,8 +770,8 @@ export function saveRelationalState(state: DatabaseState): void {
         order_date, delivery_date, status, exchange_rate_used, subtotal,
         tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
         has_delivery_note, delivery_note_number, production_order_id, notes,
-        collection_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_by, collection_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertSalesItem = db.prepare(`
       INSERT INTO sales_order_items (
@@ -800,6 +801,7 @@ export function saveRelationalState(state: DatabaseState): void {
         v(order.deliveryNoteNumber),
         v(order.productionOrderId),
         v(order.notes),
+        v(order.createdBy),
         v(order.collection ? JSON.stringify(order.collection) : undefined)
       );
       for (const item of order.items) {

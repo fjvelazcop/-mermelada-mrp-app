@@ -142,7 +142,7 @@ export class Settings {
   // --- USER ACTIONS ---
   public openCreateUserModal() {
     this.editingUserId.set(null);
-    this.userForm.controls.password.setValidators([Validators.required, Validators.minLength(8)]);
+    this.userForm.controls.password.setValidators([Validators.minLength(8)]);
     this.userForm.controls.password.updateValueAndValidity();
     this.userForm.reset({
       fullName: '',
@@ -212,7 +212,7 @@ export class Settings {
           department: formVal.department,
           status: formVal.status,
           avatarBg: formVal.avatarBg,
-          password: formVal.password,
+          password: formVal.password || undefined,
         });
       }
       this.closeUserModal();
@@ -231,7 +231,7 @@ export class Settings {
   }
 
   public async deleteUser(user: SystemUser) {
-    if (confirm(`¿Estás seguro de eliminar al usuario "${user.fullName}" (${user.username})?`)) {
+    if (confirm(`¿Estás seguro de eliminar al usuario "${user.fullName}" (${user.username})?\n\nSolo se permite si nunca ha registrado actividad. Si ya tiene historial en ventas, inventario, producción, gastos o auditoría, desactívelo en lugar de eliminarlo.`)) {
       try {
         await this.api.deleteUser(user.id);
       } catch {

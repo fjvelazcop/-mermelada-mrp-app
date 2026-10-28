@@ -654,7 +654,7 @@ export function createApiApp(): express.Express {
     '/api/sales/orders',
     validateBody(salesOrderSchema),
     mutation((req, res) => {
-      const created = dbInstance.addSalesOrder(req.body);
+      const created = dbInstance.addSalesOrder(req.body, auditActor(req));
       res.status(201).json(created);
     })
   );
