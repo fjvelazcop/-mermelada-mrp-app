@@ -28,6 +28,8 @@ import {
   AuditLogEntry,
   Expense,
   ExpenseCategoryConfig,
+  Supplier,
+  SupplierPrice,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 import {computed} from '@angular/core';
@@ -54,6 +56,7 @@ export class ErpApiService {
         sales: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         payroll: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         expenses: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         settings: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         architecture: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
       },
@@ -72,6 +75,7 @@ export class ErpApiService {
         sales: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         payroll: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        suppliers: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -90,6 +94,7 @@ export class ErpApiService {
         sales: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        suppliers: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -108,6 +113,7 @@ export class ErpApiService {
         sales: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
         payroll: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+        suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -126,6 +132,7 @@ export class ErpApiService {
         sales: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
         payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
@@ -266,7 +273,36 @@ export class ErpApiService {
     if (user) {
       this.activeUserId.set(user.id);
       this.currentRole.set(user.roleId as UserRole);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mermelada-demo-user', user.id);
+        localStorage.setItem('mermelada-demo-role', user.roleId);
+        localStorage.setItem('mermelada-demo-user-name', user.fullName);
+      }
       this.showToast(`Usuario activo simulado: ${user.fullName} (${user.roleName})`, 'info');
+    }
+  }
+
+  /**
+   * Apply the role of a real authenticated user (from `/api/auth/me`) to the
+   * local permission matrix, so the UI guards match the server-side RBAC.
+   */
+  public applyAuthenticatedRole(roleId: string, fullName?: string) {
+    const role = this.systemRoles().find(r => r.id === roleId);
+    if (!role) return;
+    this.currentRole.set(roleId as UserRole);
+    const user =
+      this.systemUsers().find(u => u.roleId === roleId) ||
+      this.systemUsers().find(u => u.id === 'usr-admin');
+    if (user) {
+      this.activeUserId.set(user.id);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mermelada-demo-user', user.id);
+        localStorage.setItem('mermelada-demo-role', roleId);
+        localStorage.setItem(
+          'mermelada-demo-user-name',
+          fullName || user.fullName
+        );
+      }
     }
   }
 
@@ -363,6 +399,8 @@ export class ErpApiService {
   public productionOrders = signal<ProductionOrder[]>([]);
   public customers = signal<Customer[]>([]);
   public salesOrders = signal<SalesOrder[]>([]);
+  public suppliers = signal<Supplier[]>([]);
+  public supplierPrices = signal<SupplierPrice[]>([]);
   public deliveryNotes = signal<DeliveryNote[]>([]);
   public employees = signal<Employee[]>([]);
   public payrollWeeks = signal<PayrollWeek[]>([]);
@@ -648,6 +686,8 @@ export class ErpApiService {
         pOrders,
         custs,
         sOrders,
+        supplierList,
+        supplierPriceList,
         dNotes,
         staff,
         weeks,
@@ -666,6 +706,8 @@ export class ErpApiService {
         firstValueFrom(this.http.get<ProductionOrder[]>('/api/production-orders')),
         firstValueFrom(this.http.get<Customer[]>('/api/sales/customers')),
         firstValueFrom(this.http.get<SalesOrder[]>('/api/sales/orders')),
+        firstValueFrom(this.http.get<Supplier[]>('/api/suppliers')).catch(() => []),
+        firstValueFrom(this.http.get<SupplierPrice[]>('/api/suppliers/prices')).catch(() => []),
         firstValueFrom(this.http.get<DeliveryNote[]>('/api/sales/delivery-notes')),
         firstValueFrom(this.http.get<Employee[]>('/api/payroll/employees')),
         firstValueFrom(this.http.get<PayrollWeek[]>('/api/payroll/weeks')),
@@ -685,6 +727,8 @@ export class ErpApiService {
       this.productionOrders.set(pOrders);
       this.customers.set(custs);
       this.salesOrders.set(sOrders);
+      this.suppliers.set(supplierList || []);
+      this.supplierPrices.set(supplierPriceList || []);
       this.deliveryNotes.set(dNotes);
       this.employees.set(staff);
       this.payrollWeeks.set(weeks);
@@ -965,6 +1009,126 @@ export class ErpApiService {
     }
   }
 
+  // --- MANUAL PRODUCTION ORDERS (ADMIN ONLY) ---
+  public async createManualProductionOrder(data: {
+    formulas: { recipeId: string; batchCount: number }[];
+    lotNumber?: string;
+    commitmentReference?: string;
+    operatorNotes?: string;
+    processImmediately?: boolean;
+  }) {
+    try {
+      const res = await firstValueFrom<ProductionOrder>(
+        this.http.post<ProductionOrder>('/api/production-orders/manual', data)
+      );
+      this.showToast(
+        `Orden manual ${res.orderNumber} creada con ${res.formulas?.length || 1} fórmula(s).`
+      );
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al crear orden manual',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async updateManualProductionOrder(
+    orderId: string,
+    data: {
+      formulas: { recipeId: string; batchCount: number }[];
+      lotNumber?: string;
+      commitmentReference?: string;
+      operatorNotes?: string;
+    }
+  ) {
+    try {
+      const res = await firstValueFrom<ProductionOrder>(
+        this.http.put<ProductionOrder>(
+          `/api/production-orders/manual/${orderId}`,
+          data
+        )
+      );
+      this.showToast(`Orden manual ${res.orderNumber} actualizada.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al actualizar orden manual',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async deleteManualProductionOrder(orderId: string) {
+    try {
+      await firstValueFrom(
+        this.http.delete(`/api/production-orders/manual/${orderId}`)
+      );
+      this.showToast('Orden manual eliminada.');
+      await this.refreshAllData();
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al eliminar orden manual',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async processManualProductionOrder(orderId: string) {
+    try {
+      const res = await firstValueFrom<{
+        success: boolean;
+        message: string;
+        order: ProductionOrder;
+      }>(
+        this.http.post<{
+          success: boolean;
+          message: string;
+          order: ProductionOrder;
+        }>(`/api/production-orders/manual/${orderId}/process`, {})
+      );
+      this.showToast(res.message, 'success');
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al procesar orden manual',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async annulManualProductionOrder(orderId: string) {
+    try {
+      const res = await firstValueFrom<{
+        success: boolean;
+        message: string;
+        order: ProductionOrder;
+      }>(
+        this.http.post<{
+          success: boolean;
+          message: string;
+          order: ProductionOrder;
+        }>(`/api/production-orders/manual/${orderId}/annul`, {})
+      );
+      this.showToast(res.message, 'info');
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al anular orden manual',
+        'error'
+      );
+      throw err;
+    }
+  }
+
   // --- SALES ORDERS & MTO TRIGGER ---
   public async addCustomer(cust: Omit<Customer, 'id'>) {
     try {
@@ -978,6 +1142,100 @@ export class ErpApiService {
       this.showToast(msg, 'error');
       throw err;
     }
+  }
+
+  // --- SUPPLIER MASTER DIRECTORY & PRICE HISTORY ---
+  public async addSupplier(
+    data: Omit<Supplier, 'id' | 'code' | 'createdAt'> & { code?: string }
+  ) {
+    try {
+      const res = await firstValueFrom<Supplier>(
+        this.http.post<Supplier>('/api/suppliers', data)
+      );
+      this.suppliers.update((list) => [...list, res]);
+      this.showToast(`Proveedor "${res.businessName}" registrado.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al registrar proveedor',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async updateSupplier(
+    id: string,
+    data: Partial<Omit<Supplier, 'id' | 'createdAt'>>
+  ) {
+    try {
+      const res = await firstValueFrom<Supplier>(
+        this.http.put<Supplier>(`/api/suppliers/${id}`, data)
+      );
+      this.suppliers.update((list) =>
+        list.map((s) => (s.id === id ? res : s))
+      );
+      this.showToast(`Proveedor "${res.businessName}" actualizado.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al actualizar proveedor',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async deleteSupplier(id: string) {
+    try {
+      await firstValueFrom(this.http.delete(`/api/suppliers/${id}`));
+      this.showToast('Proveedor eliminado del directorio.');
+      await this.refreshAllData();
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al eliminar proveedor',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async addSupplierPrice(
+    supplierId: string,
+    data: {
+      materialId?: string;
+      productName: string;
+      unit: SupplierPrice['unit'];
+      priceUsd: number;
+      validFrom: string;
+      notes?: string;
+    }
+  ) {
+    try {
+      const res = await firstValueFrom<SupplierPrice>(
+        this.http.post<SupplierPrice>(
+          `/api/suppliers/${supplierId}/prices`,
+          data
+        )
+      );
+      this.showToast(
+        `Precio de "${res.productName}" registrado para ${res.supplierName}.`
+      );
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al registrar precio',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public supplierPricesFor(supplierId: string): SupplierPrice[] {
+    return this.supplierPrices().filter((p) => p.supplierId === supplierId);
   }
 
   public async addSalesOrder(data: any) {
@@ -1022,6 +1280,34 @@ export class ErpApiService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al emitir nota de entrega';
       this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async collectSalesOrder(
+    orderId: string,
+    data: {
+      bankCode: string;
+      paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+      reference: string;
+      amountUsd?: number;
+      exchangeRateUsed?: number;
+    }
+  ) {
+    try {
+      const res = await firstValueFrom<SalesOrder>(
+        this.http.post<SalesOrder>(`/api/sales/orders/${orderId}/collect`, data)
+      );
+      this.showToast(
+        `Cobro de ${res.orderNumber} registrado en ${res.collection?.bankName}.`
+      );
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al registrar cobro',
+        'error'
+      );
       throw err;
     }
   }

@@ -129,7 +129,7 @@
                   [class.text-blue-800]="order.status === 'listo_despacho'"
                   [class.bg-amber-100]="order.status === 'en_produccion' || order.status === 'pendiente'"
                   [class.text-amber-800]="order.status === 'en_produccion' || order.status === 'pendiente'">
-                  {{ order.status === 'despachado' ? 'Despachado' : (order.status === 'listo_despacho' ? 'Listo en Bodega' : (order.status === 'en_produccion' ? 'En Marmita (MTO)' : 'Pendiente Stock')) }}
+                  {{ order.status === 'cobrado' ? 'Cobrado' : (order.status === 'despachado' ? 'Despachado' : (order.status === 'listo_despacho' ? 'Listo en Bodega' : (order.status === 'en_produccion' ? 'En Marmita (MTO)' : 'Pendiente Stock'))) }}
                 </span>
               </div>
 
@@ -159,6 +159,16 @@
               @if (order.notes) {
                 <div class="text-xs text-stone-500 italic mt-1">
                   Nota despacho: {{ order.notes }}
+                </div>
+              }
+
+              @if (order.collection) {
+                <div class="mt-2 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <mat-icon class="text-xs text-emerald-600">account_balance</mat-icon>
+                  <span class="font-semibold">{{ order.collection.bankCode }} - {{ order.collection.bankName }}</span>
+                  <span>· {{ order.collection.paymentMethod.replace('_', ' ') }}</span>
+                  <span>· Ref: {{ order.collection.reference }}</span>
+                  <span>· Cobrado por {{ order.collection.collectedBy }}</span>
                 </div>
               }
             </div>
@@ -210,6 +220,17 @@
                   >
                     <mat-icon class="text-xs">description</mat-icon>
                     Ver Nota {{ order.deliveryNoteNumber }}
+                  </button>
+                }
+
+                @if (order.status !== 'cobrado') {
+                  <button
+                    (click)="openCollectModal(order)"
+                    class="inline-flex items-center gap-1 px-3 py-2 text-xs font-bold bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 shadow-xs"
+                    title="Registrar el cobro bancario del pedido"
+                  >
+                    <mat-icon class="text-xs">payments</mat-icon>
+                    Registrar Cobro
                   </button>
                 }
               </div>
@@ -945,6 +966,130 @@
             </button>
             <button type="submit" [disabled]="newCustomerForm.invalid" class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50">
               Guardar Cliente
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: REGISTRAR COBRO BANCARIO -->
+  @if (isCollectModalOpen() && collectingOrder()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-6 shadow-xl border border-stone-200">
+        <div class="flex items-start justify-between pb-4 border-b border-stone-100">
+          <div>
+            <div class="flex items-center gap-2">
+              <mat-icon class="text-emerald-700">payments</mat-icon>
+              <h3 class="text-lg font-bold text-stone-900">Registrar Cobro</h3>
+            </div>
+            <p class="text-xs text-stone-500 mt-1">
+              {{ collectingOrder()?.orderNumber }} · {{ collectingOrder()?.customerName }}
+              · Total ${{ collectingOrder()?.total | veNumber:2 }}
+            </p>
+          </div>
+          <button (click)="closeCollectModal()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="collectForm" (ngSubmit)="submitCollection()" class="space-y-4 pt-4">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Monto recibido (USD) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                formControlName="amountUsd"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono text-stone-900"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Tasa aplicada (Bs./USD) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="1"
+                formControlName="exchangeRateUsed"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono text-stone-900"
+              />
+            </div>
+          </div>
+
+          @let cAmount = collectForm.controls.amountUsd.value || 0;
+          @let cRate = collectForm.controls.exchangeRateUsed.value || 48.35;
+          <div class="text-xs text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
+            Equivalente: <strong class="font-mono text-stone-800">{{ (cAmount * cRate) | veCurrency:'Bs.':2 }}</strong>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Método de cobro</label>
+            <select
+              formControlName="paymentMethod"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
+            >
+              <option value="transferencia_bancaria">Transferencia Bancaria</option>
+              <option value="pago_movil">Pago Móvil</option>
+              <option value="tarjeta">Punto de Venta / Tarjeta</option>
+              <option value="zelle">Zelle</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">
+              Banco receptor <span class="text-rose-600">*</span>
+              <span class="ml-1 text-[10px] font-normal text-stone-400">Catálogo oficial SUDEBAN</span>
+            </label>
+            <input
+              type="text"
+              list="collect-receiver-banks"
+              [value]="collectingBankQuery()"
+              (input)="onCollectBankChange($any($event.target).value)"
+              placeholder="Escribe el código o nombre: ej. 0108 - Banco Provincial"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              autocomplete="off"
+            />
+            <datalist id="collect-receiver-banks">
+              @for (bank of banks; track bank.code) {
+                <option [value]="bankLabel(bank)"></option>
+              }
+            </datalist>
+            @if (collectForm.controls.bankCode.value) {
+              <span class="text-[11px] text-emerald-700 mt-1 flex items-center gap-1">
+                <mat-icon class="text-xs">verified</mat-icon>
+                {{ collectForm.controls.bankCode.value }} seleccionado
+              </span>
+            } @else {
+              <span class="text-[11px] text-stone-400 mt-1 block">
+                El banco receptor es obligatorio para todo cobro bancario.
+              </span>
+            }
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Referencia / Confirmación *</label>
+            <input
+              type="text"
+              formControlName="reference"
+              placeholder="ej: REF-BNC-8849102 / PM-4491"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono text-stone-900"
+            />
+            @if (collectForm.controls.reference.touched && collectForm.controls.reference.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">La referencia es obligatoria.</span>
+            }
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+            <button type="button" (click)="closeCollectModal()" class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900">
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="collectForm.invalid"
+              class="px-4 py-2 text-xs font-semibold bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 disabled:opacity-50"
+            >
+              Registrar cobro
             </button>
           </div>
         </form>

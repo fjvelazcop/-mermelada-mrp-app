@@ -32,12 +32,18 @@ export class PayrollComponent {
     endDate: new FormControl<string>('2026-10-11', {nonNullable: true, validators: [Validators.required]}),
     isActiveProduction: new FormControl<boolean>(true, {nonNullable: true}),
     inactivityReason: new FormControl<any>('mantenimiento_preventivo', {nonNullable: true}),
-    bonusPerEmployee: new FormControl<number>(10, {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
   });
 
+  /** Bonus per position, keyed by the employee's `roleTitle`. */
+  public roleBonusEntries = signal<{roleTitle: string; bonus: number}[]>([]);
+
   public employees = computed(() => this.api.employees());
   public payrollWeeks = computed(() => this.api.payrollWeeks());
+
+  public existingRoles = computed(() =>
+    Array.from(new Set(this.employees().map((employee) => employee.roleTitle)))
+  );
 
   public inactiveWeeks = computed(() => {
     return this.payrollWeeks().filter(w => !w.isActiveProduction);
@@ -47,15 +53,38 @@ export class PayrollComponent {
     return this.inactiveWeeks().reduce((acc, w) => acc + w.fixedAbsorptionCost, 0);
   });
 
+  public updateRoleBonus(roleTitle: string, value: string | number) {
+    const bonus = Number(value);
+    this.roleBonusEntries.update((entries) =>
+      entries.map((entry) =>
+        entry.roleTitle === roleTitle
+          ? {...entry, bonus: Number.isFinite(bonus) ? bonus : 0}
+          : entry
+      )
+    );
+  }
+
+  public weekBonusEntries(week: {bonusByRole?: Record<string, number>}) {
+    return Object.entries(week.bonusByRole || {}).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+  }
+
+  private resetRoleBonuses(defaultBonus = 12) {
+    this.roleBonusEntries.set(
+      this.existingRoles().map((roleTitle) => ({roleTitle, bonus: defaultBonus}))
+    );
+  }
+
   public openNewWeekModal() {
     const nextWeekNum = (this.payrollWeeks()[0]?.weekNumber || 40) + 1;
     this.newWeekForm.patchValue({
       weekNumber: nextWeekNum,
       isActiveProduction: true,
       inactivityReason: 'mantenimiento_preventivo',
-      bonusPerEmployee: 12,
       notes: '',
     });
+    this.resetRoleBonuses(12);
     this.isNewWeekModalOpen.set(true);
   }
 
@@ -69,11 +98,15 @@ export class PayrollComponent {
     const staff = this.employees();
 
     const isProd = Boolean(v.isActiveProduction);
-    const bonus = isProd ? Number(v.bonusPerEmployee || 0) : 0;
+    const bonusByRole: Record<string, number> = {};
+    for (const entry of this.roleBonusEntries()) {
+      bonusByRole[entry.roleTitle] = isProd ? Number(entry.bonus) || 0 : 0;
+    }
 
     let totalPaid = 0;
     const payments = staff.map(emp => {
       const base = emp.weeklyBaseSalary;
+      const bonus = isProd ? Number(bonusByRole[emp.roleTitle] || 0) : 0;
       const net = base + bonus - 1.50; // minor deduction
       totalPaid += net;
       return {
@@ -99,6 +132,7 @@ export class PayrollComponent {
       payments,
       totalPayrollPaid: Number(totalPaid.toFixed(2)),
       fixedAbsorptionCost: fixedAbsorption,
+      bonusByRole: isProd ? bonusByRole : undefined,
       notes: v.notes || (!isProd ? 'Semana sin cocción en marmitas.' : 'Semana de producción activa.'),
     });
 

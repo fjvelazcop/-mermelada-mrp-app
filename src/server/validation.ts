@@ -1,6 +1,7 @@
 import { z, ZodError, type ZodType } from 'zod';
 import type { NextFunction, Request, Response } from 'express';
 import { ApiError, badRequest } from './errors.js';
+import { findBank } from '../app/core/data/venezuelan-banks.js';
 
 /**
  * Request payload validation with zod.
@@ -53,6 +54,7 @@ const auditModuleSchema = z.enum([
   'costos',
   'ventas',
   'gastos',
+  'compras',
 ]);
 const auditSeveritySchema = z.enum(['info', 'success', 'warning', 'critical']);
 const auditActionSchema = z.enum([
@@ -62,10 +64,20 @@ const auditActionSchema = z.enum([
   'reabastecimiento_alerta',
   'orden_produccion_creada',
   'orden_produccion_procesada',
+  'orden_manual_creada',
+  'orden_manual_actualizada',
+  'orden_manual_eliminada',
+  'orden_manual_procesada',
+  'orden_manual_anulada',
   'receta_bom_creada',
   'alerta_stock_critico',
   'gasto_registrado',
   'gasto_eliminado',
+  'proveedor_creado',
+  'proveedor_actualizado',
+  'proveedor_eliminado',
+  'precio_proveedor_registrado',
+  'cobro_registrado',
 ]);
 const documentTypeSchema = z.enum([
   'factura_fiscal',
@@ -171,6 +183,51 @@ export const productionOrderSchema = z.object({
   operatorNotes: z.string().max(2000).optional(),
 });
 
+export const manualProductionFormulaSchema = z.object({
+  recipeId: z.string().trim().min(1).max(200),
+  batchCount: integer.positive().max(10_000),
+});
+
+export const manualProductionOrderSchema = z.object({
+  formulas: z.array(manualProductionFormulaSchema).min(1).max(50),
+  lotNumber: z.string().trim().max(80).optional(),
+  commitmentReference: z.string().trim().max(200).optional(),
+  operatorNotes: z.string().max(2000).optional(),
+  processImmediately: z.boolean().optional(),
+});
+
+export const manualProductionOrderUpdateSchema = manualProductionOrderSchema;
+
+export const supplierSchema = z.object({
+  code: z.string().trim().max(60).optional(),
+  businessName: z.string().trim().min(1).max(200),
+  taxId: z.string().trim().min(1).max(60),
+  primaryContact: z.string().trim().min(1).max(200),
+  primaryPhone: z.string().trim().min(1).max(60),
+  secondaryPhone: z.string().trim().max(60).optional(),
+  email: z.string().trim().max(200).optional(),
+  fiscalAddress: z.string().trim().min(1).max(500),
+  physicalAddress: z.string().trim().max(500).optional(),
+  supplierType: z.enum(['fruta', 'aditivo', 'empaque', 'quimico', 'servicios', 'otro']),
+  paymentTerms: z.string().trim().min(1).max(200),
+  status: z.enum(['activo', 'inactivo']),
+  notes: z.string().max(2000).optional(),
+});
+
+export const supplierUpdateSchema = supplierSchema.partial();
+
+export const supplierPriceSchema = z.object({
+  // The supplier is taken from the `/api/suppliers/:id/prices` route; the body
+  // field is accepted only for backwards compatibility.
+  supplierId: z.string().trim().min(1).max(200).optional(),
+  materialId: z.string().trim().max(200).optional(),
+  productName: z.string().trim().min(1).max(200),
+  unit: unitSchema,
+  priceUsd: positive,
+  validFrom: dateLike,
+  notes: z.string().max(2000).optional(),
+});
+
 export const customerSchema = z.object({
   businessName: z.string().trim().min(1).max(200),
   taxId: z.string().trim().min(1).max(60),
@@ -222,6 +279,43 @@ export const salesOrderSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
+const BANK_PAYMENT_METHODS = [
+  'transferencia_bancaria',
+  'pago_movil',
+  'tarjeta',
+  'zelle',
+] as const;
+
+export const salesCollectionSchema = z
+  .object({
+    bankCode: z.string().trim().min(1).max(10),
+    paymentMethod: paymentMethodSchema,
+    reference: z.string().trim().min(1).max(200),
+    amountUsd: positive.optional(),
+    exchangeRateUsed: positive.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      !BANK_PAYMENT_METHODS.includes(
+        data.paymentMethod as (typeof BANK_PAYMENT_METHODS)[number]
+      )
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paymentMethod'],
+        message: 'El cobro debe registrarse con un método de pago bancario',
+      });
+      return;
+    }
+    if (!findBank(data.bankCode)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bankCode'],
+        message: 'El código de banco no existe en el catálogo SUDEBAN',
+      });
+    }
+  });
+
 export const salesOrderStatusUpdateSchema = z.object({
   status: salesOrderStatusSchema,
 });
@@ -253,6 +347,7 @@ export const payrollWeekSchema = z.object({
   payments: z.array(payrollPaymentSchema),
   totalPayrollPaid: money,
   fixedAbsorptionCost: money,
+  bonusByRole: z.record(z.string().trim().min(1).max(200), money).optional(),
   notes: z.string().max(2000).optional(),
 });
 
@@ -275,30 +370,53 @@ export const costingSimulationSchema = z.object({
   targetMarginRetail: z.coerce.number().finite().min(0).max(99).optional(),
 });
 
-export const expenseSchema = z.object({
-  date: dateLike,
-  concept: z.string().trim().min(1).max(300),
-  category: z.string().trim().min(1).max(120),
-  categoryLabel: z.string().trim().min(1).max(200),
-  amountUsd: positive,
-  exchangeRateUsed: positive.optional(),
-  amountBs: money.optional(),
-  supplierOrBeneficiary: z.string().trim().min(1).max(300),
-  taxId: z.string().trim().max(60).optional(),
-  documentType: documentTypeSchema,
-  documentNumber: z.string().trim().max(120).optional(),
-  paymentMethod: paymentMethodSchema,
-  paymentReference: z.string().trim().max(120).optional(),
-  notes: z.string().max(2000).optional(),
-  registeredBy: z.string().trim().min(1).max(200),
-  taxCategory: taxCategorySchema,
-  taxRatePercent: z.coerce.number().finite().min(0).max(100).optional(),
-  taxAmountUsd: money.optional(),
-  taxAmountBs: money.optional(),
-  accountingAccountCode: z.string().trim().max(60).optional(),
-  accountingAccountName: z.string().trim().max(200).optional(),
-  fiscalBookEligible: z.boolean(),
-});
+export const expenseSchema = z
+  .object({
+    date: dateLike,
+    concept: z.string().trim().min(1).max(300),
+    category: z.string().trim().min(1).max(120),
+    categoryLabel: z.string().trim().min(1).max(200),
+    amountUsd: positive,
+    exchangeRateUsed: positive.optional(),
+    amountBs: money.optional(),
+    supplierOrBeneficiary: z.string().trim().min(1).max(300),
+    taxId: z.string().trim().max(60).optional(),
+    documentType: documentTypeSchema,
+    documentNumber: z.string().trim().max(120).optional(),
+    paymentMethod: paymentMethodSchema,
+    paymentReference: z.string().trim().max(120).optional(),
+    issuingBankCode: z.string().trim().max(10).optional(),
+    issuingBankName: z.string().trim().max(200).optional(),
+    notes: z.string().max(2000).optional(),
+    registeredBy: z.string().trim().min(1).max(200),
+    taxCategory: taxCategorySchema,
+    taxRatePercent: z.coerce.number().finite().min(0).max(100).optional(),
+    taxAmountUsd: money.optional(),
+    taxAmountBs: money.optional(),
+    accountingAccountCode: z.string().trim().max(60).optional(),
+    accountingAccountName: z.string().trim().max(200).optional(),
+    fiscalBookEligible: z.boolean(),
+  })
+  .superRefine((data, ctx) => {
+    if (!BANK_PAYMENT_METHODS.includes(data.paymentMethod as (typeof BANK_PAYMENT_METHODS)[number])) {
+      return;
+    }
+    if (!data.issuingBankCode) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['issuingBankCode'],
+        message: 'El banco emisor es obligatorio para pagos bancarios',
+      });
+      return;
+    }
+    if (!findBank(data.issuingBankCode)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['issuingBankCode'],
+        message: 'El código de banco no existe en el catálogo SUDEBAN',
+      });
+    }
+  });
 
 export const expenseCategorySchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -350,6 +468,15 @@ export const auditLogSchema = z.object({
 export const loginSchema = z.object({
   username: z.string().trim().min(1).max(120),
   password: z.string().min(1).max(500),
+});
+
+export const passwordResetRequestSchema = z.object({
+  identifier: z.string().trim().min(1).max(200),
+});
+
+export const passwordResetConfirmSchema = z.object({
+  token: z.string().trim().min(16).max(500),
+  newPassword: z.string().min(8).max(200),
 });
 
 export const idParamsSchema = z.object({

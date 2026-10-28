@@ -4,6 +4,7 @@ import {
   FinishedGood,
   RecipeBOM,
   ProductionOrder,
+  ProductionOrderFormula,
   Customer,
   SalesOrder,
   DeliveryNote,
@@ -20,6 +21,8 @@ import {
   AuditLogEntry,
   Expense,
   ExpenseCategoryConfig,
+  Supplier,
+  SupplierPrice,
 } from '../app/core/models/erp.models.js';
 import { loadState } from './database/persistence.js';
 import {
@@ -35,6 +38,8 @@ export interface DatabaseState {
   productionOrders: ProductionOrder[];
   customers: Customer[];
   salesOrders: SalesOrder[];
+  suppliers: Supplier[];
+  supplierPrices: SupplierPrice[];
   deliveryNotes: DeliveryNote[];
   employees: Employee[];
   payrollWeeks: PayrollWeek[];
@@ -793,6 +798,7 @@ export function createInitialDatabase(): DatabaseState {
       batchCount: 2,
       lotNumber: 'L-GUAY-2610-A',
       status: 'completada',
+      mode: 'automatico',
       salesOrderId: 'so-1',
       customerName: 'Panadería El Trigal C.A.',
       startDate: '2026-10-03',
@@ -830,6 +836,7 @@ export function createInitialDatabase(): DatabaseState {
       batchCount: 2,
       lotNumber: 'L-GUAY-2610-B',
       status: 'en_proceso',
+      mode: 'automatico',
       salesOrderId: 'so-2',
       customerName: 'Bocadillos La Tradición Real',
       startDate: '2026-10-06',
@@ -1482,6 +1489,71 @@ export function createInitialDatabase(): DatabaseState {
     },
   ];
 
+  const suppliers: Supplier[] = [
+    {
+      id: 'sup-1',
+      code: 'PROV-0001',
+      businessName: 'Asociación de Fruticultores del Valle',
+      taxId: 'J-30124567-8',
+      primaryContact: 'María González',
+      primaryPhone: '+58 412-555-0101',
+      secondaryPhone: '+58 212-555-0102',
+      email: 'ventas@fruticultoresvalle.com',
+      fiscalAddress: 'Carretera Nacional Vía El Valle, Galpón 4, Caracas',
+      physicalAddress: 'Mercado Mayorista de Coche, Pasillo 3, Caracas',
+      supplierType: 'fruta',
+      paymentTerms: 'Contado',
+      status: 'activo',
+      notes: 'Proveedor principal de guayaba criolla',
+      createdAt: '2026-01-15',
+    },
+    {
+      id: 'sup-2',
+      code: 'PROV-0002',
+      businessName: 'Distribuidora Central Azucarera',
+      taxId: 'J-29887766-1',
+      primaryContact: 'Carlos Pérez',
+      primaryPhone: '+58 414-555-0201',
+      email: 'compras@centralazucarera.com',
+      fiscalAddress: 'Zona Industrial Los Pinos, Galpón 12, Valencia',
+      supplierType: 'aditivo',
+      paymentTerms: '15 días',
+      status: 'activo',
+      createdAt: '2026-02-01',
+    },
+  ];
+
+  const supplierPrices: SupplierPrice[] = [
+    {
+      id: 'sp-1',
+      supplierId: 'sup-1',
+      supplierName: 'Asociación de Fruticultores del Valle',
+      materialId: 'rm-1',
+      productName: 'Guayaba Roja Criolla (Pulpa fresca)',
+      unit: 'kg',
+      priceUsd: 1.25,
+      validFrom: '2026-10-01',
+      isCurrent: true,
+      notes: 'Precio por kilogramo en finca',
+      createdAt: '2026-10-01',
+      createdBy: 'Felipe Velazco',
+    },
+    {
+      id: 'sp-2',
+      supplierId: 'sup-2',
+      supplierName: 'Distribuidora Central Azucarera',
+      materialId: 'rm-2',
+      productName: 'Azúcar Blanca Refinada Estandarizada',
+      unit: 'kg',
+      priceUsd: 0.95,
+      validFrom: '2026-09-15',
+      isCurrent: true,
+      notes: 'Saco de 50 kg',
+      createdAt: '2026-09-15',
+      createdBy: 'Felipe Velazco',
+    },
+  ];
+
   return {
     rawMaterials,
     inventoryMovements,
@@ -1490,6 +1562,8 @@ export function createInitialDatabase(): DatabaseState {
     productionOrders,
     customers,
     salesOrders,
+    suppliers,
+    supplierPrices,
     deliveryNotes,
     employees,
     payrollWeeks,
@@ -1767,6 +1841,954 @@ export class ErpDatabase {
     };
   }
 
+  // --- MANUAL PRODUCTION ORDERS (ADMIN ONLY) ---
+  private manualOrderActor(actor?: {
+    userId?: string;
+    userName?: string;
+    userRole?: string;
+  }): { userId: string; userName: string; userRole: string } {
+    return {
+      userId: actor?.userId || 'usr-admin',
+      userName: actor?.userName || 'Administrador',
+      userRole: actor?.userRole || 'admin',
+    };
+  }
+
+  private nextManualOrderNumber(): string {
+    const count =
+      this.state.productionOrders.filter((o) => o.mode === 'manual').length + 1;
+    return `OP-M-2026-${String(count).padStart(4, '0')}`;
+  }
+
+  private presentationWeight(presentation: ProductionOrder['presentation']): number {
+    switch (presentation) {
+      case 'pequena_250g':
+        return 250;
+      case 'grande_1000g':
+        return 1000;
+      case 'galon_5kg':
+        return 5000;
+      case 'balde_15kg':
+        return 15000;
+      case 'pote_20kg':
+      case 'caja_20kg':
+        return 20000;
+      default:
+        return 0;
+    }
+  }
+
+  private presentationLabel(presentation: ProductionOrder['presentation']): string {
+    switch (presentation) {
+      case 'pequena_250g':
+        return 'Frasco 250g';
+      case 'grande_1000g':
+        return 'Frasco 1000g';
+      case 'galon_5kg':
+        return 'Galón 5kg';
+      case 'balde_15kg':
+        return 'Balde 15kg';
+      case 'pote_20kg':
+        return 'Pote 20kg';
+      case 'caja_20kg':
+        return 'Caja 20kg';
+      default:
+        return 'Presentación especial';
+    }
+  }
+
+  /**
+   * Build the resolved manual order (formulas, aggregated materials, costs)
+   * without mutating state. Throws when a recipe or raw material is missing
+   * or there is not enough stock.
+   */
+  private buildManualOrderData(
+    input: {
+      formulas: { recipeId: string; batchCount: number }[];
+      lotNumber?: string;
+      commitmentReference?: string;
+      operatorNotes?: string;
+    },
+    actor: { userId: string; userName: string; userRole: string }
+  ): {
+    order: ProductionOrder;
+    outputs: {
+      flavor: string;
+      presentation: ProductionOrder['presentation'];
+      units: number;
+      totalCost: number;
+      unitCost: number;
+    }[];
+  } {
+    if (!input.formulas || input.formulas.length === 0) {
+      throw new Error('La orden manual requiere al menos una fórmula');
+    }
+
+    const aggregatedMaterials = new Map<
+      string,
+      {
+        materialId: string;
+        materialName: string;
+        quantityConsumed: number;
+        unit: string;
+        unitCost: number;
+        totalCost: number;
+      }
+    >();
+    const formulas: ProductionOrderFormula[] = [];
+    const outputsMap = new Map<
+      string,
+      {
+        flavor: string;
+        presentation: ProductionOrder['presentation'];
+        units: number;
+        totalCost: number;
+      }
+    >();
+
+    for (const formulaInput of input.formulas) {
+      const recipe = this.state.recipes.find((r) => r.id === formulaInput.recipeId);
+      if (!recipe) {
+        throw new Error(`Fórmula no encontrada: ${formulaInput.recipeId}`);
+      }
+      const batchCount = Math.max(1, Math.floor(Number(formulaInput.batchCount) || 1));
+      const targetUnits = recipe.batchSizeUnits * batchCount;
+
+      let formulaMaterialCost = 0;
+      for (const item of recipe.items) {
+        const material = this.state.rawMaterials.find(
+          (m) => m.id === item.materialId
+        );
+        if (!material) {
+          throw new Error(`Materia prima no encontrada: ${item.materialName}`);
+        }
+        const quantity = Number((item.quantity * batchCount).toFixed(4));
+        const totalCost = Number((quantity * material.costPerUnit).toFixed(2));
+        formulaMaterialCost += totalCost;
+
+        const existing = aggregatedMaterials.get(item.materialId);
+        if (existing) {
+          existing.quantityConsumed = Number(
+            (existing.quantityConsumed + quantity).toFixed(4)
+          );
+          existing.totalCost = Number((existing.totalCost + totalCost).toFixed(2));
+        } else {
+          aggregatedMaterials.set(item.materialId, {
+            materialId: item.materialId,
+            materialName: item.materialName,
+            quantityConsumed: quantity,
+            unit: item.unit,
+            unitCost: material.costPerUnit,
+            totalCost,
+          });
+        }
+      }
+
+      const directLaborCost = Number(
+        ((recipe.directLaborMinutes / 60) * 4.5 * batchCount).toFixed(2)
+      );
+      const indirectCost = Number(
+        (recipe.estimatedUtilityCost * batchCount).toFixed(2)
+      );
+      const totalProductionCost = Number(
+        (formulaMaterialCost + directLaborCost + indirectCost).toFixed(2)
+      );
+
+      formulas.push({
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+        flavor: recipe.flavor,
+        presentation: recipe.presentation,
+        batchCount,
+        targetUnits,
+        directMaterialCost: Number(formulaMaterialCost.toFixed(2)),
+        directLaborCost,
+        indirectCost,
+        totalProductionCost,
+        unitCost: Number((totalProductionCost / targetUnits).toFixed(2)),
+      });
+
+      const outputKey = `${recipe.flavor}|${recipe.presentation}`;
+      const output = outputsMap.get(outputKey);
+      if (output) {
+        output.units += targetUnits;
+        output.totalCost = Number((output.totalCost + totalProductionCost).toFixed(2));
+      } else {
+        outputsMap.set(outputKey, {
+          flavor: recipe.flavor,
+          presentation: recipe.presentation,
+          units: targetUnits,
+          totalCost: totalProductionCost,
+        });
+      }
+    }
+
+    // Validate availability before creating or processing anything.
+    const missing = [...aggregatedMaterials.values()].filter((item) => {
+      const material = this.state.rawMaterials.find(
+        (m) => m.id === item.materialId
+      );
+      return !material || material.currentStock < item.quantityConsumed;
+    });
+    if (missing.length > 0) {
+      const detail = missing
+        .map((item) => {
+          const material = this.state.rawMaterials.find(
+            (m) => m.id === item.materialId
+          );
+          return `${item.materialName}: requiere ${item.quantityConsumed} ${item.unit}, disponible ${material ? material.currentStock : 0}`;
+        })
+        .join('; ');
+      throw new Error(`Stock insuficiente de materias primas. ${detail}`);
+    }
+
+    const consumedMaterials = [...aggregatedMaterials.values()].map((item) => ({
+      ...item,
+      unit: item.unit as ProductionOrder['consumedMaterials'][number]['unit'],
+    }));
+
+    const directMaterialCost = Number(
+      formulas.reduce((sum, f) => sum + f.directMaterialCost, 0).toFixed(2)
+    );
+    const directLaborCost = Number(
+      formulas.reduce((sum, f) => sum + f.directLaborCost, 0).toFixed(2)
+    );
+    const indirectCost = Number(
+      formulas.reduce((sum, f) => sum + f.indirectCost, 0).toFixed(2)
+    );
+    const totalCost = Number(
+      (directMaterialCost + directLaborCost + indirectCost).toFixed(2)
+    );
+    const targetUnits = formulas.reduce((sum, f) => sum + f.targetUnits, 0);
+    const unitCost = targetUnits > 0 ? Number((totalCost / targetUnits).toFixed(2)) : 0;
+    const rate = this.state.exchangeRates.currentUsd || 48.35;
+    const orderNumber = this.nextManualOrderNumber();
+    const first = formulas[0];
+
+    const order: ProductionOrder = {
+      id: `po-man-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      orderNumber,
+      recipeId: first.recipeId,
+      recipeName:
+        formulas.length > 1
+          ? `${first.recipeName} + ${formulas.length - 1} fórmula(s)`
+          : first.recipeName,
+      flavor: first.flavor,
+      presentation: first.presentation,
+      targetUnits,
+      batchCount: formulas.reduce((sum, f) => sum + f.batchCount, 0),
+      lotNumber:
+        input.lotNumber || `L-MAN-${Date.now().toString().slice(-6)}`,
+      status: 'borrador',
+      mode: 'manual',
+      formulas,
+      commitmentReference:
+        input.commitmentReference || `COMPROMISO-${orderNumber}`,
+      customerName: 'Inventario comprometido (orden manual)',
+      startDate: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString().slice(0, 10),
+      exchangeRateUsed: rate,
+      consumedMaterials,
+      directMaterialCost,
+      directLaborCost,
+      indirectCost,
+      totalProductionCost: totalCost,
+      totalCost,
+      unitCost,
+      totalProductionCostBs: Number((totalCost * rate).toFixed(2)),
+      unitCostBs: Number((unitCost * rate).toFixed(2)),
+      operatorNotes: input.operatorNotes || '',
+      createdBy: actor.userName,
+      updatedBy: actor.userName,
+    };
+
+    return {
+      order,
+      outputs: [...outputsMap.values()].map((output) => ({
+        ...output,
+        unitCost:
+          output.units > 0
+            ? Number((output.totalCost / output.units).toFixed(2))
+            : 0,
+      })),
+    };
+  }
+
+  public getManualProductionOrders(): ProductionOrder[] {
+    return this.state.productionOrders.filter((o) => o.mode === 'manual');
+  }
+
+  public createManualProductionOrder(
+    input: {
+      formulas: { recipeId: string; batchCount: number }[];
+      lotNumber?: string;
+      commitmentReference?: string;
+      operatorNotes?: string;
+      processImmediately?: boolean;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): ProductionOrder {
+    const actor = this.manualOrderActor(actorInput);
+    const { order } = this.buildManualOrderData(input, actor);
+
+    this.state.productionOrders.unshift(order);
+    this.addAuditLog({
+      module: 'produccion',
+      actionType: 'orden_manual_creada',
+      title: `Orden manual ${order.orderNumber} creada`,
+      description: `Se creó una orden manual con ${order.formulas?.length || 1} fórmula(s) y ${order.targetUnits} unidades proyectadas.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: order.id,
+        targetCode: order.orderNumber,
+        lotNumber: order.lotNumber,
+        totalUnits: order.targetUnits,
+        formulas: order.formulas?.map((f) => f.recipeName),
+      },
+    });
+
+    if (input.processImmediately) {
+      return this.processManualProductionOrder(order.id, actorInput).order;
+    }
+
+    return order;
+  }
+
+  public updateManualProductionOrder(
+    orderId: string,
+    input: {
+      formulas?: { recipeId: string; batchCount: number }[];
+      lotNumber?: string;
+      commitmentReference?: string;
+      operatorNotes?: string;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): ProductionOrder {
+    const actor = this.manualOrderActor(actorInput);
+    const order = this.state.productionOrders.find((o) => o.id === orderId);
+    if (!order || order.mode !== 'manual') {
+      throw new Error('Orden manual no encontrada');
+    }
+    if (order.status !== 'borrador') {
+      throw new Error(
+        'Solo se pueden editar órdenes manuales en estado borrador. Use anulación para revertir una orden procesada.'
+      );
+    }
+
+    const { order: rebuilt } = this.buildManualOrderData(
+      {
+        formulas: input.formulas || [],
+        lotNumber: input.lotNumber ?? order.lotNumber,
+        commitmentReference:
+          input.commitmentReference ?? order.commitmentReference,
+        operatorNotes: input.operatorNotes ?? order.operatorNotes,
+      },
+      actor
+    );
+
+    order.recipeId = rebuilt.recipeId;
+    order.recipeName = rebuilt.recipeName;
+    order.flavor = rebuilt.flavor;
+    order.presentation = rebuilt.presentation;
+    order.targetUnits = rebuilt.targetUnits;
+    order.batchCount = rebuilt.batchCount;
+    order.lotNumber = rebuilt.lotNumber;
+    order.formulas = rebuilt.formulas;
+    order.commitmentReference = rebuilt.commitmentReference;
+    order.consumedMaterials = rebuilt.consumedMaterials;
+    order.directMaterialCost = rebuilt.directMaterialCost;
+    order.directLaborCost = rebuilt.directLaborCost;
+    order.indirectCost = rebuilt.indirectCost;
+    order.totalProductionCost = rebuilt.totalProductionCost;
+    order.totalCost = rebuilt.totalCost;
+    order.unitCost = rebuilt.unitCost;
+    order.totalProductionCostBs = rebuilt.totalProductionCostBs;
+    order.unitCostBs = rebuilt.unitCostBs;
+    order.operatorNotes = rebuilt.operatorNotes;
+    order.updatedBy = actor.userName;
+
+    this.addAuditLog({
+      module: 'produccion',
+      actionType: 'orden_manual_actualizada',
+      title: `Orden manual ${order.orderNumber} actualizada`,
+      description: `Se actualizaron las fórmulas de la orden manual (${order.formulas?.length || 1} fórmula(s)).`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: order.id,
+        targetCode: order.orderNumber,
+        totalUnits: order.targetUnits,
+        formulas: order.formulas?.map((f) => f.recipeName),
+      },
+    });
+
+    return order;
+  }
+
+  public deleteManualProductionOrder(
+    orderId: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): boolean {
+    const actor = this.manualOrderActor(actorInput);
+    const index = this.state.productionOrders.findIndex((o) => o.id === orderId);
+    if (index === -1) throw new Error('Orden manual no encontrada');
+    const order = this.state.productionOrders[index];
+    if (order.mode !== 'manual') {
+      throw new Error('La orden indicada no es manual');
+    }
+    if (order.status !== 'borrador' && order.status !== 'anulada') {
+      throw new Error(
+        'No se puede eliminar una orden procesada. Anúlela primero para revertir el inventario.'
+      );
+    }
+
+    this.state.productionOrders.splice(index, 1);
+    this.addAuditLog({
+      module: 'produccion',
+      actionType: 'orden_manual_eliminada',
+      title: `Orden manual ${order.orderNumber} eliminada`,
+      description: `Se eliminó la orden manual en estado ${order.status}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        targetId: order.id,
+        targetCode: order.orderNumber,
+        lotNumber: order.lotNumber,
+      },
+    });
+    return true;
+  }
+
+  public processManualProductionOrder(
+    orderId: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): { success: boolean; message: string; order: ProductionOrder } {
+    const actor = this.manualOrderActor(actorInput);
+    const order = this.state.productionOrders.find((o) => o.id === orderId);
+    if (!order || order.mode !== 'manual') {
+      throw new Error('Orden manual no encontrada');
+    }
+    if (order.status === 'completada') {
+      throw new Error('Esta orden manual ya fue procesada');
+    }
+    if (order.status !== 'borrador') {
+      throw new Error(`No se puede procesar una orden en estado ${order.status}`);
+    }
+
+    // Validate all inputs and outputs before mutating anything.
+    for (const item of order.consumedMaterials) {
+      const material = this.state.rawMaterials.find(
+        (m) => m.id === item.materialId
+      );
+      if (!material || material.currentStock < item.quantityConsumed) {
+        throw new Error(
+          `Stock insuficiente de ${item.materialName}. Disponible: ${material ? material.currentStock : 0} ${item.unit}`
+        );
+      }
+    }
+
+    const outputs = new Map<
+      string,
+      {
+        flavor: string;
+        presentation: ProductionOrder['presentation'];
+        units: number;
+        totalCost: number;
+      }
+    >();
+    for (const formula of order.formulas || []) {
+      const key = `${formula.flavor}|${formula.presentation}`;
+      const current = outputs.get(key);
+      if (current) {
+        current.units += formula.targetUnits;
+        current.totalCost = Number((current.totalCost + formula.totalProductionCost).toFixed(2));
+      } else {
+        outputs.set(key, {
+          flavor: formula.flavor,
+          presentation: formula.presentation,
+          units: formula.targetUnits,
+          totalCost: formula.totalProductionCost,
+        });
+      }
+    }
+    if (outputs.size === 0) {
+      outputs.set(`${order.flavor}|${order.presentation}`, {
+        flavor: order.flavor,
+        presentation: order.presentation,
+        units: order.targetUnits,
+        totalCost: order.totalProductionCost,
+      });
+    }
+
+    const rate = this.state.exchangeRates.currentUsd || 48.35;
+    const movementDate = new Date().toISOString().slice(0, 10);
+
+    // 1. Consume raw materials.
+    for (const item of order.consumedMaterials) {
+      const material = this.state.rawMaterials.find(
+        (m) => m.id === item.materialId
+      );
+      if (!material) continue;
+      material.currentStock = Number(
+        (material.currentStock - item.quantityConsumed).toFixed(4)
+      );
+      this.state.inventoryMovements.unshift({
+        id:
+          'mov-' +
+          Date.now() +
+          '-' +
+          Math.random().toString(36).slice(2, 6),
+        materialId: item.materialId,
+        materialName: item.materialName,
+        type: 'salida_produccion',
+        quantity: item.quantityConsumed,
+        costPerUnit: item.unitCost,
+        totalCost: item.totalCost,
+        exchangeRateUsed: rate,
+        costPerUnitBs: Number((item.unitCost * rate).toFixed(2)),
+        totalCostBs: Number((item.totalCost * rate).toFixed(2)),
+        referenceDoc: `${order.orderNumber} Lote ${order.lotNumber}`,
+        date: movementDate,
+        performedBy: actor.userName,
+      });
+    }
+
+    // 2. Produced units are born committed (reserved), not available.
+    for (const output of outputs.values()) {
+      let fg = this.state.finishedGoods.find(
+        (f) =>
+          f.presentation === output.presentation && f.flavor === output.flavor
+      );
+      if (!fg) {
+        const unitCost = Number((output.totalCost / output.units).toFixed(2));
+        fg = {
+          id:
+            'fg-' +
+            Date.now() +
+            '-' +
+            Math.random().toString(36).slice(2, 6),
+          code: `PT-${output.flavor.slice(0, 3).toUpperCase()}-${output.presentation}`,
+          flavor: output.flavor,
+          presentation: output.presentation,
+          presentationLabel: this.presentationLabel(output.presentation),
+          weightGrams: this.presentationWeight(output.presentation),
+          stockUnits: 0,
+          reservedUnits: 0,
+          availableUnits: 0,
+          baseCost: unitCost,
+          suggestedWholesalePrice: Number((unitCost * 1.8).toFixed(2)),
+          suggestedRetailPrice: Number((unitCost * 2.2).toFixed(2)),
+          suggestedSpecialPrice: Number((unitCost * 2.0).toFixed(2)),
+          minStock: 0,
+        };
+        this.state.finishedGoods.push(fg);
+      }
+      fg.stockUnits += output.units;
+      fg.reservedUnits += output.units;
+      fg.availableUnits = fg.stockUnits - fg.reservedUnits;
+      fg.baseCost = Number((output.totalCost / output.units).toFixed(2));
+    }
+
+    order.status = 'completada';
+    order.completionDate = movementDate;
+    order.processedBy = actor.userName;
+    order.processedAt = new Date().toISOString();
+
+    this.addAuditLog({
+      module: 'produccion',
+      actionType: 'orden_manual_procesada',
+      title: `Orden manual ${order.orderNumber} procesada`,
+      description: `Se consumieron materias primas y se ingresaron ${order.targetUnits} unidades como inventario comprometido.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'success',
+      details: {
+        targetId: order.id,
+        targetCode: order.orderNumber,
+        lotNumber: order.lotNumber,
+        totalUnits: order.targetUnits,
+        formulas: order.formulas?.map((f) => f.recipeName),
+      },
+    });
+
+    return {
+      success: true,
+      message: `Orden manual ${order.orderNumber} procesada. ${order.targetUnits} unidades ingresadas como inventario comprometido (reservado) y materias primas descontadas.`,
+      order,
+    };
+  }
+
+  public annulManualProductionOrder(
+    orderId: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): { success: boolean; message: string; order: ProductionOrder } {
+    const actor = this.manualOrderActor(actorInput);
+    const order = this.state.productionOrders.find((o) => o.id === orderId);
+    if (!order || order.mode !== 'manual') {
+      throw new Error('Orden manual no encontrada');
+    }
+    if (order.status !== 'completada') {
+      throw new Error('Solo se puede anular una orden manual procesada');
+    }
+
+    const outputs = new Map<
+      string,
+      {
+        flavor: string;
+        presentation: ProductionOrder['presentation'];
+        units: number;
+      }
+    >();
+    for (const formula of order.formulas || []) {
+      const key = `${formula.flavor}|${formula.presentation}`;
+      const current = outputs.get(key);
+      if (current) {
+        current.units += formula.targetUnits;
+      } else {
+        outputs.set(key, {
+          flavor: formula.flavor,
+          presentation: formula.presentation,
+          units: formula.targetUnits,
+        });
+      }
+    }
+    if (outputs.size === 0) {
+      outputs.set(`${order.flavor}|${order.presentation}`, {
+        flavor: order.flavor,
+        presentation: order.presentation,
+        units: order.targetUnits,
+      });
+    }
+
+    // Validate that the produced units are still committed before reverting.
+    for (const output of outputs.values()) {
+      const fg = this.state.finishedGoods.find(
+        (f) =>
+          f.presentation === output.presentation && f.flavor === output.flavor
+      );
+      if (!fg || fg.stockUnits < output.units || fg.reservedUnits < output.units) {
+        throw new Error(
+          `No se puede anular: ${output.flavor} (${output.presentation}) ya fue despachado o no conserva las ${output.units} unidades comprometidas.`
+        );
+      }
+    }
+
+    const rate = this.state.exchangeRates.currentUsd || 48.35;
+    const movementDate = new Date().toISOString().slice(0, 10);
+
+    // Restore raw materials with compensating movements.
+    for (const item of order.consumedMaterials) {
+      const material = this.state.rawMaterials.find(
+        (m) => m.id === item.materialId
+      );
+      if (material) {
+        material.currentStock = Number(
+          (material.currentStock + item.quantityConsumed).toFixed(4)
+        );
+      }
+      this.state.inventoryMovements.unshift({
+        id:
+          'mov-' +
+          Date.now() +
+          '-' +
+          Math.random().toString(36).slice(2, 6),
+        materialId: item.materialId,
+        materialName: item.materialName,
+        type: 'entrada',
+        quantity: item.quantityConsumed,
+        costPerUnit: item.unitCost,
+        totalCost: item.totalCost,
+        exchangeRateUsed: rate,
+        costPerUnitBs: Number((item.unitCost * rate).toFixed(2)),
+        totalCostBs: Number((item.totalCost * rate).toFixed(2)),
+        referenceDoc: `ANULACIÓN ${order.orderNumber} Lote ${order.lotNumber}`,
+        date: movementDate,
+        performedBy: actor.userName,
+      });
+    }
+
+    // Release exactly the commitment created by this order.
+    for (const output of outputs.values()) {
+      const fg = this.state.finishedGoods.find(
+        (f) =>
+          f.presentation === output.presentation && f.flavor === output.flavor
+      );
+      if (!fg) continue;
+      fg.stockUnits -= output.units;
+      fg.reservedUnits -= output.units;
+      fg.availableUnits = fg.stockUnits - fg.reservedUnits;
+    }
+
+    order.status = 'anulada';
+    order.annulledBy = actor.userName;
+    order.annulledAt = new Date().toISOString();
+
+    this.addAuditLog({
+      module: 'produccion',
+      actionType: 'orden_manual_anulada',
+      title: `Orden manual ${order.orderNumber} anulada`,
+      description: `Se revirtieron materias primas y ${order.targetUnits} unidades de inventario comprometido.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        targetId: order.id,
+        targetCode: order.orderNumber,
+        lotNumber: order.lotNumber,
+        totalUnits: order.targetUnits,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Orden manual ${order.orderNumber} anulada. Inventario y materias primas revertidos.`,
+      order,
+    };
+  }
+
+  // --- SUPPLIERS & PRICE HISTORY ---
+  public getSuppliers(): Supplier[] {
+    if (!this.state.suppliers) this.state.suppliers = [];
+    return this.state.suppliers;
+  }
+
+  public getSupplierPrices(supplierId?: string): SupplierPrice[] {
+    if (!this.state.supplierPrices) this.state.supplierPrices = [];
+    const list = supplierId
+      ? this.state.supplierPrices.filter((p) => p.supplierId === supplierId)
+      : this.state.supplierPrices;
+    return [...list].sort((a, b) => {
+      if (a.supplierId !== b.supplierId) {
+        return a.supplierName.localeCompare(b.supplierName);
+      }
+      return b.validFrom.localeCompare(a.validFrom);
+    });
+  }
+
+  private nextSupplierCode(): string {
+    const max = this.getSuppliers().reduce((acc, supplier) => {
+      const match = /PROV-(\d+)/.exec(supplier.code);
+      return match ? Math.max(acc, Number(match[1])) : acc;
+    }, 0);
+    return `PROV-${String(max + 1).padStart(4, '0')}`;
+  }
+
+  public addSupplier(
+    data: Omit<Supplier, 'id' | 'code' | 'createdAt'> & { code?: string },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Supplier {
+    const actor = this.manualOrderActor(actorInput);
+    const suppliers = this.getSuppliers();
+    const code = (data.code || this.nextSupplierCode()).trim();
+    if (suppliers.some((s) => s.code.toLowerCase() === code.toLowerCase())) {
+      throw new Error(`Ya existe un proveedor con el código ${code}`);
+    }
+    if (
+      suppliers.some(
+        (s) => s.taxId.toLowerCase() === data.taxId.trim().toLowerCase()
+      )
+    ) {
+      throw new Error(`Ya existe un proveedor con el RIF ${data.taxId}`);
+    }
+
+    const supplier: Supplier = {
+      ...data,
+      code,
+      taxId: data.taxId.trim(),
+      businessName: data.businessName.trim(),
+      primaryContact: data.primaryContact.trim(),
+      primaryPhone: data.primaryPhone.trim(),
+      fiscalAddress: data.fiscalAddress.trim(),
+      id: `sup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+    suppliers.push(supplier);
+
+    this.addAuditLog({
+      module: 'compras',
+      actionType: 'proveedor_creado',
+      title: `Proveedor ${supplier.code} registrado`,
+      description: `${supplier.businessName} (${supplier.taxId}) — Contacto: ${supplier.primaryContact} / ${supplier.primaryPhone}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: supplier.id,
+        targetCode: supplier.code,
+        itemName: supplier.businessName,
+      },
+    });
+
+    return supplier;
+  }
+
+  public updateSupplier(
+    id: string,
+    updates: Partial<Omit<Supplier, 'id' | 'createdAt'>>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Supplier {
+    const actor = this.manualOrderActor(actorInput);
+    const supplier = this.getSuppliers().find((s) => s.id === id);
+    if (!supplier) throw new Error('Proveedor no encontrado');
+
+    const changedFields: string[] = [];
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === undefined) continue;
+      const typedKey = key as keyof Supplier;
+      if (supplier[typedKey] !== value) {
+        changedFields.push(key);
+        (supplier as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
+
+    // Keep the denormalized supplier name in the price catalog in sync.
+    if (updates.businessName) {
+      for (const price of this.state.supplierPrices || []) {
+        if (price.supplierId === id) price.supplierName = updates.businessName;
+      }
+    }
+
+    this.addAuditLog({
+      module: 'compras',
+      actionType: 'proveedor_actualizado',
+      title: `Proveedor ${supplier.code} actualizado`,
+      description: `Se actualizaron ${changedFields.length} campo(s): ${changedFields.join(', ') || 'sin cambios'}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: supplier.id,
+        targetCode: supplier.code,
+        itemName: supplier.businessName,
+        changes: changedFields,
+      },
+    });
+
+    return supplier;
+  }
+
+  public deleteSupplier(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): boolean {
+    const actor = this.manualOrderActor(actorInput);
+    const suppliers = this.getSuppliers();
+    const index = suppliers.findIndex((s) => s.id === id);
+    if (index === -1) throw new Error('Proveedor no encontrado');
+    const supplier = suppliers[index];
+
+    const linkedMaterials = this.state.rawMaterials.filter(
+      (m) => (m.supplier || '').trim() === supplier.businessName.trim()
+    );
+    if (linkedMaterials.length > 0) {
+      throw new Error(
+        `No se puede eliminar el proveedor porque está asociado a ${linkedMaterials.length} materia(s) prima. Reasígnelas primero.`
+      );
+    }
+
+    suppliers.splice(index, 1);
+    this.state.supplierPrices = (this.state.supplierPrices || []).filter(
+      (p) => p.supplierId !== id
+    );
+
+    this.addAuditLog({
+      module: 'compras',
+      actionType: 'proveedor_eliminado',
+      title: `Proveedor ${supplier.code} eliminado`,
+      description: `Se eliminó ${supplier.businessName} y su historial de precios.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        targetId: supplier.id,
+        targetCode: supplier.code,
+        itemName: supplier.businessName,
+      },
+    });
+
+    return true;
+  }
+
+  public addSupplierPrice(
+    supplierId: string,
+    data: {
+      materialId?: string;
+      productName: string;
+      unit: SupplierPrice['unit'];
+      priceUsd: number;
+      validFrom: string;
+      notes?: string;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): SupplierPrice {
+    const actor = this.manualOrderActor(actorInput);
+    const supplier = this.getSuppliers().find((s) => s.id === supplierId);
+    if (!supplier) throw new Error('Proveedor no encontrado');
+
+    const prices = this.state.supplierPrices || [];
+    this.state.supplierPrices = prices;
+
+    // Close the current price for the same product/material before appending.
+    for (const price of prices) {
+      if (
+        price.supplierId === supplierId &&
+        price.isCurrent &&
+        price.productName.toLowerCase() === data.productName.trim().toLowerCase()
+      ) {
+        price.isCurrent = false;
+        price.validTo = data.validFrom;
+      }
+    }
+
+    const newPrice: SupplierPrice = {
+      id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      supplierId,
+      supplierName: supplier.businessName,
+      materialId: data.materialId,
+      productName: data.productName.trim(),
+      unit: data.unit,
+      priceUsd: Number(data.priceUsd),
+      validFrom: data.validFrom,
+      isCurrent: true,
+      notes: data.notes,
+      createdAt: new Date().toISOString().slice(0, 10),
+      createdBy: actor.userName,
+    };
+    prices.unshift(newPrice);
+
+    this.addAuditLog({
+      module: 'compras',
+      actionType: 'precio_proveedor_registrado',
+      title: `Precio de proveedor registrado: ${newPrice.productName}`,
+      description: `${supplier.businessName} — $${newPrice.priceUsd.toFixed(2)} por ${newPrice.unit} desde ${newPrice.validFrom}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'success',
+      details: {
+        targetId: newPrice.id,
+        targetCode: supplier.code,
+        itemName: newPrice.productName,
+        costUsd: newPrice.priceUsd,
+        unit: newPrice.unit,
+      },
+    });
+
+    return newPrice;
+  }
+
   // --- CUSTOMERS ---
   public getCustomers(): Customer[] {
     return this.state.customers;
@@ -1829,6 +2851,74 @@ export class ErpDatabase {
     const order = this.state.salesOrders.find(s => s.id === id);
     if (!order) return null;
     order.status = status;
+    return order;
+  }
+
+  /**
+   * Register the collection of a sales order. The receiving bank is mandatory
+   * because every outgoing/incoming payment must be traceable to an official
+   * SUDEBAN institution.
+   */
+  public collectSalesOrder(
+    id: string,
+    data: {
+      bankCode: string;
+      bankName: string;
+      paymentMethod: NonNullable<SalesOrder['collection']>['paymentMethod'];
+      reference: string;
+      amountUsd?: number;
+      exchangeRateUsed?: number;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): SalesOrder {
+    const actor = this.manualOrderActor(actorInput);
+    const order = this.state.salesOrders.find((s) => s.id === id);
+    if (!order) throw new Error('Pedido de venta no encontrado');
+    if (order.status === 'cobrado') {
+      throw new Error('Este pedido ya fue cobrado');
+    }
+
+    const rate =
+      data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
+    const amountUsd = Number((data.amountUsd ?? order.total).toFixed(2));
+    if (amountUsd <= 0) {
+      throw new Error('El monto del cobro debe ser mayor a cero');
+    }
+
+    order.collection = {
+      bankCode: data.bankCode,
+      bankName: data.bankName,
+      paymentMethod: data.paymentMethod,
+      reference: data.reference.trim(),
+      amountUsd,
+      amountBs: Number((amountUsd * rate).toFixed(2)),
+      exchangeRateUsed: rate,
+      collectedAt: new Date().toISOString(),
+      collectedBy: actor.userName,
+    };
+    order.status = 'cobrado';
+
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'cobro_registrado',
+      title: `Cobro registrado: ${order.orderNumber}`,
+      description: `$${amountUsd.toFixed(2)} recibidos de ${order.customerName} en ${data.bankName} (${data.bankCode}) · Ref. ${data.reference}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'success',
+      details: {
+        targetId: order.id,
+        targetCode: order.orderNumber,
+        itemName: order.customerName,
+        costUsd: amountUsd,
+        bankCode: data.bankCode,
+        bankName: data.bankName,
+        referenceDoc: data.reference,
+        salesOrderId: order.id,
+      },
+    });
+
     return order;
   }
 
@@ -1921,8 +3011,40 @@ export class ErpDatabase {
   }
 
   public addPayrollWeek(weekData: Omit<PayrollWeek, 'id'>): PayrollWeek {
+    let payments = weekData.payments;
+    let totalPayrollPaid = weekData.totalPayrollPaid;
+    let fixedAbsorptionCost = weekData.fixedAbsorptionCost;
+
+    // The per-position bonus is authoritative on the server: every payment is
+    // recomputed from the configured bonus of its `roleTitle`, so the client
+    // cannot send inconsistent totals.
+    const bonusByRole = weekData.bonusByRole;
+    if (bonusByRole && Object.keys(bonusByRole).length > 0) {
+      payments = weekData.payments.map((payment) => {
+        const bonus = weekData.isActiveProduction
+          ? Number(bonusByRole[payment.roleTitle] || 0)
+          : 0;
+        const netPaid = Number(
+          (payment.baseAmount + bonus - payment.deductions).toFixed(2)
+        );
+        return {
+          ...payment,
+          productionBonus: Number(bonus.toFixed(2)),
+          netPaid,
+        };
+      });
+      totalPayrollPaid = Number(
+        payments.reduce((sum, payment) => sum + payment.netPaid, 0).toFixed(2)
+      );
+      fixedAbsorptionCost = weekData.isActiveProduction ? 0 : totalPayrollPaid;
+    }
+
     const newWeek: PayrollWeek = {
       ...weekData,
+      payments,
+      totalPayrollPaid: Number(totalPayrollPaid.toFixed(2)),
+      fixedAbsorptionCost: Number(fixedAbsorptionCost.toFixed(2)),
+      bonusByRole: weekData.isActiveProduction ? bonusByRole : undefined,
       id: 'pw-' + Date.now(),
     };
     this.state.payrollWeeks.unshift(newWeek);

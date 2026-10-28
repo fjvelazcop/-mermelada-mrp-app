@@ -2,8 +2,9 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {DeliveryNote, FinishedGood, PriceTierType} from '../../core/models/erp.models';
+import {DeliveryNote, FinishedGood, PriceTierType, SalesOrder} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
+import {VENEZUELAN_BANKS, bankLabel, findBank} from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel, exportToPdf, downloadDeliveryNotePdf} from '../../core/utils/export.utils';
 
 export interface PriceTierOption {
@@ -30,6 +31,11 @@ export class SalesComponent {
   public isNewCustomerModalOpen = signal<boolean>(false);
   public isDeliveryNoteModalOpen = signal<boolean>(false);
   public isFiscalConfigModalOpen = signal<boolean>(false);
+  public isCollectModalOpen = signal<boolean>(false);
+  public collectingOrder = signal<SalesOrder | null>(null);
+  public collectingBankQuery = signal<string>('');
+  public banks = VENEZUELAN_BANKS;
+  public bankLabel = bankLabel;
 
   public selectedDeliveryNote = signal<DeliveryNote | null>(null);
 
@@ -77,6 +83,29 @@ export class SalesComponent {
     nextInvoiceNumber: new FormControl<number>(402, {nonNullable: true}),
     authorizationCode: new FormControl<string>('SENIAT-PROV-2026-00914', {nonNullable: true}),
     printNotes: new FormControl<string>('Contribuyente Ordinario. Retención de IVA aplicable según normativa fiscal vigente.', {nonNullable: true}),
+  });
+
+  /** Cobro bancario de un pedido (banco receptor obligatorio). */
+  public collectForm = new FormGroup({
+    bankCode: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+    paymentMethod: new FormControl<
+      'transferencia_bancaria' | 'pago_movil' | 'tarjeta' | 'zelle'
+    >('transferencia_bancaria', {nonNullable: true}),
+    reference: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+    amountUsd: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(0.01)],
+    }),
+    exchangeRateUsed: new FormControl<number>(48.35, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(1)],
+    }),
   });
 
   public customers = computed(() => this.api.customers());
@@ -363,6 +392,62 @@ export class SalesComponent {
     });
 
     this.closeNewOrderModal();
+  }
+
+  // --- SALES COLLECTION (BANK RECEIVER MANDATORY) ---
+
+  public openCollectModal(order: SalesOrder) {
+    const rate =
+      order.exchangeRateUsed || this.api.exchangeRates()?.currentUsd || 48.35;
+    this.collectingOrder.set(order);
+    this.collectForm.reset({
+      bankCode: '',
+      paymentMethod: 'transferencia_bancaria',
+      reference: '',
+      amountUsd: order.total,
+      exchangeRateUsed: rate,
+    });
+    this.collectingBankQuery.set('');
+    this.isCollectModalOpen.set(true);
+  }
+
+  public closeCollectModal() {
+    this.isCollectModalOpen.set(false);
+    this.collectingOrder.set(null);
+    this.collectingBankQuery.set('');
+  }
+
+  public onCollectBankChange(value: string) {
+    this.collectingBankQuery.set(value);
+    const bank = findBank(value);
+    this.collectForm.controls.bankCode.setValue(bank?.code || '');
+  }
+
+  public async submitCollection() {
+    const order = this.collectingOrder();
+    if (!order) return;
+    if (this.collectForm.invalid) {
+      this.collectForm.markAllAsTouched();
+      return;
+    }
+    const v = this.collectForm.getRawValue();
+    const bank = findBank(v.bankCode);
+    if (!bank) {
+      this.api.showToast(
+        'Selecciona un banco receptor del catálogo oficial SUDEBAN.',
+        'error'
+      );
+      return;
+    }
+
+    await this.api.collectSalesOrder(order.id, {
+      bankCode: bank.code,
+      paymentMethod: v.paymentMethod,
+      reference: v.reference,
+      amountUsd: Number(v.amountUsd),
+      exchangeRateUsed: Number(v.exchangeRateUsed),
+    });
+    this.closeCollectModal();
   }
 
   public openNewCustomerModal() {

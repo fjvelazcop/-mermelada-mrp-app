@@ -11,7 +11,10 @@ import {SalesComponent} from './features/sales/sales';
 import {PayrollComponent} from './features/payroll/payroll';
 import {ExpensesComponent} from './features/expenses/expenses';
 import {Settings} from './features/settings/settings';
+import {SuppliersComponent} from './features/suppliers/suppliers';
 import {ArchitectureDocsComponent} from './features/architecture-docs/architecture-docs';
+import {LoginComponent} from './features/auth/login';
+import {AuthService} from './core/services/auth.service';
 import {VeCurrencyPipe} from './core/pipes/ve-currency.pipe';
 
 export type MainNavigationTab =
@@ -22,6 +25,7 @@ export type MainNavigationTab =
   | 'sales'
   | 'payroll'
   | 'expenses'
+  | 'suppliers'
   | 'settings'
   | 'architecture';
 
@@ -37,8 +41,10 @@ export type MainNavigationTab =
     SalesComponent,
     PayrollComponent,
     ExpensesComponent,
+    SuppliersComponent,
     Settings,
     ArchitectureDocsComponent,
+    LoginComponent,
     VeCurrencyPipe,
   ],
   templateUrl: './app.html',
@@ -46,6 +52,7 @@ export type MainNavigationTab =
 })
 export class App implements OnInit {
   public api = inject(ErpApiService);
+  public auth = inject(AuthService);
   private router = inject(Router);
 
   public currentTab = signal<MainNavigationTab>('dashboard');
@@ -59,11 +66,20 @@ export class App implements OnInit {
     'sales',
     'payroll',
     'expenses',
+    'suppliers',
     'settings',
     'architecture',
   ]);
 
   constructor() {
+    // Check for existing auth token on startup (client-side only;
+    // localStorage is not available during SSR)
+    if (typeof window !== 'undefined') {
+      localStorage.getItem('mermelada-token');
+      // Token stored in localStorage; auth guard and backend middleware will pick it up
+      // No need to set on API service; the backend AUTH_ENABLED flow handles it
+    }
+
     effect(() => {
       const requested = this.api.requestedTab();
       if (requested) {
@@ -85,8 +101,11 @@ export class App implements OnInit {
       });
   }
 
-  public ngOnInit() {
-    this.api.refreshAllData();
+  public async ngOnInit() {
+    await this.auth.initialize();
+    if (!this.auth.requiresLogin()) {
+      await this.api.refreshAllData();
+    }
     const initialSeg = this.router.url.replace(/^\//, '').split('?')[0].split('/')[0];
     const targetTab = initialSeg === 'admin' ? 'settings' : initialSeg;
     if (this.validTabs.has(targetTab) && targetTab !== this.currentTab()) {
@@ -94,6 +113,11 @@ export class App implements OnInit {
         this.currentTab.set(targetTab as MainNavigationTab);
       }
     }
+  }
+
+  public async logout() {
+    await this.auth.logout();
+    this.currentTab.set('dashboard');
   }
 
   public setTab(tab: MainNavigationTab) {

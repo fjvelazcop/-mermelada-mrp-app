@@ -48,6 +48,21 @@ export function setDbPath(path: string): void {
   dbPath = path;
 }
 
+/** Add a column only when the table does not already have it. */
+function ensureColumn(
+  db: Database.Database,
+  table: string,
+  column: string,
+  definition: string
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as {
+    name: string;
+  }[];
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 /** Run schema migrations. */
 function migrate(db: Database.Database): void {
   db.exec(`
@@ -160,7 +175,16 @@ function migrate(db: Database.Database): void {
       unit_cost REAL NOT NULL,
       total_production_cost_bs REAL,
       unit_cost_bs REAL,
-      operator_notes TEXT
+      operator_notes TEXT,
+      mode TEXT NOT NULL DEFAULT 'automatico',
+      formulas_json TEXT,
+      commitment_reference TEXT,
+      created_by TEXT,
+      updated_by TEXT,
+      processed_by TEXT,
+      processed_at TEXT,
+      annulled_by TEXT,
+      annulled_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS production_order_materials (
@@ -206,7 +230,8 @@ function migrate(db: Database.Database): void {
       has_delivery_note INTEGER NOT NULL,
       delivery_note_number TEXT,
       production_order_id TEXT,
-      notes TEXT
+      notes TEXT,
+      collection_json TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sales_order_items (
@@ -285,7 +310,8 @@ function migrate(db: Database.Database): void {
       inactivity_reason TEXT,
       total_payroll_paid REAL NOT NULL,
       fixed_absorption_cost REAL NOT NULL,
-      notes TEXT
+      notes TEXT,
+      bonus_by_role_json TEXT
     );
 
     CREATE TABLE IF NOT EXISTS payroll_payments (
@@ -316,6 +342,8 @@ function migrate(db: Database.Database): void {
       document_number TEXT,
       payment_method TEXT NOT NULL,
       payment_reference TEXT,
+      issuing_bank_code TEXT,
+      issuing_bank_name TEXT,
       notes TEXT,
       registered_by TEXT NOT NULL,
       tax_category TEXT NOT NULL,
@@ -400,7 +428,51 @@ function migrate(db: Database.Database): void {
       role_id TEXT NOT NULL,
       department TEXT,
       status TEXT NOT NULL DEFAULT 'activo',
+      created_at TEXT NOT NULL,
+      password_changed_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      business_name TEXT NOT NULL,
+      tax_id TEXT NOT NULL,
+      primary_contact TEXT NOT NULL,
+      primary_phone TEXT NOT NULL,
+      secondary_phone TEXT,
+      email TEXT,
+      fiscal_address TEXT NOT NULL,
+      physical_address TEXT,
+      supplier_type TEXT NOT NULL,
+      payment_terms TEXT NOT NULL,
+      status TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_prices (
+      id TEXT PRIMARY KEY,
+      supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+      supplier_name TEXT NOT NULL,
+      material_id TEXT,
+      product_name TEXT NOT NULL,
+      unit TEXT NOT NULL,
+      price_usd REAL NOT NULL,
+      valid_from TEXT NOT NULL,
+      valid_to TEXT,
+      is_current INTEGER NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      created_by TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
@@ -409,7 +481,26 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_delivery_items_note ON delivery_note_items(note_id);
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_week ON payroll_payments(week_id);
     CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
+    CREATE INDEX IF NOT EXISTS idx_supplier_prices_supplier ON supplier_prices(supplier_id);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
   `);
+
+  // Apply additive column migrations for databases created before the
+  // newer modules existed. SQLite does not support ADD COLUMN IF NOT EXISTS.
+  ensureColumn(db, 'auth_users', 'password_changed_at', 'TEXT');
+  ensureColumn(db, 'production_orders', 'mode', "TEXT NOT NULL DEFAULT 'automatico'");
+  ensureColumn(db, 'production_orders', 'formulas_json', 'TEXT');
+  ensureColumn(db, 'production_orders', 'commitment_reference', 'TEXT');
+  ensureColumn(db, 'production_orders', 'created_by', 'TEXT');
+  ensureColumn(db, 'production_orders', 'updated_by', 'TEXT');
+  ensureColumn(db, 'production_orders', 'processed_by', 'TEXT');
+  ensureColumn(db, 'production_orders', 'processed_at', 'TEXT');
+  ensureColumn(db, 'production_orders', 'annulled_by', 'TEXT');
+  ensureColumn(db, 'production_orders', 'annulled_at', 'TEXT');
+  ensureColumn(db, 'payroll_weeks', 'bonus_by_role_json', 'TEXT');
+  ensureColumn(db, 'expenses', 'issuing_bank_code', 'TEXT');
+  ensureColumn(db, 'expenses', 'issuing_bank_name', 'TEXT');
+  ensureColumn(db, 'sales_orders', 'collection_json', 'TEXT');
 
   const row = db
     .prepare('SELECT MAX(version) AS version FROM schema_migrations')

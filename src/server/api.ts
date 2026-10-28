@@ -10,10 +10,14 @@ import { getDb, getDbPath } from './database/persistence.js';
 import {
   authenticate,
   authorizeRequest,
+  confirmResetPasswordHandler,
   ensureSeedUsers,
   isAuthEnabled,
   loginHandler,
+  logoutHandler,
   meHandler,
+  requireAdmin,
+  resetPasswordHandler,
 } from './auth.js';
 import { ApiError, apiNotFoundHandler, errorHandler } from './errors.js';
 import {
@@ -31,16 +35,25 @@ import {
   idParamsSchema,
   inventoryMovementSchema,
   loginSchema,
+  manualProductionOrderSchema,
+  manualProductionOrderUpdateSchema,
+  passwordResetConfirmSchema,
+  passwordResetRequestSchema,
   payrollWeekSchema,
   productionOrderSchema,
   rawMaterialSchema,
   rawMaterialUpdateSchema,
   recipeSchema,
+  salesCollectionSchema,
   salesOrderSchema,
   salesOrderStatusUpdateSchema,
+  supplierPriceSchema,
+  supplierSchema,
+  supplierUpdateSchema,
   validateBody,
   validateParams,
 } from './validation.js';
+import { VENEZUELAN_BANKS, findBank } from '../app/core/data/venezuelan-banks.js';
 import { openApiDocument } from './openapi.js';
 
 type Handler = (req: Request, res: Response, next: NextFunction) => unknown;
@@ -84,6 +97,28 @@ function query(handler: Handler): RequestHandler {
 function routeId(req: Request): string {
   const value = req.params['id'];
   return Array.isArray(value) ? value[0] : value;
+}
+
+interface AuditActor {
+  userId: string;
+  userName: string;
+  userRole: string;
+}
+
+/** Resolve the acting user for audit entries (real session or demo role). */
+function auditActor(req: Request): AuditActor {
+  if (req.auth) {
+    return {
+      userId: req.auth.user.id,
+      userName: req.auth.user.fullName,
+      userRole: req.auth.user.roleId,
+    };
+  }
+  return {
+    userId: req.header('x-demo-user') || 'usr-admin',
+    userName: req.header('x-demo-user-name') || 'Administrador (demo)',
+    userRole: req.header('x-demo-role') || 'admin',
+  };
 }
 
 /**
@@ -146,6 +181,36 @@ export function createApiApp(): express.Express {
   // --- AUTHENTICATION ---
   app.post('/api/auth/login', validateBody(loginSchema), loginHandler);
   app.get('/api/auth/me', meHandler);
+  app.post('/api/auth/logout', logoutHandler);
+  app.post(
+    '/api/auth/reset-password',
+    validateBody(passwordResetRequestSchema),
+    resetPasswordHandler
+  );
+  app.post(
+    '/api/auth/reset-password/confirm',
+    validateBody(passwordResetConfirmSchema),
+    confirmResetPasswordHandler
+  );
+
+  // --- VENEZUELAN BANK CATALOG (SUDEBAN) ---
+  app.get(
+    '/api/banks',
+    query((req, res) => {
+      const term = String(req.query['q'] || '').trim().toLowerCase();
+      if (!term) {
+        res.json(VENEZUELAN_BANKS);
+        return;
+      }
+      res.json(
+        VENEZUELAN_BANKS.filter(
+          (bank) =>
+            bank.code.includes(term) ||
+            bank.name.toLowerCase().includes(term)
+        )
+      );
+    })
+  );
 
   // ==========================================
   // REST API ROUTES - PULPACRAFT ERP / MRP
@@ -281,6 +346,82 @@ export function createApiApp(): express.Express {
     })
   );
 
+  // --- MANUAL PRODUCTION ORDERS (ADMIN ONLY) ---
+  app.get(
+    '/api/production-orders/manual',
+    query((req, res) => {
+      res.json(
+        dbInstance
+          .getProductionOrders()
+          .filter((order) => order.mode === 'manual')
+      );
+    })
+  );
+
+  app.post(
+    '/api/production-orders/manual',
+    requireAdmin,
+    validateBody(manualProductionOrderSchema),
+    mutation((req, res) => {
+      const created = dbInstance.createManualProductionOrder(
+        req.body,
+        auditActor(req)
+      );
+      res.status(201).json(created);
+    })
+  );
+
+  app.put(
+    '/api/production-orders/manual/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    validateBody(manualProductionOrderUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateManualProductionOrder(
+        routeId(req),
+        req.body,
+        auditActor(req)
+      );
+      res.json(updated);
+    })
+  );
+
+  app.delete(
+    '/api/production-orders/manual/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      dbInstance.deleteManualProductionOrder(routeId(req), auditActor(req));
+      res.json({ success: true, message: 'Orden manual eliminada' });
+    })
+  );
+
+  app.post(
+    '/api/production-orders/manual/:id/process',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const result = dbInstance.processManualProductionOrder(
+        routeId(req),
+        auditActor(req)
+      );
+      res.json(result);
+    })
+  );
+
+  app.post(
+    '/api/production-orders/manual/:id/annul',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const result = dbInstance.annulManualProductionOrder(
+        routeId(req),
+        auditActor(req)
+      );
+      res.json(result);
+    })
+  );
+
   // --- CUSTOMERS ---
   app.get(
     '/api/sales/customers',
@@ -294,6 +435,75 @@ export function createApiApp(): express.Express {
     validateBody(customerSchema),
     mutation((req, res) => {
       const created = dbInstance.addCustomer(req.body);
+      res.status(201).json(created);
+    })
+  );
+
+  // --- SUPPLIER MASTER DIRECTORY & PRICE CATALOG ---
+  app.get(
+    '/api/suppliers',
+    query((req, res) => {
+      res.json(dbInstance.getSuppliers());
+    })
+  );
+
+  app.post(
+    '/api/suppliers',
+    validateBody(supplierSchema),
+    mutation((req, res) => {
+      const created = dbInstance.addSupplier(req.body, auditActor(req));
+      res.status(201).json(created);
+    })
+  );
+
+  app.put(
+    '/api/suppliers/:id',
+    validateParams(idParamsSchema),
+    validateBody(supplierUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateSupplier(
+        routeId(req),
+        req.body,
+        auditActor(req)
+      );
+      res.json(updated);
+    })
+  );
+
+  app.delete(
+    '/api/suppliers/:id',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      dbInstance.deleteSupplier(routeId(req), auditActor(req));
+      res.json({ success: true, message: 'Proveedor eliminado' });
+    })
+  );
+
+  app.get(
+    '/api/suppliers/prices',
+    query((req, res) => {
+      res.json(dbInstance.getSupplierPrices());
+    })
+  );
+
+  app.get(
+    '/api/suppliers/:id/prices',
+    validateParams(idParamsSchema),
+    query((req, res) => {
+      res.json(dbInstance.getSupplierPrices(routeId(req)));
+    })
+  );
+
+  app.post(
+    '/api/suppliers/:id/prices',
+    validateParams(idParamsSchema),
+    validateBody(supplierPriceSchema),
+    mutation((req, res) => {
+      const created = dbInstance.addSupplierPrice(
+        routeId(req),
+        req.body,
+        auditActor(req)
+      );
       res.status(201).json(created);
     })
   );
@@ -328,6 +538,32 @@ export function createApiApp(): express.Express {
         res.status(404).json({ error: 'Pedido no encontrado', code: 'NOT_FOUND' });
         return;
       }
+      res.json(updated);
+    })
+  );
+
+  app.post(
+    '/api/sales/orders/:id/collect',
+    validateParams(idParamsSchema),
+    validateBody(salesCollectionSchema),
+    mutation((req, res) => {
+      const bank = findBank(req.body.bankCode);
+      if (!bank) {
+        res.status(422).json({
+          error: 'El código de banco no existe en el catálogo SUDEBAN',
+          code: 'VALIDATION_ERROR',
+        });
+        return;
+      }
+      const updated = dbInstance.collectSalesOrder(
+        routeId(req),
+        {
+          ...req.body,
+          bankCode: bank.code,
+          bankName: bank.name,
+        },
+        auditActor(req)
+      );
       res.json(updated);
     })
   );
@@ -482,7 +718,14 @@ export function createApiApp(): express.Express {
     '/api/expenses',
     validateBody(expenseSchema),
     mutation((req, res) => {
-      const created = dbInstance.addExpense(req.body);
+      const bank = req.body.issuingBankCode
+        ? findBank(req.body.issuingBankCode)
+        : undefined;
+      const created = dbInstance.addExpense({
+        ...req.body,
+        issuingBankCode: bank?.code,
+        issuingBankName: bank?.name,
+      });
       res.status(201).json(created);
     })
   );

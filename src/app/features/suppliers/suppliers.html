@@ -1,0 +1,572 @@
+<div class="space-y-8">
+  <!-- Module Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+    <div>
+      <h1 class="text-2xl font-bold text-stone-900 tracking-tight">Directorio de Proveedores</h1>
+      <p class="text-sm text-stone-500 mt-1">
+        Ficha fija de contacto, datos fiscales y catálogo histórico de precios por proveedor
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      @if (canCreate()) {
+        <button
+          type="button"
+          (click)="openNewSupplier()"
+          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors min-h-[44px]"
+        >
+          <mat-icon class="text-base">add_business</mat-icon>
+          <span>Nuevo Proveedor</span>
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- KPI Summary -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Proveedores</span>
+      <div class="text-2xl font-bold text-stone-900 mt-1">{{ suppliers().length }}</div>
+      <span class="text-[11px] text-stone-400">en el directorio</span>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Activos</span>
+      <div class="text-2xl font-bold text-emerald-700 mt-1">{{ activeCount() }}</div>
+      <span class="text-[11px] text-stone-400">disponibles para compra</span>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Precios vigentes</span>
+      <div class="text-2xl font-bold text-amber-800 mt-1">{{ currentPrices().length }}</div>
+      <span class="text-[11px] text-stone-400">referencias activas</span>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Categorías</span>
+      <div class="text-2xl font-bold text-stone-900 mt-1">{{ supplierTypes.length }}</div>
+      <span class="text-[11px] text-stone-400">tipos de suministro</span>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex flex-col sm:flex-row gap-3">
+    <div class="relative flex-1">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-base">search</mat-icon>
+      <input
+        type="text"
+        [value]="searchQuery()"
+        (input)="searchQuery.set($any($event.target).value)"
+        placeholder="Buscar por razón social, RIF, contacto o código…"
+        class="w-full bg-white border border-stone-300 rounded-xl pl-9 pr-3 py-2.5 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+      />
+    </div>
+    <select
+      [value]="typeFilter()"
+      (change)="typeFilter.set($any($event.target).value)"
+      class="bg-white border border-stone-300 rounded-xl px-3 py-2.5 text-sm font-medium text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500 min-w-[190px]"
+    >
+      <option value="all">Todos los tipos</option>
+      @for (type of supplierTypes; track type.value) {
+        <option [value]="type.value">{{ type.label }}</option>
+      }
+    </select>
+  </div>
+
+  <!-- Suppliers list -->
+  @if (filteredSuppliers().length === 0) {
+    <div class="bg-white border border-dashed border-stone-300 rounded-2xl p-12 text-center">
+      <mat-icon class="text-4xl text-stone-300">local_shipping</mat-icon>
+      <p class="text-sm font-semibold text-stone-700 mt-3">No hay proveedores que coincidan</p>
+      <p class="text-xs text-stone-500 mt-1">Ajusta los filtros o registra un nuevo proveedor.</p>
+    </div>
+  } @else {
+    <div class="space-y-4">
+      @for (supplier of filteredSuppliers(); track supplier.id) {
+        <div class="bg-white border border-stone-200 rounded-2xl overflow-hidden hover:border-stone-300 transition-colors">
+          <div class="p-5">
+            <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+              <div class="flex-1 min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-[11px] font-mono font-semibold text-stone-500 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded">
+                    {{ supplier.code }}
+                  </span>
+                  <h3 class="text-base font-bold text-stone-900">{{ supplier.businessName }}</h3>
+                  <span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border bg-amber-50 text-amber-900 border-amber-200">
+                    {{ typeLabel(supplier.supplierType) }}
+                  </span>
+                  @if (supplier.status === 'activo') {
+                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200">
+                      Activo
+                    </span>
+                  } @else {
+                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border bg-stone-100 text-stone-600 border-stone-200">
+                      Inactivo
+                    </span>
+                  }
+                </div>
+
+                <div class="mt-1 text-xs text-stone-500 font-mono">RIF: {{ supplier.taxId }}</div>
+
+                <!-- Fixed contact card -->
+                <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                  <div class="flex items-start gap-2">
+                    <mat-icon class="text-base text-stone-400 shrink-0">person</mat-icon>
+                    <div>
+                      <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Contacto principal</span>
+                      <span class="font-semibold text-stone-800">{{ supplier.primaryContact }}</span>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <mat-icon class="text-base text-stone-400 shrink-0">call</mat-icon>
+                    <div>
+                      <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Teléfonos</span>
+                      <span class="text-stone-800">
+                        {{ supplier.primaryPhone }}
+                        @if (supplier.secondaryPhone) {
+                          <span class="text-stone-400"> · {{ supplier.secondaryPhone }}</span>
+                        }
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <mat-icon class="text-base text-stone-400 shrink-0">home_work</mat-icon>
+                    <div>
+                      <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Dirección fiscal</span>
+                      <span class="text-stone-800">{{ supplier.fiscalAddress }}</span>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <mat-icon class="text-base text-stone-400 shrink-0">location_on</mat-icon>
+                    <div>
+                      <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Dirección física</span>
+                      <span class="text-stone-800">{{ supplier.physicalAddress || 'Igual a la fiscal' }}</span>
+                    </div>
+                  </div>
+                  @if (supplier.email) {
+                    <div class="flex items-start gap-2">
+                      <mat-icon class="text-base text-stone-400 shrink-0">mail</mat-icon>
+                      <div>
+                        <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Correo</span>
+                        <span class="text-stone-800">{{ supplier.email }}</span>
+                      </div>
+                    </div>
+                  }
+                  <div class="flex items-start gap-2">
+                    <mat-icon class="text-base text-stone-400 shrink-0">payments</mat-icon>
+                    <div>
+                      <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Condición de pago</span>
+                      <span class="text-stone-800">{{ supplier.paymentTerms }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                @if (supplier.notes) {
+                  <p class="mt-3 text-xs text-stone-500 italic">{{ supplier.notes }}</p>
+                }
+              </div>
+
+              <!-- Actions -->
+              <div class="flex flex-wrap lg:flex-col items-stretch gap-2 lg:w-44 shrink-0">
+                <button
+                  type="button"
+                  (click)="togglePrices(supplier.id)"
+                  class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-50 min-h-[38px]"
+                >
+                  <mat-icon class="text-base">receipt_long</mat-icon>
+                  <span>Precios ({{ supplierPrices(supplier.id).length }})</span>
+                </button>
+                @if (canEdit()) {
+                  <button
+                    type="button"
+                    (click)="openPriceModal(supplier)"
+                    class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold min-h-[38px]"
+                  >
+                    <mat-icon class="text-base">add_card</mat-icon>
+                    <span>Registrar precio</span>
+                  </button>
+                  <button
+                    type="button"
+                    (click)="openEditSupplier(supplier)"
+                    class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-50 min-h-[38px]"
+                  >
+                    <mat-icon class="text-base">edit</mat-icon>
+                    <span>Editar ficha</span>
+                  </button>
+                }
+                @if (canDelete()) {
+                  <button
+                    type="button"
+                    (click)="deleteSupplier(supplier)"
+                    class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-rose-200 text-xs font-semibold text-rose-700 hover:bg-rose-50 min-h-[38px]"
+                  >
+                    <mat-icon class="text-base">delete</mat-icon>
+                    <span>Eliminar</span>
+                  </button>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Price history -->
+          @if (expandedSupplierId() === supplier.id) {
+            <div class="border-t border-stone-200 bg-stone-50 px-5 py-4">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600">
+                  Historial de precios
+                </h4>
+                <span class="text-[11px] text-stone-400">
+                  Los precios anteriores se cierran automáticamente al registrar uno nuevo
+                </span>
+              </div>
+
+              @if (supplierPrices(supplier.id).length === 0) {
+                <p class="text-xs text-stone-500">Sin precios registrados para este proveedor.</p>
+              } @else {
+                <div class="overflow-x-auto">
+                  <table class="w-full text-xs">
+                    <thead>
+                      <tr class="text-left text-[10px] uppercase tracking-wide text-stone-400 border-b border-stone-200">
+                        <th class="py-2 pr-4 font-semibold">Producto / Insumo</th>
+                        <th class="py-2 pr-4 font-semibold">Unidad</th>
+                        <th class="py-2 pr-4 font-semibold text-right">Precio USD</th>
+                        <th class="py-2 pr-4 font-semibold">Vigente desde</th>
+                        <th class="py-2 pr-4 font-semibold">Vigente hasta</th>
+                        <th class="py-2 pr-4 font-semibold">Estado</th>
+                        <th class="py-2 font-semibold">Registrado por</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (price of supplierPrices(supplier.id); track price.id) {
+                        <tr class="border-b border-stone-100 last:border-0">
+                          <td class="py-2 pr-4">
+                            <span class="font-semibold text-stone-800">{{ price.productName }}</span>
+                            @if (price.notes) {
+                              <span class="block text-[10px] text-stone-400">{{ price.notes }}</span>
+                            }
+                          </td>
+                          <td class="py-2 pr-4 text-stone-600">{{ price.unit }}</td>
+                          <td class="py-2 pr-4 text-right font-mono font-semibold text-stone-900">
+                            {{ price.priceUsd | veCurrency:'$':2 }}
+                          </td>
+                          <td class="py-2 pr-4 font-mono text-stone-600">{{ price.validFrom }}</td>
+                          <td class="py-2 pr-4 font-mono text-stone-600">{{ price.validTo || '—' }}</td>
+                          <td class="py-2 pr-4">
+                            @if (price.isCurrent) {
+                              <span class="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                Vigente
+                              </span>
+                            } @else {
+                              <span class="inline-flex items-center gap-1 text-[10px] font-semibold text-stone-500 bg-stone-100 border border-stone-200 px-1.5 py-0.5 rounded">
+                                Histórico
+                              </span>
+                            }
+                          </td>
+                          <td class="py-2 text-stone-500">{{ price.createdBy || '—' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<!-- Supplier create/edit modal -->
+@if (isSupplierModalOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+      <div class="flex items-start justify-between gap-4 p-5 border-b border-stone-200">
+        <div>
+          <h2 class="text-lg font-bold text-stone-900">
+            {{ editingSupplierId() ? 'Editar proveedor' : 'Nuevo proveedor' }}
+          </h2>
+          <p class="text-xs text-stone-500 mt-0.5">
+            Los campos de contacto principal, teléfono y dirección fiscal son obligatorios.
+          </p>
+        </div>
+        <button
+          type="button"
+          (click)="closeSupplierModal()"
+          class="p-2 rounded-lg hover:bg-stone-100 text-stone-500"
+          aria-label="Cerrar"
+        >
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <form [formGroup]="supplierForm" (ngSubmit)="submitSupplier()" class="p-5 space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Razón social *</label>
+            <input
+              type="text"
+              formControlName="businessName"
+              placeholder="ej: Frutas del Sur C.A."
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            @if (supplierForm.controls.businessName.touched && supplierForm.controls.businessName.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">Ingresa una razón social válida.</span>
+            }
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">RIF *</label>
+            <input
+              type="text"
+              formControlName="taxId"
+              placeholder="J-30123456-7"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Tipo de proveedor</label>
+            <select
+              formControlName="supplierType"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            >
+              @for (type of supplierTypes; track type.value) {
+                <option [value]="type.value">{{ type.label }}</option>
+              }
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Contacto principal *</label>
+            <input
+              type="text"
+              formControlName="primaryContact"
+              placeholder="Nombre y apellido"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            @if (supplierForm.controls.primaryContact.touched && supplierForm.controls.primaryContact.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">El contacto principal es obligatorio.</span>
+            }
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Teléfono principal *</label>
+            <input
+              type="text"
+              formControlName="primaryPhone"
+              placeholder="+58 412 555 0101"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            @if (supplierForm.controls.primaryPhone.touched && supplierForm.controls.primaryPhone.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">El teléfono principal es obligatorio.</span>
+            }
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Teléfono alternativo</label>
+            <input
+              type="text"
+              formControlName="secondaryPhone"
+              placeholder="+58 212 555 0101"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Correo electrónico</label>
+            <input
+              type="email"
+              formControlName="email"
+              placeholder="compras@proveedor.com"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Dirección fiscal *</label>
+            <textarea
+              formControlName="fiscalAddress"
+              rows="2"
+              placeholder="Calle, número, ciudad, estado"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+            ></textarea>
+            @if (supplierForm.controls.fiscalAddress.touched && supplierForm.controls.fiscalAddress.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">La dirección fiscal es obligatoria.</span>
+            }
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Dirección física</label>
+            <textarea
+              formControlName="physicalAddress"
+              rows="2"
+              placeholder="Dejar vacío si coincide con la fiscal"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Condición de pago</label>
+            <input
+              type="text"
+              formControlName="paymentTerms"
+              placeholder="Contado / 15 días"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Estado</label>
+            <select
+              formControlName="status"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            >
+              <option value="activo">Activo</option>
+              <option value="inactivo">Inactivo</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Notas</label>
+            <textarea
+              formControlName="notes"
+              rows="2"
+              placeholder="Observaciones de compra, horarios, etc."
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-stone-200">
+          <button
+            type="button"
+            (click)="closeSupplierModal()"
+            class="px-4 py-2.5 rounded-xl border border-stone-300 text-sm font-semibold text-stone-700 hover:bg-stone-50 min-h-[44px]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold min-h-[44px]"
+          >
+            {{ editingSupplierId() ? 'Guardar cambios' : 'Registrar proveedor' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+<!-- Price registration modal -->
+@if (isPriceModalOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
+      <div class="flex items-start justify-between gap-4 p-5 border-b border-stone-200">
+        <div>
+          <h2 class="text-lg font-bold text-stone-900">Registrar precio</h2>
+          <p class="text-xs text-stone-500 mt-0.5">
+            {{ selectedSupplierForPrice()?.businessName }}
+            <span class="font-mono">· {{ selectedSupplierForPrice()?.code }}</span>
+          </p>
+        </div>
+        <button
+          type="button"
+          (click)="closePriceModal()"
+          class="p-2 rounded-lg hover:bg-stone-100 text-stone-500"
+          aria-label="Cerrar"
+        >
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <form [formGroup]="priceForm" (ngSubmit)="submitPrice()" class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-stone-700 mb-1">
+            Vincular materia prima (opcional)
+          </label>
+          <select
+            [value]="priceForm.controls.materialId.value"
+            (change)="onMaterialSelected($any($event.target).value)"
+            class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            <option value="">— Producto libre —</option>
+            @for (material of api.rawMaterials(); track material.id) {
+              <option [value]="material.id">{{ material.name }} ({{ material.unit }})</option>
+            }
+          </select>
+          <p class="text-[11px] text-stone-400 mt-1">
+            Al vincular una materia prima se completa el nombre, la unidad y el último costo conocido.
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-stone-700 mb-1">Producto / Insumo *</label>
+          <input
+            type="text"
+            formControlName="productName"
+            placeholder="ej: Guayaba Roja Criolla"
+            class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+          @if (priceForm.controls.productName.touched && priceForm.controls.productName.invalid) {
+            <span class="text-[11px] text-rose-600 mt-1 block">Indica el producto o insumo.</span>
+          }
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Unidad</label>
+            <select
+              formControlName="unit"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            >
+              <option value="kg">kg</option>
+              <option value="g">g</option>
+              <option value="l">l</option>
+              <option value="ml">ml</option>
+              <option value="unidades">unidades</option>
+              <option value="cajas">cajas</option>
+              <option value="paquetes">paquetes</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Precio USD *</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              formControlName="priceUsd"
+              class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            @if (priceForm.controls.priceUsd.touched && priceForm.controls.priceUsd.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">El precio debe ser mayor a cero.</span>
+            }
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-stone-700 mb-1">Vigente desde *</label>
+          <input
+            type="date"
+            formControlName="validFrom"
+            class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-stone-700 mb-1">Notas</label>
+          <textarea
+            formControlName="notes"
+            rows="2"
+            placeholder="Condiciones, flete, descuentos…"
+            class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-stone-200">
+          <button
+            type="button"
+            (click)="closePriceModal()"
+            class="px-4 py-2.5 rounded-xl border border-stone-300 text-sm font-semibold text-stone-700 hover:bg-stone-50 min-h-[44px]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold min-h-[44px]"
+          >
+            Guardar precio
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

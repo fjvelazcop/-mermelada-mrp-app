@@ -245,6 +245,7 @@ export class Settings {
       sales: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       payroll: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       expenses: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
+      suppliers: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       settings: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       architecture: {canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false},
     };

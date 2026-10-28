@@ -1,4 +1,5 @@
 import {
+  createHash,
   createHmac,
   randomBytes,
   scryptSync,
@@ -32,6 +33,7 @@ export type ModuleId =
   | 'sales'
   | 'payroll'
   | 'expenses'
+  | 'suppliers'
   | 'settings'
   | 'architecture';
 
@@ -82,6 +84,7 @@ export const ROLE_PERMISSIONS: Record<RoleId, Record<ModuleId, ModulePermissions
     sales: full,
     payroll: full,
     expenses: full,
+    suppliers: full,
     settings: full,
     architecture: full,
   },
@@ -93,6 +96,7 @@ export const ROLE_PERMISSIONS: Record<RoleId, Record<ModuleId, ModulePermissions
     sales: read,
     payroll: read,
     expenses: none,
+    suppliers: readExport,
     settings: none,
     architecture: read,
   },
@@ -104,6 +108,7 @@ export const ROLE_PERMISSIONS: Record<RoleId, Record<ModuleId, ModulePermissions
     sales: none,
     payroll: none,
     expenses: none,
+    suppliers: none,
     settings: none,
     architecture: none,
   },
@@ -115,6 +120,7 @@ export const ROLE_PERMISSIONS: Record<RoleId, Record<ModuleId, ModulePermissions
     sales: readExport,
     payroll: read,
     expenses: write,
+    suppliers: write,
     settings: none,
     architecture: read,
   },
@@ -126,6 +132,7 @@ export const ROLE_PERMISSIONS: Record<RoleId, Record<ModuleId, ModulePermissions
     sales: { view: true, create: true, edit: false, delete: false, export: true },
     payroll: none,
     expenses: none,
+    suppliers: write,
     settings: none,
     architecture: read,
   },
@@ -142,6 +149,7 @@ export interface AuthUserRecord {
   department: string | null;
   status: string;
   created_at: string;
+  password_changed_at: string | null;
 }
 
 export interface AuthUser {
@@ -269,6 +277,11 @@ function getTokenTtlSeconds(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TOKEN_TTL_SECONDS;
 }
 
+function getResetTtlSeconds(): number {
+  const raw = Number(process.env['AUTH_RESET_TTL_SECONDS']);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30 * 60;
+}
+
 function toPublicUser(row: AuthUserRecord): AuthUser {
   return {
     id: row.id,
@@ -330,6 +343,91 @@ export function findUserById(id: string): AuthUserRecord | undefined {
     .get(id) as AuthUserRecord | undefined;
 }
 
+export function findUserByIdentifier(identifier: string): AuthUserRecord | undefined {
+  return getDb()
+    .prepare('SELECT * FROM auth_users WHERE username = ? OR lower(email) = lower(?)')
+    .get(identifier, identifier) as AuthUserRecord | undefined;
+}
+
+function hashResetToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Create a single-use password reset token. Returns the raw token so the API
+ * can deliver it (SMTP in production, devToken in non-production).
+ */
+export function requestPasswordReset(
+  identifier: string
+): { token: string; user: AuthUserRecord } | null {
+  const user = findUserByIdentifier(identifier.trim());
+  if (!user || user.status !== 'activo') return null;
+
+  const db = getDb();
+  const now = new Date();
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = new Date(now.getTime() + getResetTtlSeconds() * 1000);
+
+  const create = db.transaction(() => {
+    // Invalidate any previous unused token.
+    db.prepare(
+      'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL'
+    ).run(now.toISOString(), user.id);
+    db.prepare(
+      `INSERT INTO password_reset_tokens
+        (id, user_id, token_hash, expires_at, used_at, created_at)
+       VALUES (?, ?, ?, ?, NULL, ?)`
+    ).run(
+      'prt-' + randomBytes(8).toString('hex'),
+      user.id,
+      hashResetToken(token),
+      expiresAt.toISOString(),
+      now.toISOString()
+    );
+  });
+  create();
+
+  return { token, user };
+}
+
+/** Consume a reset token and set a new password. */
+export function confirmPasswordReset(
+  token: string,
+  newPassword: string
+): AuthUserRecord | null {
+  const db = getDb();
+  const now = new Date();
+  const row = db
+    .prepare(
+      `SELECT * FROM password_reset_tokens
+       WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`
+    )
+    .get(hashResetToken(token), now.toISOString()) as
+    | { id: string; user_id: string }
+    | undefined;
+  if (!row) return null;
+
+  const user = findUserById(row.user_id);
+  if (!user || user.status !== 'activo') return null;
+
+  const apply = db.transaction(() => {
+    db.prepare(
+      'UPDATE auth_users SET password_hash = ?, password_changed_at = ? WHERE id = ?'
+    ).run(hashPassword(newPassword), now.toISOString(), user.id);
+    db.prepare('UPDATE password_reset_tokens SET used_at = ? WHERE id = ?').run(
+      now.toISOString(),
+      row.id
+    );
+    // Any other outstanding reset token is no longer valid.
+    db.prepare(
+      'UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL'
+    ).run(now.toISOString(), user.id);
+  });
+  apply();
+
+  return user;
+}
+
 /** Create a signed token: `base64url(payload).base64url(hmac)`. */
 export function signToken(user: AuthUserRecord, ttlSeconds = getTokenTtlSeconds()): string {
   const now = Math.floor(Date.now() / 1000);
@@ -385,6 +483,8 @@ function unauthorized(res: Response, message: string): void {
 const PUBLIC_PATHS = [
   /^\/api\/health$/,
   /^\/api\/auth\/login$/,
+  /^\/api\/auth\/reset-password$/,
+  /^\/api\/auth\/reset-password\/confirm$/,
   /^\/api\/openapi\.json$/,
   /^\/api\/docs(?:\/.*)?$/,
 ];
@@ -437,15 +537,64 @@ export function authenticate(
     return;
   }
 
+  // Tokens issued before the last password change are no longer valid.
+  if (record.password_changed_at) {
+    const changedAt = Math.floor(Date.parse(record.password_changed_at) / 1000);
+    if (Number.isFinite(changedAt) && payload.iat < changedAt) {
+      unauthorized(res, 'Token inválido o expirado');
+      return;
+    }
+  }
+
   req.auth = { token: payload, user: toPublicUser(record) };
   next();
 }
+
+/**
+ * Restrict a route to the given roles. In demo mode (AUTH_ENABLED=false)
+ * there is no server-side session, so the active role simulated by the
+ * frontend is read from `X-Demo-Role` to keep administrator-only rules
+ * enforceable during functional testing.
+ */
+export function requireRole(...roles: RoleId[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (isAuthEnabled()) {
+      const role = req.auth?.user.roleId;
+      if (!role || !roles.includes(role)) {
+        res.status(403).json({
+          error: `Esta operación requiere uno de los roles: ${roles.join(', ')}`,
+          code: 'FORBIDDEN',
+          details: { requiredRoles: roles },
+        });
+        return;
+      }
+      next();
+      return;
+    }
+
+    const demoRole = (req.header('x-demo-role') || 'admin') as RoleId;
+    if (!roles.includes(demoRole)) {
+      res.status(403).json({
+        error: `Esta operación requiere uno de los roles: ${roles.join(', ')}`,
+        code: 'FORBIDDEN',
+        details: { requiredRoles: roles, demoRole },
+      });
+      return;
+    }
+    next();
+  };
+}
+
+/** Shorthand for administrator-only endpoints. */
+export const requireAdmin = requireRole('admin');
 
 function resolveModule(path: string): ModuleId | null {
   if (path.startsWith('/api/inventory')) return 'inventory';
   if (path.startsWith('/api/recipes')) return 'production';
   if (path.startsWith('/api/production-orders')) return 'production';
   if (path.startsWith('/api/sales')) return 'sales';
+  if (path.startsWith('/api/suppliers')) return 'suppliers';
+  if (path.startsWith('/api/banks')) return 'expenses';
   if (path.startsWith('/api/payroll')) return 'payroll';
   if (path.startsWith('/api/costing')) return 'costing';
   if (path.startsWith('/api/expenses')) return 'expenses';
@@ -461,7 +610,7 @@ function resolveAction(req: Request): PermissionAction {
   if (req.method === 'DELETE') return 'delete';
   if (req.method === 'PUT' || req.method === 'PATCH') return 'edit';
   if (req.method === 'POST') {
-    if (/\/(process|refresh|update|status)$/.test(apiPath(req))) return 'edit';
+    if (/\/(process|refresh|update|status|collect|annul)$/.test(apiPath(req))) return 'edit';
     return 'create';
   }
   return 'view';
@@ -556,4 +705,63 @@ export function meHandler(req: Request, res: Response): void {
     return;
   }
   res.json(req.auth.user);
+}
+
+/** POST /api/auth/logout handler. Tokens are stateless, so the client discards it. */
+export function logoutHandler(req: Request, res: Response): void {
+  res.json({
+    success: true,
+    message: 'Sesión cerrada correctamente',
+    user: req.auth?.user?.username ?? null,
+  });
+}
+
+/** POST /api/auth/reset-password handler. */
+export function resetPasswordHandler(req: Request, res: Response): void {
+  const identifier =
+    typeof req.body?.identifier === 'string' ? req.body.identifier.trim() : '';
+
+  // Always answer with the same message to avoid account enumeration.
+  const result = identifier ? requestPasswordReset(identifier) : null;
+
+  const body: Record<string, unknown> = {
+    success: true,
+    message:
+      'Si el usuario o correo existe, recibirás instrucciones para restablecer la contraseña.',
+  };
+
+  // In non-production environments the token is returned to enable the
+  // recovery flow before SMTP is configured.
+  const exposeToken =
+    (process.env['AUTH_RESET_EXPOSE_TOKEN'] === 'true' ||
+      process.env['NODE_ENV'] !== 'production') &&
+    result;
+  if (exposeToken) {
+    body['devToken'] = result.token;
+    body['expiresInSeconds'] = getResetTtlSeconds();
+  }
+
+  res.json(body);
+}
+
+/** POST /api/auth/reset-password/confirm handler. */
+export function confirmResetPasswordHandler(req: Request, res: Response): void {
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  const newPassword =
+    typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+
+  const user = token && newPassword ? confirmPasswordReset(token, newPassword) : null;
+  if (!user) {
+    res.status(400).json({
+      error: 'El enlace de recuperación es inválido o ha expirado',
+      code: 'INVALID_RESET_TOKEN',
+    });
+    return;
+  }
+
+  res.json({
+    success: true,
+    message: 'Contraseña actualizada correctamente. Inicia sesión con tu nueva contraseña.',
+    user: toPublicUser(user),
+  });
 }

@@ -8,6 +8,7 @@ export type AppModuleId =
   | 'sales'
   | 'payroll'
   | 'expenses'
+  | 'suppliers'
   | 'settings'
   | 'architecture';
 
@@ -126,7 +127,29 @@ export interface RecipeBOM {
   instructions?: string;
 }
 
-export type ProductionOrderStatus = 'planificada' | 'en_proceso' | 'completada' | 'cancelada';
+export type ProductionOrderStatus =
+  | 'borrador'
+  | 'planificada'
+  | 'en_proceso'
+  | 'completada'
+  | 'cancelada'
+  | 'anulada';
+
+export type ProductionOrderMode = 'automatico' | 'manual';
+
+export interface ProductionOrderFormula {
+  recipeId: string;
+  recipeName: string;
+  flavor: string;
+  presentation: PresentationType;
+  batchCount: number;
+  targetUnits: number;
+  directMaterialCost: number;
+  directLaborCost: number;
+  indirectCost: number;
+  totalProductionCost: number;
+  unitCost: number;
+}
 
 export interface ProductionOrder {
   id: string;
@@ -139,6 +162,15 @@ export interface ProductionOrder {
   batchCount: number; // Multiplicador de lote
   lotNumber: string; // ej: L-GUAY-2610
   status: ProductionOrderStatus;
+  mode?: ProductionOrderMode; // automatico = MTO, manual = carga/ajuste manual
+  formulas?: ProductionOrderFormula[]; // Solo órdenes manuales multi-fórmula
+  commitmentReference?: string; // Referencia del compromiso de inventario
+  createdBy?: string;
+  updatedBy?: string;
+  processedBy?: string;
+  processedAt?: string;
+  annulledBy?: string;
+  annulledAt?: string;
   salesOrderId?: string; // MTO: pedido de cliente asociado
   customerName?: string;
   startDate: string;
@@ -175,6 +207,48 @@ export interface Customer {
   clientType: 'panaderia' | 'fabricante_bocadillos' | 'pasteleria' | 'distribuidor' | 'otro';
   creditLimit: number;
   paymentTerms: string; // Contado, 7 días, 15 días
+}
+
+export type SupplierType =
+  | 'fruta'
+  | 'aditivo'
+  | 'empaque'
+  | 'quimico'
+  | 'servicios'
+  | 'otro';
+
+export interface Supplier {
+  id: string;
+  code: string; // ej: PROV-0001
+  businessName: string; // Razón social
+  taxId: string; // RIF
+  primaryContact: string; // Contacto principal (obligatorio)
+  primaryPhone: string; // Teléfono principal (obligatorio)
+  secondaryPhone?: string;
+  email?: string;
+  fiscalAddress: string; // Dirección fiscal (obligatoria)
+  physicalAddress?: string;
+  supplierType: SupplierType;
+  paymentTerms: string;
+  status: 'activo' | 'inactivo';
+  notes?: string;
+  createdAt: string;
+}
+
+export interface SupplierPrice {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  materialId?: string; // Materia prima asociada (opcional)
+  productName: string;
+  unit: UnitOfMeasure;
+  priceUsd: number;
+  validFrom: string; // YYYY-MM-DD
+  validTo?: string; // Vigente hasta (nulo = precio actual)
+  isCurrent: boolean;
+  notes?: string;
+  createdAt: string;
+  createdBy?: string;
 }
 
 export type SalesOrderStatus = 'pendiente' | 'en_produccion' | 'listo_despacho' | 'despachado' | 'cobrado';
@@ -215,6 +289,17 @@ export interface SalesOrder {
   deliveryNoteNumber?: string;
   productionOrderId?: string;
   notes?: string;
+  collection?: {
+    bankCode: string;
+    bankName: string;
+    paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+    reference: string;
+    amountUsd: number;
+    amountBs?: number;
+    exchangeRateUsed: number;
+    collectedAt: string;
+    collectedBy: string;
+  };
 }
 
 export interface DeliveryNote {
@@ -294,6 +379,7 @@ export interface PayrollWeek {
   }[];
   totalPayrollPaid: number;
   fixedAbsorptionCost: number; // Costo fijo absorbido o trasladado a gastos operativos
+  bonusByRole?: Record<string, number>; // Bono por rendimiento discriminado por cargo
   notes?: string;
 }
 
@@ -513,7 +599,7 @@ export interface FinishedPresentationCost {
   };
 }
 
-export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas' | 'gastos';
+export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas' | 'gastos' | 'compras';
 export type AuditSeverity = 'info' | 'success' | 'warning' | 'critical';
 
 export interface AuditLogDetails {
@@ -531,6 +617,11 @@ export interface AuditLogDetails {
   referenceDoc?: string;
   salesOrderId?: string;
   operatorNotes?: string;
+  formulas?: string[];
+  changes?: string[];
+  bankCode?: string;
+  bankName?: string;
+  totalUnits?: number;
 }
 
 export interface AuditLogEntry {
@@ -544,10 +635,20 @@ export interface AuditLogEntry {
     | 'reabastecimiento_alerta'
     | 'orden_produccion_creada'
     | 'orden_produccion_procesada'
+    | 'orden_manual_creada'
+    | 'orden_manual_actualizada'
+    | 'orden_manual_eliminada'
+    | 'orden_manual_procesada'
+    | 'orden_manual_anulada'
     | 'receta_bom_creada'
     | 'alerta_stock_critico'
     | 'gasto_registrado'
-    | 'gasto_eliminado';
+    | 'gasto_eliminado'
+    | 'proveedor_creado'
+    | 'proveedor_actualizado'
+    | 'proveedor_eliminado'
+    | 'precio_proveedor_registrado'
+    | 'cobro_registrado';
   title: string;
   description: string;
   userId: string;
@@ -605,6 +706,8 @@ export interface Expense {
   documentNumber?: string; // Nro. de Factura / Control / Recibo
   paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
   paymentReference?: string;
+  issuingBankCode?: string; // Código SUDEBAN del banco emisor (obligatorio para pagos bancarios)
+  issuingBankName?: string; // Nombre oficial del banco emisor
   notes?: string;
   registeredBy: string;
 

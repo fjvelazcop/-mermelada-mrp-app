@@ -16,6 +16,8 @@ import {
   RawMaterial,
   RecipeBOM,
   SalesOrder,
+  Supplier,
+  SupplierPrice,
 } from '../../app/core/models/erp.models.js';
 import { getDb } from './persistence.js';
 
@@ -188,6 +190,15 @@ export function loadRelationalState(): DatabaseState | null {
       totalProductionCostBs: o(r['total_production_cost_bs']),
       unitCostBs: o(r['unit_cost_bs']),
       operatorNotes: o(r['operator_notes']),
+      mode: (r['mode'] as ProductionOrder['mode']) || 'automatico',
+      formulas: r['formulas_json'] ? JSON.parse(r['formulas_json']) : undefined,
+      commitmentReference: o(r['commitment_reference']),
+      createdBy: o(r['created_by']),
+      updatedBy: o(r['updated_by']),
+      processedBy: o(r['processed_by']),
+      processedAt: o(r['processed_at']),
+      annulledBy: o(r['annulled_by']),
+      annulledAt: o(r['annulled_at']),
     })
   );
 
@@ -250,6 +261,49 @@ export function loadRelationalState(): DatabaseState | null {
       deliveryNoteNumber: o(r['delivery_note_number']),
       productionOrderId: o(r['production_order_id']),
       notes: o(r['notes']),
+      collection: r['collection_json'] ? JSON.parse(r['collection_json']) : undefined,
+    })
+  );
+
+  const suppliers = (
+    db.prepare('SELECT * FROM suppliers ORDER BY rowid').all() as Row[]
+  ).map(
+    (r): Supplier => ({
+      id: r['id'],
+      code: r['code'],
+      businessName: r['business_name'],
+      taxId: r['tax_id'],
+      primaryContact: r['primary_contact'],
+      primaryPhone: r['primary_phone'],
+      secondaryPhone: o(r['secondary_phone']),
+      email: o(r['email']),
+      fiscalAddress: r['fiscal_address'],
+      physicalAddress: o(r['physical_address']),
+      supplierType: r['supplier_type'],
+      paymentTerms: r['payment_terms'],
+      status: r['status'],
+      notes: o(r['notes']),
+      createdAt: r['created_at'],
+    })
+  );
+
+  const supplierPrices = (
+    db.prepare('SELECT * FROM supplier_prices ORDER BY rowid').all() as Row[]
+  ).map(
+    (r): SupplierPrice => ({
+      id: r['id'],
+      supplierId: r['supplier_id'],
+      supplierName: r['supplier_name'],
+      materialId: o(r['material_id']),
+      productName: r['product_name'],
+      unit: r['unit'],
+      priceUsd: r['price_usd'],
+      validFrom: r['valid_from'],
+      validTo: o(r['valid_to']),
+      isCurrent: r['is_current'] === 1,
+      notes: o(r['notes']),
+      createdAt: r['created_at'],
+      createdBy: o(r['created_by']),
     })
   );
 
@@ -339,6 +393,7 @@ export function loadRelationalState(): DatabaseState | null {
         })),
       totalPayrollPaid: r['total_payroll_paid'],
       fixedAbsorptionCost: r['fixed_absorption_cost'],
+      bonusByRole: r['bonus_by_role_json'] ? JSON.parse(r['bonus_by_role_json']) : undefined,
       notes: o(r['notes']),
     })
   );
@@ -362,6 +417,8 @@ export function loadRelationalState(): DatabaseState | null {
       documentNumber: o(r['document_number']),
       paymentMethod: r['payment_method'],
       paymentReference: o(r['payment_reference']),
+      issuingBankCode: o(r['issuing_bank_code']),
+      issuingBankName: o(r['issuing_bank_name']),
       notes: o(r['notes']),
       registeredBy: r['registered_by'],
       taxCategory: r['tax_category'],
@@ -463,6 +520,8 @@ export function loadRelationalState(): DatabaseState | null {
     productionOrders,
     customers,
     salesOrders,
+    suppliers,
+    supplierPrices,
     deliveryNotes,
     employees,
     payrollWeeks,
@@ -497,6 +556,8 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM delivery_notes;
       DELETE FROM sales_orders;
       DELETE FROM customers;
+      DELETE FROM supplier_prices;
+      DELETE FROM suppliers;
       DELETE FROM production_orders;
       DELETE FROM recipes;
       DELETE FROM finished_goods;
@@ -620,8 +681,10 @@ export function saveRelationalState(state: DatabaseState): void {
         customer_name, start_date, completion_date, created_at,
         exchange_rate_used, direct_material_cost, direct_labor_cost,
         indirect_cost, total_production_cost, total_cost, unit_cost,
-        total_production_cost_bs, unit_cost_bs, operator_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_production_cost_bs, unit_cost_bs, operator_notes,
+        mode, formulas_json, commitment_reference, created_by, updated_by,
+        processed_by, processed_at, annulled_by, annulled_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertProductionMaterial = db.prepare(`
       INSERT INTO production_order_materials (
@@ -655,7 +718,16 @@ export function saveRelationalState(state: DatabaseState): void {
         order.unitCost,
         v(order.totalProductionCostBs),
         v(order.unitCostBs),
-        v(order.operatorNotes)
+        v(order.operatorNotes),
+        order.mode || 'automatico',
+        v(order.formulas ? JSON.stringify(order.formulas) : undefined),
+        v(order.commitmentReference),
+        v(order.createdBy),
+        v(order.updatedBy),
+        v(order.processedBy),
+        v(order.processedAt),
+        v(order.annulledBy),
+        v(order.annulledAt)
       );
       for (const item of order.consumedMaterials) {
         insertProductionMaterial.run(
@@ -696,8 +768,9 @@ export function saveRelationalState(state: DatabaseState): void {
         id, order_number, customer_id, customer_name, customer_tax_id,
         order_date, delivery_date, status, exchange_rate_used, subtotal,
         tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
-        has_delivery_note, delivery_note_number, production_order_id, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        has_delivery_note, delivery_note_number, production_order_id, notes,
+        collection_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertSalesItem = db.prepare(`
       INSERT INTO sales_order_items (
@@ -726,7 +799,8 @@ export function saveRelationalState(state: DatabaseState): void {
         b(order.hasDeliveryNote),
         v(order.deliveryNoteNumber),
         v(order.productionOrderId),
-        v(order.notes)
+        v(order.notes),
+        v(order.collection ? JSON.stringify(order.collection) : undefined)
       );
       for (const item of order.items) {
         insertSalesItem.run(
@@ -824,8 +898,9 @@ export function saveRelationalState(state: DatabaseState): void {
     const insertPayrollWeek = db.prepare(`
       INSERT INTO payroll_weeks (
         id, week_number, year, start_date, end_date, is_active_production,
-        inactivity_reason, total_payroll_paid, fixed_absorption_cost, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        inactivity_reason, total_payroll_paid, fixed_absorption_cost, notes,
+        bonus_by_role_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertPayrollPayment = db.prepare(`
       INSERT INTO payroll_payments (
@@ -844,7 +919,8 @@ export function saveRelationalState(state: DatabaseState): void {
         v(week.inactivityReason),
         week.totalPayrollPaid,
         week.fixedAbsorptionCost,
-        v(week.notes)
+        v(week.notes),
+        v(week.bonusByRole ? JSON.stringify(week.bonusByRole) : undefined)
       );
       for (const payment of week.payments) {
         insertPayrollPayment.run(
@@ -865,10 +941,11 @@ export function saveRelationalState(state: DatabaseState): void {
         id, expense_number, expense_date, concept, category, category_label,
         amount_usd, exchange_rate_used, amount_bs, supplier_or_beneficiary,
         tax_id, document_type, document_number, payment_method,
-        payment_reference, notes, registered_by, tax_category,
+        payment_reference, issuing_bank_code, issuing_bank_name,
+        notes, registered_by, tax_category,
         tax_rate_percent, tax_amount_usd, tax_amount_bs,
         accounting_account_code, accounting_account_name, fiscal_book_eligible
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const e of snapshot.expenses) {
       insertExpense.run(
@@ -887,6 +964,8 @@ export function saveRelationalState(state: DatabaseState): void {
         v(e.documentNumber),
         e.paymentMethod,
         v(e.paymentReference),
+        v(e.issuingBankCode),
+        v(e.issuingBankName),
         v(e.notes),
         e.registeredBy,
         e.taxCategory,
@@ -992,6 +1071,58 @@ export function saveRelationalState(state: DatabaseState): void {
         log.userRole,
         log.severity,
         log.details ? JSON.stringify(log.details) : null
+      );
+    }
+
+    const insertSupplier = db.prepare(`
+      INSERT INTO suppliers (
+        id, code, business_name, tax_id, primary_contact, primary_phone,
+        secondary_phone, email, fiscal_address, physical_address,
+        supplier_type, payment_terms, status, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const supplier of snapshot.suppliers || []) {
+      insertSupplier.run(
+        supplier.id,
+        supplier.code,
+        supplier.businessName,
+        supplier.taxId,
+        supplier.primaryContact,
+        supplier.primaryPhone,
+        v(supplier.secondaryPhone),
+        v(supplier.email),
+        supplier.fiscalAddress,
+        v(supplier.physicalAddress),
+        supplier.supplierType,
+        supplier.paymentTerms,
+        supplier.status,
+        v(supplier.notes),
+        supplier.createdAt
+      );
+    }
+
+    const insertSupplierPrice = db.prepare(`
+      INSERT INTO supplier_prices (
+        id, supplier_id, supplier_name, material_id, product_name, unit,
+        price_usd, valid_from, valid_to, is_current, notes, created_at,
+        created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const price of snapshot.supplierPrices || []) {
+      insertSupplierPrice.run(
+        price.id,
+        price.supplierId,
+        price.supplierName,
+        v(price.materialId),
+        price.productName,
+        price.unit,
+        price.priceUsd,
+        price.validFrom,
+        v(price.validTo),
+        b(price.isCurrent),
+        v(price.notes),
+        price.createdAt,
+        v(price.createdBy)
       );
     }
   });

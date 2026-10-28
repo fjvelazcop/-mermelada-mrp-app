@@ -5,6 +5,11 @@ import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {Expense, ExpenseCategoryConfig, ExpenseTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe} from '../../core/pipes/ve-currency.pipe';
+import {
+  VENEZUELAN_BANKS,
+  bankLabel,
+  findBank,
+} from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel} from '../../core/utils/export.utils';
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
 
@@ -36,6 +41,17 @@ export class ExpensesComponent {
 
   // Monthly Filter: e.g. '2026-10' or 'all'
   public selectedMonthFilter = signal<string>('2026-10');
+
+  /** Catálogo oficial SUDEBAN para autocompletar el banco emisor. */
+  public banks = VENEZUELAN_BANKS;
+  public bankQuery = signal<string>('');
+  public bankLabel = bankLabel;
+  public bankPaymentMethods: Expense['paymentMethod'][] = [
+    'transferencia_bancaria',
+    'pago_movil',
+    'tarjeta',
+    'zelle',
+  ];
 
   // Modals state
   public isCreateModalOpen = signal<boolean>(false);
@@ -91,6 +107,7 @@ export class ExpensesComponent {
     documentType: new FormControl<'factura_fiscal' | 'recibo_pago' | 'nota_debito' | 'vale_caja' | 'otro'>('factura_fiscal', {nonNullable: true}),
     documentNumber: new FormControl<string>('', {nonNullable: true}),
     paymentMethod: new FormControl<'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta'>('transferencia_bancaria', {nonNullable: true}),
+    issuingBankCode: new FormControl<string>('', {nonNullable: true}),
     paymentReference: new FormControl<string>('', {nonNullable: true}),
     taxCategory: new FormControl<ExpenseTaxCategory>('con_factura_iva', {nonNullable: true}),
     taxRatePercent: new FormControl<number>(16.0, {nonNullable: true}),
@@ -385,6 +402,7 @@ export class ExpensesComponent {
       documentType: 'factura_fiscal',
       documentNumber: '',
       paymentMethod: 'transferencia_bancaria',
+      issuingBankCode: '',
       paymentReference: '',
       taxCategory: 'con_factura_iva',
       taxRatePercent: 16.0,
@@ -394,12 +412,30 @@ export class ExpensesComponent {
       date: new Date().toISOString().slice(0, 10),
       notes: '',
     });
+    this.bankQuery.set('');
     this.onCategoryChange(defaultCat);
     this.isCreateModalOpen.set(true);
   }
 
   public closeCreateModal() {
     this.isCreateModalOpen.set(false);
+  }
+
+  public requiresIssuingBank(): boolean {
+    return this.bankPaymentMethods.includes(
+      this.expenseForm.controls.paymentMethod.value
+    );
+  }
+
+  public onBankQueryChange(value: string) {
+    this.bankQuery.set(value);
+    const bank = findBank(value);
+    this.expenseForm.controls.issuingBankCode.setValue(bank?.code || '');
+  }
+
+  public selectedBankName(): string {
+    const code = this.expenseForm.controls.issuingBankCode.value;
+    return findBank(code)?.name || '';
   }
 
   public openDetailModal(exp: Expense) {
@@ -488,6 +524,14 @@ export class ExpensesComponent {
   public async submitExpense() {
     if (this.expenseForm.invalid) return;
     const v = this.expenseForm.getRawValue();
+    if (this.requiresIssuingBank() && !v.issuingBankCode) {
+      this.api.showToast(
+        'Selecciona el banco emisor del pago desde el catálogo oficial SUDEBAN.',
+        'error'
+      );
+      return;
+    }
+    const bank = v.issuingBankCode ? findBank(v.issuingBankCode) : undefined;
     const rate = Number(v.exchangeRateUsed) || 48.35;
     const amountUsd = Number(v.amountUsd) || 0;
     const amountBs = Number((amountUsd * rate).toFixed(2));
@@ -517,6 +561,8 @@ export class ExpensesComponent {
       documentType: v.documentType,
       documentNumber: v.documentNumber || undefined,
       paymentMethod: v.paymentMethod,
+      issuingBankCode: bank?.code,
+      issuingBankName: bank?.name,
       paymentReference: v.paymentReference || undefined,
       notes: v.notes || undefined,
       registeredBy: `${this.api.currentUser().fullName} (${this.api.currentUser().roleName})`,
