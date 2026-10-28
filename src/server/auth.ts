@@ -1192,6 +1192,8 @@ function resolveModule(path: string): ModuleId | null {
   if (path.startsWith('/api/expenses')) return 'expenses';
   if (path.startsWith('/api/fiscal-settings')) return 'settings';
   if (path.startsWith('/api/exchange-rates')) return 'settings';
+  if (path.startsWith('/api/notifications')) return 'settings';
+  if (path.startsWith('/api/system/tunnel')) return 'settings';
   if (path.startsWith('/api/reports')) return 'dashboard';
   if (path.startsWith('/api/audit-logs')) return 'dashboard';
   return null;

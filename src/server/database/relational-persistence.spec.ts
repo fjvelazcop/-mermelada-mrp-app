@@ -74,6 +74,9 @@ describe('normalized SQLite schema', () => {
         'auth_users',
         'auth_roles',
         'auth_role_permissions',
+        'tunnel_sessions',
+        'notification_recipients',
+        'notification_log',
       ])
     );
 
@@ -83,7 +86,7 @@ describe('normalized SQLite schema', () => {
         .all() as { version: number }[]
     ).map((row) => row.version);
 
-    expect(versions).toEqual([1, 2, 3, 4]);
+    expect(versions).toEqual([1, 2, 3, 4, 5]);
   });
 
   it('writes the seed data into the relational tables', () => {

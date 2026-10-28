@@ -59,6 +59,7 @@ The server persists the full ERP state in a real SQLite database using `better-s
   | Expenses | `expenses`, `expense_categories` |
   | Configuration | `fiscal_settings`, `exchange_rates`, `exchange_rate_history`, `audit_logs` |
   | Security | `auth_users` (scrypt password hashes + role), `auth_roles`, `auth_role_permissions`, `password_reset_tokens` |
+  | Infrastructure | `tunnel_sessions` (public URL history), `notification_recipients`, `notification_log` |
 
 - **Auto‑save:** every mutating operation on `dbInstance` writes the new snapshot to the relational tables in a single transaction (via a Proxy that wraps `ErpDatabase`). See `src/server/database/relational-persistence.ts`.
 - **Legacy migration:** databases created before the relational schema are imported once from the old `app_state` JSON table.
@@ -126,12 +127,72 @@ clears the local session and asks the user to sign in again.
 | `PUT /api/auth/users/:id` | admin | Update a user (a new password rotates the hash). |
 | `DELETE /api/auth/users/:id` | admin | Delete a user (the last active admin is protected). |
 
+### Cloudflare tunnel, UI protection and email notifications
+
+The tunnel supervisor (`scripts/tunnel.mjs`) is an independent PM2 app. It waits
+for `/api/health`, starts `cloudflared`, extracts the public URL and reports it
+to the loopback-only callback `POST /api/internal/tunnel`. The server stores
+each session in `tunnel_sessions` and sends the notification email.
+
+- **Quick tunnel (free):** no Cloudflare account is required. The URL looks like
+  `https://<random>.trycloudflare.com` and changes on every restart; the history
+  is kept in SQLite.
+- **Named tunnel:** set `TUNNEL_MODE=token`, `TUNNEL_TOKEN` and
+  `TUNNEL_PUBLIC_URL` for a stable hostname from a domain managed in Cloudflare.
+- **UI protection:** `UI_AUTH_ENABLED=true` adds HTTP Basic Auth in front of the
+  Angular shell and static assets. The API keeps its bearer-token + RBAC flow.
+  Cloudflare Access (Zero Trust free tier) can be added on top for per-email
+  identity and OTP/SSO.
+- **Email:** SMTP credentials and `SMTP_BCC` come from the environment. Destinations
+  live in `notification_recipients`; `SMTP_TO` only seeds that table on the first
+  startup, so later changes from the API survive restarts. Every attempt is
+  recorded in `notification_log` with retries (3 attempts).
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `UI_AUTH_ENABLED` | `false` | Enables Basic Auth for the UI (fails closed if credentials are missing). |
+| `UI_AUTH_USER` / `UI_AUTH_PASSWORD` | — | Shared UI credentials. |
+| `TUNNEL_ENABLED` | `false` | Adds `mermelada-tunnel` to the PM2 ecosystem. |
+| `TUNNEL_MODE` | `quick` | `quick` (`*.trycloudflare.com`) or `token` (named tunnel). |
+| `TUNNEL_TOKEN` | — | Cloudflare tunnel token for `token` mode. |
+| `TUNNEL_PUBLIC_URL` | — | Stable public URL for `token` mode. |
+| `TUNNEL_INTERNAL_TOKEN` | `AUTH_SECRET` | Shared secret for the loopback callback. |
+| `TUNNEL_CLOUDFLARED` | `cloudflared` | Path to the cloudflared binary. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | — / `587` / auto | SMTP server. |
+| `SMTP_USER` / `SMTP_PASSWORD` | — | SMTP credentials (`SMTP_PASS` is also accepted). |
+| `SMTP_FROM` / `SMTP_FROM_NAME` | — | Verified sender. |
+| `SMTP_BCC` | — | Hidden copy added to every notification. |
+| `SMTP_TO` | — | Comma-separated seed recipients for the first start. |
+| `SMTP_RETRY_DELAY_MS` | `1000` | Base delay between the three attempts. |
+
+| Endpoint | Access | Purpose |
+|----------|--------|---------|
+| `POST /api/internal/tunnel` | loopback + internal token | Register/close a tunnel session and trigger the email. |
+| `GET /api/system/tunnel` | admin | Latest public URL, history and whether SMTP is configured. |
+| `GET /api/notifications/recipients` | admin | List email recipients. |
+| `POST /api/notifications/recipients` | admin | Add a recipient (`email`, optional `name`, `active`). |
+| `PUT/DELETE /api/notifications/recipients/:id` | admin | Update or remove a recipient. |
+| `GET /api/notifications/log` | admin | Recent email attempts and their status. |
+| `POST /api/notifications/tunnel/resend` | admin | Re-send the email for the latest stored URL. |
+
+```bash
+# Latest public URL (admin token required when AUTH_ENABLED=true)
+curl http://localhost:4000/api/system/tunnel \
+  -H "Authorization: Bearer <token>"
+
+# Add a recipient
+curl -X POST http://localhost:4000/api/notifications/recipients \
+  -H "Authorization: Bearer <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ops@example.com","name":"Operaciones"}'
+```
+
 ### Server tests
 
 ```bash
 npm run test:server            # backend integration tests
 npm run test:server:watch      # watch mode
-npm run test:server:coverage   # coverage report (threshold: 80% lines/functions/statements)
+npm run test:server:coverage   # coverage report (threshold: 80% lines/functions/statements, 70% branches)
 ```
 
 The backend suite (`src/server/**/*.spec.ts`, Vitest) uses a real temporary SQLite file and covers:
@@ -231,7 +292,8 @@ The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `
 | **Fiscal Settings** | `GET /api/fiscal-settings`, `PUT /api/fiscal-settings` |
 | **Exchange Rates** | `GET /api/exchange-rates`, `POST /api/exchange-rates/update`, `POST /api/exchange-rates/refresh` |
 | **Audit Logs** | `GET /api/audit-logs`, `POST /api/audit-logs` |
-| **System** | `POST /api/system/reset` (reset demo data, admin only when auth is enabled) |
+| **System** | `POST /api/system/reset` (reset demo data, admin only when auth is enabled), `GET /api/system/tunnel` (latest public URL + history, admin) |
+| **Notifications** | `GET/POST /api/notifications/recipients`, `PUT/DELETE /api/notifications/recipients/:id`, `GET /api/notifications/log`, `POST /api/notifications/tunnel/resend` (admin) |
 | **Dashboard Report** | `GET /api/reports/dashboard` |
 
 All endpoints return JSON. Payloads are validated with **zod**; invalid input returns **422** with `{ error, code: "VALIDATION_ERROR", details: { issues: [{ path, message }] } }`. Unknown API routes return a JSON **404**, and every other error uses `{ error, code, details? }` with status 400/401/403/404/500. OpenAPI documentation is generated from `src/server/openapi.ts`.

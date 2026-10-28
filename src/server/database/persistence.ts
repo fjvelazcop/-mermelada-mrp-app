@@ -495,6 +495,49 @@ function migrate(db: Database.Database): void {
       created_by TEXT
     );
 
+    -- ==========================================================
+    -- Tunnel sessions and email notifications (migration v5)
+    -- ==========================================================
+
+    CREATE TABLE IF NOT EXISTS tunnel_sessions (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      public_url TEXT NOT NULL,
+      api_url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'activo',
+      pid INTEGER,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      metadata_json TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_recipients (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      name TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_log (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      recipients TEXT NOT NULL,
+      bcc TEXT,
+      subject TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      sent_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tunnel_sessions_started ON tunnel_sessions(started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notification_recipients_active ON notification_recipients(active);
+    CREATE INDEX IF NOT EXISTS idx_notification_log_created ON notification_log(created_at DESC);
+
     CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_production_materials_order ON production_order_materials(order_id);
     CREATE INDEX IF NOT EXISTS idx_sales_items_order ON sales_order_items(order_id);
@@ -543,6 +586,9 @@ function migrate(db: Database.Database): void {
   }
   if (currentVersion < 4) {
     insert.run(4, new Date().toISOString());
+  }
+  if (currentVersion < 5) {
+    insert.run(5, new Date().toISOString());
   }
 }
 

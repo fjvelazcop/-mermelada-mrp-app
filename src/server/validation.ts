@@ -555,6 +555,15 @@ export const userCreateSchema = z.object({
 
 export const userUpdateSchema = userCreateSchema.partial();
 
+export const notificationRecipientCreateSchema = z.object({
+  email: z.string().trim().email().max(200),
+  name: z.string().trim().max(200).optional(),
+  active: z.boolean().optional(),
+});
+
+export const notificationRecipientUpdateSchema =
+  notificationRecipientCreateSchema.partial();
+
 export const idParamsSchema = z.object({
   id: z.string().trim().min(1).max(200),
 });

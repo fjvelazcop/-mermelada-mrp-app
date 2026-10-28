@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { createApiApp } from './server/api.js';
 import { closeDb } from './server/database/persistence.js';
 import { installGracefulShutdown } from './server/lifecycle.js';
+import { uiAuthMiddleware } from './server/ui-auth.js';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
@@ -20,27 +21,51 @@ const browserDistFolder = join(import.meta.dirname, '../browser');
  * Never default to "*": configure the real domain in production.
  */
 function resolveAllowedHosts(): string[] {
+  const hosts = new Set<string>();
   const configured = process.env['NG_ALLOWED_HOSTS']
     ?.split(',')
     .map((host) => host.trim())
     .filter(Boolean);
 
-  if (configured?.length) return configured;
-
-  try {
-    const host = new URL(process.env['APP_URL'] || '').hostname;
-    if (host) return [host];
-  } catch {
-    // APP_URL is optional or not a valid absolute URL.
+  if (configured?.length) {
+    for (const host of configured) hosts.add(host);
+  } else {
+    try {
+      const host = new URL(process.env['APP_URL'] || '').hostname;
+      if (host) hosts.add(host);
+    } catch {
+      // APP_URL is optional or not a valid absolute URL.
+    }
+    hosts.add('localhost');
+    hosts.add('127.0.0.1');
   }
 
-  return ['localhost', '127.0.0.1'];
+  // Cloudflare Quick Tunnels get a random *.trycloudflare.com hostname on
+  // every restart. Named tunnels use TUNNEL_PUBLIC_URL instead.
+  if (process.env['TUNNEL_ENABLED'] === 'true') {
+    if ((process.env['TUNNEL_MODE'] || 'quick') === 'quick') {
+      hosts.add('*.trycloudflare.com');
+    }
+    try {
+      const tunnelHost = new URL(process.env['TUNNEL_PUBLIC_URL'] || '')
+        .hostname;
+      if (tunnelHost) hosts.add(tunnelHost);
+    } catch {
+      // TUNNEL_PUBLIC_URL is only required in token mode.
+    }
+  }
+
+  return [...hosts];
 }
 
 const app = createApiApp();
 const angularApp = new AngularNodeAppEngine({
   allowedHosts: resolveAllowedHosts(),
 });
+
+// Optional HTTP Basic Auth for the UI/SSR shell. API routes were registered
+// above and keep using bearer tokens + RBAC.
+app.use(uiAuthMiddleware());
 
 app.use(
   express.static(browserDistFolder, {

@@ -36,5 +36,34 @@ module.exports = {
         DB_PATH: './data/mermelada.db',
       },
     },
+    ...(process.env.TUNNEL_ENABLED === 'true'
+      ? [
+          {
+            name: 'mermelada-tunnel',
+            script: 'scripts/tunnel.mjs',
+            interpreter: 'node',
+            cwd: __dirname,
+            instances: 1,
+            exec_mode: 'fork',
+            autorestart: true,
+            watch: false,
+            max_restarts: 20,
+            min_uptime: '15s',
+            restart_delay: 5000,
+            exp_backoff_restart_delay: 500,
+            kill_timeout: 12000,
+            time: true,
+            merge_logs: true,
+            out_file: './logs/tunnel-out.log',
+            error_file: './logs/tunnel-error.log',
+            env: {
+              NODE_ENV: 'production',
+              PORT: '4000',
+              TUNNEL_ENABLED: 'true',
+              TUNNEL_MODE: process.env.TUNNEL_MODE || 'quick',
+            },
+          },
+        ]
+      : []),
   ],
 };

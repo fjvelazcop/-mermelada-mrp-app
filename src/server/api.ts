@@ -31,6 +31,19 @@ import {
 } from './auth.js';
 import { ApiError, apiNotFoundHandler, errorHandler } from './errors.js';
 import {
+  createNotificationRecipientHandler,
+  deleteNotificationRecipientHandler,
+  ensureSeedNotificationRecipients,
+  listNotificationLogHandler,
+  listNotificationRecipientsHandler,
+  resendTunnelNotificationHandler,
+  updateNotificationRecipientHandler,
+} from './notifications.js';
+import {
+  getTunnelSessionsHandler,
+  internalTunnelHandler,
+} from './tunnel.js';
+import {
   auditLogSchema,
   changePasswordSchema,
   costingSimulationSchema,
@@ -48,6 +61,8 @@ import {
   loginSchema,
   manualProductionOrderSchema,
   manualProductionOrderUpdateSchema,
+  notificationRecipientCreateSchema,
+  notificationRecipientUpdateSchema,
   passwordResetConfirmSchema,
   passwordResetRequestSchema,
   payrollWeekSchema,
@@ -147,11 +162,17 @@ export function createApiApp(): express.Express {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
 
+  // Loopback-only callback used by scripts/tunnel.mjs (PM2). It must be
+  // registered before the bearer-token middleware because cloudflared has no
+  // user session; it authenticates with a shared internal token instead.
+  app.post('/api/internal/tunnel', internalTunnelHandler);
+
   // Authentication / RBAC middleware. Both are no-ops unless AUTH_ENABLED=true.
   app.use(authenticate);
   app.use(authorizeRequest);
 
   ensureSeedUsers();
+  ensureSeedNotificationRecipients();
 
   // --- HEALTH CHECK ---
   app.get(
@@ -262,6 +283,48 @@ export function createApiApp(): express.Express {
     requireAdmin,
     validateParams(idParamsSchema),
     mutation(deleteUserHandler)
+  );
+
+  // --- TUNNEL URL REGISTRY AND EMAIL NOTIFICATIONS ---
+  app.get(
+    '/api/system/tunnel',
+    requireAdmin,
+    query(getTunnelSessionsHandler)
+  );
+
+  app.get(
+    '/api/notifications/recipients',
+    requireAdmin,
+    query(listNotificationRecipientsHandler)
+  );
+  app.post(
+    '/api/notifications/recipients',
+    requireAdmin,
+    validateBody(notificationRecipientCreateSchema),
+    mutation(createNotificationRecipientHandler)
+  );
+  app.put(
+    '/api/notifications/recipients/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    validateBody(notificationRecipientUpdateSchema),
+    mutation(updateNotificationRecipientHandler)
+  );
+  app.delete(
+    '/api/notifications/recipients/:id',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    mutation(deleteNotificationRecipientHandler)
+  );
+  app.get(
+    '/api/notifications/log',
+    requireAdmin,
+    query(listNotificationLogHandler)
+  );
+  app.post(
+    '/api/notifications/tunnel/resend',
+    requireAdmin,
+    mutation(resendTunnelNotificationHandler)
   );
 
   // --- VENEZUELAN BANK CATALOG (SUDEBAN) ---

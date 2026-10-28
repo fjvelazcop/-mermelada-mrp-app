@@ -73,9 +73,28 @@ chmod 600 .env.production
 | `AUTH_SECRET` | `openssl rand -hex 32` | Sí con auth | Firma HMAC de los tokens. |
 | `AUTH_SEED_PASSWORD` | contraseña fuerte | Sí con auth | Password inicial de los 5 usuarios demo. |
 | `AUTH_TOKEN_TTL_SECONDS` | `28800` | No | Vida del token (8 h por defecto). |
+| `UI_AUTH_ENABLED` | `true` | No | Basic Auth delante de la UI/SSR (la API conserva Bearer + RBAC). |
+| `UI_AUTH_USER` | `erp-ui` | Si UI auth | Usuario compartido de la UI. |
+| `UI_AUTH_PASSWORD` | `openssl rand -base64 24` | Si UI auth | Clave compartida de la UI. |
 | `GEMINI_API_KEY` | `...` | No | Funciones de IA; vacío las desactiva. |
-| `SMTP_*` | — | No | Reservadas para notificaciones por correo (aún no implementadas). |
-| `TUNNEL_*` | — | No | Reservadas para el túnel/Issue #3; el watchdog las usará. |
+| `SMTP_HOST` | `smtp.example.com` | No | Servidor SMTP para el correo del túnel. |
+| `SMTP_PORT` | `587` | No | Puerto SMTP. |
+| `SMTP_SECURE` | `false` | No | `true` para TLS implícito (normalmente 465). |
+| `SMTP_USER` | `erp@example.com` | No | Usuario SMTP. |
+| `SMTP_PASSWORD` | `...` | No | Clave SMTP (`SMTP_PASS` también se acepta). |
+| `SMTP_FROM` | `erp@example.com` | No | Remitente verificado. |
+| `SMTP_FROM_NAME` | `Mermelada ERP` | No | Nombre visible del remitente. |
+| `SMTP_BCC` | `auditoria@example.com` | No | Copia oculta fija en todos los avisos. |
+| `SMTP_TO` | `admin@example.com,...` | No | Semilla de destinatarios; solo se usa si la tabla está vacía. |
+| `SMTP_RETRY_DELAY_MS` | `1000` | No | Espera base entre los 3 intentos. |
+| `TUNNEL_ENABLED` | `false`/`true` | No | Añade `mermelada-tunnel` al ecosistema PM2. |
+| `TUNNEL_MODE` | `quick` | No | `quick` (gratis, URL aleatoria) o `token` (hostname estable). |
+| `TUNNEL_TOKEN` | `...` | Si `token` | Token del túnel nombrado de Cloudflare. |
+| `TUNNEL_PUBLIC_URL` | `https://erp.example.com` | Si `token` | URL pública estable del túnel nombrado. |
+| `TUNNEL_INTERNAL_TOKEN` | `AUTH_SECRET` | No | Secreto del callback loopback del túnel. |
+| `TUNNEL_HEALTHCHECK_INTERVAL_MS` | `60000` | No | Frecuencia del health check público; `0` lo desactiva. |
+| `TUNNEL_HEALTHCHECK_FAILURES` | `3` | No | Fallos consecutivos antes de reiniciar cloudflared. |
+| `TUNNEL_CLOUDFLARED` | `cloudflared` | No | Ruta absoluta del binario si no está en `PATH`. |
 | `BACKUP_DIR` | `/app/backups` | No | Destino de los backups. |
 | `BACKUP_RETENTION_DAYS` | `14` | No | Retención; `0` desactiva la purga. |
 | `TZ` | `America/Bogota` | No | Zona horaria del contenedor. |
@@ -180,12 +199,70 @@ Operación:
 ```bash
 pm2 status
 pm2 logs mermelada-erp --lines 200
+pm2 logs mermelada-tunnel --lines 200
 pm2 restart mermelada-erp --update-env
+pm2 restart mermelada-tunnel --update-env
 pm2 monit
 ```
 
 `ecosystem.config.cjs` define `cwd`, logs en `logs/`, `kill_timeout: 15000` y
-`max_memory_restart: 512M`.
+`max_memory_restart: 512M`. Si `TUNNEL_ENABLED=true` al cargar el entorno,
+también arranca `mermelada-tunnel`; con `false` solo se inicia la app.
+
+### 5.1 Cloudflare Tunnel (gratis)
+
+Instala `cloudflared` en el host y verifica que esté en `PATH`:
+
+```bash
+cloudflared version
+# Si no está en PATH: TUNNEL_CLOUDFLARED=/usr/local/bin/cloudflared
+```
+
+Modo rápido (sin cuenta ni dominio, URL aleatoria que cambia en cada reinicio):
+
+```dotenv
+TUNNEL_ENABLED=true
+TUNNEL_MODE=quick
+# TUNNEL_INTERNAL_TOKEN se deriva de AUTH_SECRET si se deja vacío
+```
+
+Modo nombrado (hostname estable; requiere dominio en Cloudflare y túnel creado
+en el dashboard de Zero Trust):
+
+```dotenv
+TUNNEL_ENABLED=true
+TUNNEL_MODE=token
+TUNNEL_TOKEN=token-del-tunel
+TUNNEL_PUBLIC_URL=https://erp.example.com
+```
+
+Con el entorno cargado, `pm2 start ecosystem.config.cjs --update-env` levanta
+ambos procesos. El supervisor espera a `/api/health`, arranca `cloudflared`,
+extrae la URL pública, la registra en `tunnel_sessions` y dispara el correo.
+Si cloudflared cae o el health check público falla 3 veces, PM2 lo reinicia.
+
+La URL vigente se consulta (admin) en `GET /api/system/tunnel` y en
+`logs/tunnel-out.log`; el histórico queda en la base de datos.
+
+### 5.2 Protección de la UI y correo
+
+- `UI_AUTH_ENABLED=true` exige Basic Auth para el shell Angular y los assets.
+  La API sigue usando Bearer + RBAC. Para identidad por usuario se puede añadir
+  **Cloudflare Access** (Zero Trust gratuito hasta 50 usuarios) delante del
+  hostname; en ese caso el Basic Auth actúa como segunda barrera.
+- Configura `SMTP_*`, `SMTP_FROM`, `SMTP_BCC` y `SMTP_TO` en `.env.production`.
+  `SMTP_TO` solo siembra `notification_recipients` la primera vez; después los
+  destinatarios se gestionan por API (`/api/notifications/recipients`) y
+  sobreviven a los reinicios.
+- Cada envío se registra en `notification_log` con hasta 3 intentos. Si SMTP
+  aún no está configurado, el túnel se registra igualmente y el aviso queda
+  como `omitido`; se puede reenviar con `POST /api/notifications/tunnel/resend`.
+- Los túneles rápidos añaden automáticamente `*.trycloudflare.com` a los hosts
+  permitidos de Angular SSR. En modo `token` se añade el host de
+  `TUNNEL_PUBLIC_URL`.
+
+> El túnel solo se integra con PM2 (Opción B). Docker Compose expone la app a
+> través del proxy inverso y no arranca `scripts/tunnel.mjs`.
 
 Rotación de logs de PM2:
 
