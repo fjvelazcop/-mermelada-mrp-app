@@ -61,6 +61,14 @@ function resolveAllowedHosts(): string[] {
 const app = createApiApp();
 const angularApp = new AngularNodeAppEngine({
   allowedHosts: resolveAllowedHosts(),
+  // cloudflared (and Nginx/Caddy in Docker) forward the client data through
+  // X-Forwarded-* headers. The server only listens on loopback, so trusting
+  // them is safe and keeps SSR enabled instead of falling back to CSR.
+  trustProxyHeaders: [
+    'x-forwarded-for',
+    'x-forwarded-host',
+    'x-forwarded-proto',
+  ],
 });
 
 // Optional HTTP Basic Auth for the UI/SSR shell. API routes were registered
