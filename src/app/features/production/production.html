@@ -65,11 +65,25 @@
       }
 
       <button
+        (click)="openCreateManualOrderModal()"
+        class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-amber-800 text-white rounded-lg shadow-xs hover:bg-amber-900 transition-colors"
+        title="Crear orden de producción manual con múltiples fórmulas para stock libre"
+      >
+        <mat-icon class="text-amber-200 text-sm">tune</mat-icon>
+        <span>Orden Manual Multi-Fórmula</span>
+        @if (api.isAdmin()) {
+          <span class="text-[9px] px-1.5 py-0.2 bg-amber-950 text-amber-200 rounded font-mono font-bold">Admin</span>
+        } @else {
+          <mat-icon class="text-xs text-amber-300">lock</mat-icon>
+        }
+      </button>
+
+      <button
         (click)="openCreateOrderModal()"
         class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg shadow-xs hover:bg-stone-800 transition-colors"
       >
         <mat-icon class="text-stone-300 text-sm">precision_manufacturing</mat-icon>
-        Nueva Orden de Producción
+        Nueva Orden MTO
       </button>
     </div>
   </div>
@@ -198,29 +212,74 @@
   @if (activeProductionTab() === 'orders') {
   <!-- SECCIÓN 2: ÓRDENES DE PRODUCCIÓN (MTO & LOTES) -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
       <div>
         <h2 class="text-lg font-bold text-stone-900">Órdenes de Producción & Ejecución en Planta</h2>
         <p class="text-xs text-stone-500">
-          Procesamiento de marmitas con descuento automático atómico de insumos al inventario físico
+          Programación automática Make-to-Order y Modelo Manual Multi-Fórmula con ingreso a stock libre
         </p>
       </div>
-      <div class="text-xs text-stone-500 flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-        <span>Descuento de inventario automático activado</span>
+
+      <!-- Filter between MTO and Manual Orders -->
+      <div class="flex items-center gap-1 bg-stone-100 p-1 rounded-xl text-xs font-semibold border border-stone-200">
+        <button
+          type="button"
+          (click)="orderTypeFilter.set('all')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-white]="orderTypeFilter() === 'all'"
+          [class.text-stone-900]="orderTypeFilter() === 'all'"
+          [class.shadow-xs]="orderTypeFilter() === 'all'"
+          [class.text-stone-500]="orderTypeFilter() !== 'all'"
+        >
+          Todas ({{ productionOrders().length }})
+        </button>
+        <button
+          type="button"
+          (click)="orderTypeFilter.set('mto')"
+          class="px-3 py-1.5 rounded-lg transition-colors"
+          [class.bg-white]="orderTypeFilter() === 'mto'"
+          [class.text-stone-900]="orderTypeFilter() === 'mto'"
+          [class.shadow-xs]="orderTypeFilter() === 'mto'"
+          [class.text-stone-500]="orderTypeFilter() !== 'mto'"
+        >
+          Programación MTO
+        </button>
+        <button
+          type="button"
+          (click)="orderTypeFilter.set('manual')"
+          class="px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+          [class.bg-amber-800]="orderTypeFilter() === 'manual'"
+          [class.text-white]="orderTypeFilter() === 'manual'"
+          [class.shadow-xs]="orderTypeFilter() === 'manual'"
+          [class.text-amber-950]="orderTypeFilter() !== 'manual'"
+        >
+          <mat-icon class="text-xs">tune</mat-icon>
+          <span>Manual Multi-Fórmula</span>
+        </button>
       </div>
     </div>
 
     <div class="space-y-4">
-      @for (order of productionOrders(); track order.id) {
-        <div class="border border-stone-200 rounded-xl p-5 hover:border-stone-300 transition-all bg-white">
+      @for (order of filteredProductionOrders(); track order.id) {
+        <div class="border border-stone-200 rounded-xl p-5 hover:border-stone-300 transition-all bg-white"
+          [class.border-l-4]="order.isManual"
+          [class.border-l-amber-700]="order.isManual"
+        >
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
-              <div class="flex items-center gap-3">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="text-base font-bold text-stone-900 font-mono">{{ order.orderNumber }}</span>
                 <span class="text-xs font-mono font-semibold bg-stone-100 text-stone-700 px-2.5 py-0.5 rounded">
                   Lote: {{ order.lotNumber }}
                 </span>
+
+                @if (order.isManual) {
+                  <span class="text-xs font-bold px-2.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                    <mat-icon class="text-xs">tune</mat-icon>
+                    <span>Manual Multi-Fórmula</span>
+                  </span>
+                }
+
                 <span class="text-xs font-medium px-2.5 py-0.5 rounded"
                   [class.bg-emerald-100]="order.status === 'completada'"
                   [class.text-emerald-800]="order.status === 'completada'"
@@ -234,6 +293,30 @@
                 {{ order.recipeName }} ({{ order.targetUnits }} unidades envasadas)
               </div>
 
+              <!-- Múltiples Fórmulas Desglose -->
+              @if (order.formulas && order.formulas.length > 0) {
+                <div class="mt-2 text-xs bg-amber-50/70 p-2.5 rounded-lg border border-amber-200/60 space-y-1 max-w-lg">
+                  <span class="font-bold text-[10px] uppercase tracking-wider text-amber-900 block flex items-center gap-1">
+                    <mat-icon class="text-xs">receipt_long</mat-icon>
+                    <span>Fórmulas Maestras en esta Orden ({{ order.formulas.length }}):</span>
+                  </span>
+                  @for (f of order.formulas; track f.recipeId) {
+                    <div class="flex items-center justify-between text-xs text-stone-700">
+                      <span>• {{ f.recipeName }}</span>
+                      <span class="font-mono font-semibold text-stone-900">{{ f.batchCount }} tandas ({{ f.targetUnits }} uds)</span>
+                    </div>
+                  }
+                </div>
+              }
+
+              <!-- Gestión de Stock: Destino Stock Libre sin afectar comprometido -->
+              @if (order.isManual || order.targetStockOnly) {
+                <div class="text-[11px] text-emerald-800 font-semibold mt-1.5 flex items-center gap-1 bg-emerald-50/60 px-2.5 py-1 rounded-md border border-emerald-200/50 w-fit">
+                  <mat-icon class="text-xs text-emerald-700">check_circle</mat-icon>
+                  <span>Destino: Inventario Disponible (Stock Libre) — Sin descontar ni afectar inventario comprometido</span>
+                </div>
+              }
+
               @if (order.customerName) {
                 <div class="text-xs text-amber-800 font-medium mt-1 flex items-center gap-1">
                   <mat-icon class="text-xs">assignment</mat-icon>
@@ -244,6 +327,43 @@
               @if (order.operatorNotes) {
                 <div class="text-xs text-stone-500 italic mt-1">
                   Nota operador: {{ order.operatorNotes }}
+                </div>
+              }
+
+              @if (order.lastModifiedBy) {
+                <div class="text-[10px] text-stone-400 font-mono mt-1">
+                  Auditoría: Modificado por Admin <strong>{{ order.lastModifiedBy }}</strong> el {{ order.lastModifiedAt }}
+                </div>
+              }
+
+              <!-- Controles de Edición y Eliminación Restringidos a Administrador (Requerimiento 1) -->
+              @if (order.isManual) {
+                <div class="flex items-center gap-2 mt-2 pt-2 border-t border-stone-100">
+                  @if (api.isAdmin()) {
+                    <button
+                      type="button"
+                      (click)="openEditManualOrderModal(order)"
+                      class="px-2.5 py-1 text-xs font-bold text-stone-700 bg-white border border-stone-300 rounded-lg hover:bg-stone-50 transition-colors flex items-center gap-1 shadow-2xs"
+                      title="Modificar fórmulas o tandas de la orden manual (Solo Administrador)"
+                    >
+                      <mat-icon class="text-xs text-amber-700">edit</mat-icon>
+                      <span>Modificar Fórmulas</span>
+                    </button>
+                    <button
+                      type="button"
+                      (click)="deleteManualOrder(order)"
+                      class="px-2.5 py-1 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors flex items-center gap-1 shadow-2xs"
+                      title="Eliminar orden manual (Solo Administrador)"
+                    >
+                      <mat-icon class="text-xs text-rose-600">delete</mat-icon>
+                      <span>Eliminar</span>
+                    </button>
+                  } @else {
+                    <div class="text-[11px] text-stone-400 italic flex items-center gap-1">
+                      <mat-icon class="text-xs text-stone-400">lock</mat-icon>
+                      <span>Modificaciones del modelo manual reservadas exclusivamente al Administrador</span>
+                    </div>
+                  }
                 </div>
               }
             </div>
@@ -536,4 +656,325 @@
       </div>
     </div>
   }
+
+  <!-- MODAL: NUEVA ORDEN DE PRODUCCIÓN MANUAL MULTIFÓRMULA (ADMIN) -->
+  @if (isCreateManualOrderModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
+      <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-stone-200 my-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+              <mat-icon class="text-sm">tune</mat-icon>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-stone-900 flex items-center gap-2">
+                <span>Orden Manual de Producción Multifórmula</span>
+                <span class="text-[10px] font-mono px-2 py-0.5 bg-amber-900 text-amber-200 rounded font-bold">Admin Only</span>
+              </h3>
+              <p class="text-xs text-stone-500">
+                Modelo manual con múltiples fórmulas simultáneas e ingreso directo a stock libre sin afectar comprometido
+              </p>
+            </div>
+          </div>
+          <button (click)="closeCreateManualOrderModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="manualOrderForm" (ngSubmit)="submitManualOrder()" class="space-y-4 mt-4">
+          <!-- Banner de Destino de Stock (Requerimiento 1) -->
+          <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2">
+            <mat-icon class="text-emerald-700 text-sm mt-0.5">inventory_2</mat-icon>
+            <div>
+              <strong class="block">Regla de Stock Libre (Sin Compromiso):</strong>
+              <span class="text-emerald-800 text-[11px] block mt-0.5">
+                Los productos terminados resultantes quedarán en inventario disponible general (stock físico)
+                <strong>sin descontar ni afectar el inventario comprometido</strong> de órdenes de clientes pendientes.
+              </span>
+            </div>
+          </div>
+
+          <!-- Lote y Observaciones -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Número de Lote Manual <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="lotNumber"
+                placeholder="ej: L-MANUAL-2610-88"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Observaciones del Administrador
+              </label>
+              <input
+                type="text"
+                formControlName="operatorNotes"
+                placeholder="ej: Producción especial para stock de reserva en almacén"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+          </div>
+
+          <!-- SECCIÓN: MÚLTIPLES FÓRMULAS EN UNA MISMA ORDEN (Requerimiento 1) -->
+          <div class="p-4 bg-stone-50 border border-stone-200 rounded-xl space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                  <mat-icon class="text-xs text-amber-800">receipt_long</mat-icon>
+                  <span>Fórmulas Maestras Incluidas ({{ manualFormulaRows().length }})</span>
+                </span>
+                <span class="text-[11px] text-stone-400">Puedes combinar 2 o más sabores o presentaciones en esta misma orden</span>
+              </div>
+
+              <button
+                type="button"
+                (click)="addManualFormulaRow()"
+                class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold bg-amber-800 text-white rounded-lg hover:bg-amber-900 transition-colors shadow-2xs"
+              >
+                <mat-icon class="text-xs">add</mat-icon>
+                <span>Incluir Otra Fórmula</span>
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              @for (row of manualFormulaRows(); track $index; let idx = $index) {
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 bg-white border border-stone-200 rounded-xl shadow-2xs">
+                  <div class="flex-1">
+                    <label class="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">
+                      Fórmula #{{ idx + 1 }}
+                    </label>
+                    <select
+                      [value]="row.recipeId"
+                      (change)="updateManualFormulaRecipe(idx, $any($event.target).value)"
+                      class="w-full bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-stone-900 focus:outline-none"
+                    >
+                      @for (rec of recipes(); track rec.id) {
+                        <option [value]="rec.id">
+                          {{ rec.name }} ({{ rec.flavor }} - {{ rec.batchSizeUnits }} uds/tanda)
+                        </option>
+                      }
+                    </select>
+                  </div>
+
+                  <div class="w-32">
+                    <label class="block text-[10px] font-semibold text-stone-400 uppercase mb-0.5">
+                      Tandas (Batches)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      [value]="row.batchCount"
+                      (input)="updateManualFormulaBatches(idx, +$any($event.target).value)"
+                      class="w-full bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-stone-900 focus:outline-none text-center"
+                    />
+                  </div>
+
+                  <div class="sm:pt-4 flex items-center justify-end">
+                    <button
+                      type="button"
+                      (click)="removeManualFormulaRow(idx)"
+                      [disabled]="manualFormulaRows().length <= 1"
+                      class="p-1.5 text-stone-400 hover:text-rose-600 disabled:opacity-30 rounded hover:bg-stone-100"
+                      title="Quitar esta fórmula"
+                    >
+                      <mat-icon class="text-sm">delete</mat-icon>
+                    </button>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- RESUMEN PREVIO COMBINADO (TOTAL UNIDADES & INSUMOS COMBINADOS) -->
+          @if (manualOrderPreview(); as prev) {
+            <div class="p-3.5 bg-stone-50 border border-stone-200 rounded-xl space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+                <span class="text-xs font-bold text-stone-900">Total Producción Combinada:</span>
+                <span class="text-sm font-mono font-bold text-amber-900">
+                  {{ prev.totalTargetUnits }} unidades en stock
+                </span>
+              </div>
+
+              <!-- Requerimiento consolidado de materia prima -->
+              <div>
+                <span class="text-[11px] font-bold text-stone-500 uppercase block mb-1.5">
+                  Insumos Totales Requeridos (Consolidado de todas las fórmulas):
+                </span>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  @for (req of prev.combinedRequirements; track req.materialId) {
+                    <div
+                      class="p-2 rounded-lg border flex items-center justify-between"
+                      [class.bg-white]="!req.isShort"
+                      [class.border-stone-200]="!req.isShort"
+                      [class.bg-rose-50]="req.isShort"
+                      [class.border-rose-200]="req.isShort"
+                    >
+                      <div>
+                        <span class="font-semibold block truncate max-w-[140px]" [title]="req.materialName">
+                          {{ req.materialName }}
+                        </span>
+                        <span class="text-[10px] text-stone-400">Stock actual: {{ req.currentStock }} {{ req.unit }}</span>
+                      </div>
+                      <div class="text-right">
+                        <span class="font-mono font-bold block" [class.text-rose-700]="req.isShort">
+                          {{ req.needed.toFixed(2) }} {{ req.unit }}
+                        </span>
+                        @if (req.isShort) {
+                          <span class="text-[9px] font-bold text-rose-600 uppercase">Insuficiente</span>
+                        } @else {
+                          <span class="text-[9px] font-bold text-emerald-600 uppercase">Disponible</span>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- Bitácora de Auditoría Nota -->
+          <div class="text-[11px] text-stone-400 flex items-center gap-1.5 pt-1">
+            <mat-icon class="text-xs text-amber-700">history_edu</mat-icon>
+            <span>
+              Esta operación registrará automáticamente una entrada en la bitácora de auditoría con el usuario administrador actual.
+            </span>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+            <button
+              type="button"
+              (click)="closeCreateManualOrderModal()"
+              class="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="manualOrderForm.invalid || !api.isAdmin()"
+              class="px-4 py-2 text-xs font-bold bg-amber-800 text-white rounded-xl hover:bg-amber-900 disabled:opacity-50 shadow-xs flex items-center gap-1.5"
+            >
+              <mat-icon class="text-sm">verified</mat-icon>
+              <span>Crear Orden Manual Multifórmula</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: MODIFICAR ORDEN DE PRODUCCIÓN MANUAL (SOLO ADMIN) -->
+  @if (isEditManualOrderModalOpen() && editingManualOrder(); as order) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
+      <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl border border-stone-200 my-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+              <mat-icon class="text-sm">edit</mat-icon>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-stone-900">Modificar Orden Manual: {{ order.orderNumber }}</h3>
+              <p class="text-xs text-stone-500 font-mono">Lote: {{ order.lotNumber }} · Solo Administrador</p>
+            </div>
+          </div>
+          <button (click)="closeEditManualOrderModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="manualOrderForm" (ngSubmit)="saveEditManualOrder()" class="space-y-4 mt-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Número de Lote</label>
+              <input
+                type="text"
+                formControlName="lotNumber"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-stone-900"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Notas de Auditoría</label>
+              <input
+                type="text"
+                formControlName="operatorNotes"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900"
+              />
+            </div>
+          </div>
+
+          <!-- Modificación de Fórmulas -->
+          <div class="p-4 bg-stone-50 border border-stone-200 rounded-xl space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-stone-900">Fórmulas en esta Orden:</span>
+              <button
+                type="button"
+                (click)="addManualFormulaRow()"
+                class="px-2.5 py-1 text-xs font-bold bg-amber-800 text-white rounded-lg hover:bg-amber-900"
+              >
+                + Añadir Fórmula
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              @for (row of manualFormulaRows(); track $index; let idx = $index) {
+                <div class="flex items-center gap-2 p-2 bg-white border border-stone-200 rounded-xl">
+                  <div class="flex-1">
+                    <select
+                      [value]="row.recipeId"
+                      (change)="updateManualFormulaRecipe(idx, $any($event.target).value)"
+                      class="w-full bg-stone-50 border border-stone-300 rounded-lg px-2 py-1 text-xs font-semibold text-stone-900"
+                    >
+                      @for (rec of recipes(); track rec.id) {
+                        <option [value]="rec.id">{{ rec.name }} ({{ rec.batchSizeUnits }} uds)</option>
+                      }
+                    </select>
+                  </div>
+                  <div class="w-24">
+                    <input
+                      type="number"
+                      min="1"
+                      [value]="row.batchCount"
+                      (input)="updateManualFormulaBatches(idx, +$any($event.target).value)"
+                      class="w-full bg-stone-50 border border-stone-300 rounded-lg px-2 py-1 text-xs font-mono text-center"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeManualFormulaRow(idx)"
+                    [disabled]="manualFormulaRows().length <= 1"
+                    class="p-1 text-stone-400 hover:text-rose-600 disabled:opacity-30"
+                  >
+                    <mat-icon class="text-xs">delete</mat-icon>
+                  </button>
+                </div>
+              }
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+            <button
+              type="button"
+              (click)="closeEditManualOrderModal()"
+              class="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="manualOrderForm.invalid || !api.isAdmin()"
+              class="px-4 py-2 text-xs font-bold bg-stone-900 text-white rounded-xl hover:bg-stone-800 shadow-xs"
+            >
+              Guardar Modificaciones (Auditado)
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
 </div>
+

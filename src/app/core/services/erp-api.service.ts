@@ -28,6 +28,8 @@ import {
   AuditLogEntry,
   Expense,
   ExpenseCategoryConfig,
+  Supplier,
+  SupplierPriceItem,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 import {computed} from '@angular/core';
@@ -362,6 +364,7 @@ export class ErpApiService {
   public recipes = signal<RecipeBOM[]>([]);
   public productionOrders = signal<ProductionOrder[]>([]);
   public customers = signal<Customer[]>([]);
+  public suppliers = signal<Supplier[]>([]);
   public salesOrders = signal<SalesOrder[]>([]);
   public deliveryNotes = signal<DeliveryNote[]>([]);
   public employees = signal<Employee[]>([]);
@@ -373,6 +376,9 @@ export class ErpApiService {
   public dashboardData = signal<any | null>(null);
   public exchangeRates = signal<DailyExchangeRates | null>(null);
   public auditLogs = signal<AuditLogEntry[]>([]);
+
+  // Role verification helper: only Administrator has full manual production rights
+  public isAdmin = computed<boolean>(() => this.currentRole() === 'admin');
 
   // Computed signals for Dashboard Analytics & Recharts visualizations
   public weeklySales = computed<WeeklySalesStat[]>(() => {
@@ -647,6 +653,7 @@ export class ErpApiService {
         recs,
         pOrders,
         custs,
+        sups,
         sOrders,
         dNotes,
         staff,
@@ -665,6 +672,7 @@ export class ErpApiService {
         firstValueFrom(this.http.get<RecipeBOM[]>('/api/recipes')),
         firstValueFrom(this.http.get<ProductionOrder[]>('/api/production-orders')),
         firstValueFrom(this.http.get<Customer[]>('/api/sales/customers')),
+        firstValueFrom(this.http.get<Supplier[]>('/api/suppliers')).catch(() => []),
         firstValueFrom(this.http.get<SalesOrder[]>('/api/sales/orders')),
         firstValueFrom(this.http.get<DeliveryNote[]>('/api/sales/delivery-notes')),
         firstValueFrom(this.http.get<Employee[]>('/api/payroll/employees')),
@@ -684,6 +692,7 @@ export class ErpApiService {
       this.recipes.set(recs);
       this.productionOrders.set(pOrders);
       this.customers.set(custs);
+      this.suppliers.set(sups || []);
       this.salesOrders.set(sOrders);
       this.deliveryNotes.set(dNotes);
       this.employees.set(staff);
@@ -960,6 +969,232 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al procesar orden';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  // --- MODELO MANUAL MULTI-FÓRMULA ---
+  public async createManualProductionOrder(data: {
+    lotNumber?: string;
+    operatorNotes?: string;
+    formulas: { recipeId: string; batchCount: number }[];
+    targetStockOnly?: boolean;
+  }) {
+    if (!this.isAdmin()) {
+      this.showToast('Acceso restringido: Solo el Administrador puede crear órdenes del modelo manual.', 'error');
+      throw new Error('Solo el Administrador puede crear órdenes manuales.');
+    }
+
+    try {
+      const payload = {
+        ...data,
+        user: `${this.currentUser().fullName} (${this.currentUser().roleName})`,
+      };
+      const res = await firstValueFrom<{ order: ProductionOrder; missingMaterials: any[] }>(
+        this.http.post<{ order: ProductionOrder; missingMaterials: any[] }>('/api/production-orders/manual', payload)
+      );
+
+      // Audit Log for manual production order created
+      await this.recordAuditLog({
+        module: 'produccion',
+        actionType: 'orden_manual_creada',
+        title: `Nueva Orden Manual Multifórmula: ${res.order.orderNumber}`,
+        description: `El Administrador ${this.currentUser().fullName} programó orden manual de ${res.order.targetUnits} unidades en ${res.order.formulas?.length || 1} recetas para stock disponible.`,
+        severity: 'info',
+        details: {
+          targetId: res.order.id,
+          targetCode: res.order.orderNumber,
+          formulasCount: res.order.formulas?.length,
+          lotNumber: res.order.lotNumber,
+          user: this.currentUser().fullName,
+          targetStockOnly: true,
+        },
+      });
+
+      if (res.missingMaterials && res.missingMaterials.length > 0) {
+        const missingNames = res.missingMaterials.map(m => `${m.name} (faltan ${(m.required - m.available).toFixed(1)} ${m.unit})`).join(', ');
+        this.showToast(`¡Atención! Insumos insuficientes para la orden manual: ${missingNames}`, 'error');
+      } else {
+        this.showToast(`Orden Manual ${res.order.orderNumber} creada exitosamente para stock disponible.`);
+      }
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al crear orden manual';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updateManualProductionOrder(id: string, data: {
+    lotNumber?: string;
+    operatorNotes?: string;
+    formulas?: { recipeId: string; batchCount: number }[];
+  }) {
+    if (!this.isAdmin()) {
+      this.showToast('Acceso restringido: Únicamente los usuarios con rol de Administrador pueden realizar modificaciones en el modelo manual.', 'error');
+      throw new Error('Solo el Administrador puede modificar órdenes manuales.');
+    }
+
+    try {
+      const payload = {
+        ...data,
+        user: `${this.currentUser().fullName} (${this.currentUser().roleName})`,
+      };
+      const res = await firstValueFrom<ProductionOrder>(
+        this.http.put<ProductionOrder>(`/api/production-orders/manual/${id}`, payload)
+      );
+
+      // Audit Log for manual production order updated
+      await this.recordAuditLog({
+        module: 'produccion',
+        actionType: 'orden_manual_modificada',
+        title: `Modificación de Orden Manual: ${res.orderNumber}`,
+        description: `El Administrador ${this.currentUser().fullName} modificó fórmulas y parámetros de la orden ${res.orderNumber} a las ${new Date().toLocaleTimeString('es-VE')}.`,
+        severity: 'warning',
+        details: {
+          targetId: res.id,
+          targetCode: res.orderNumber,
+          user: this.currentUser().fullName,
+          timestamp: new Date().toISOString(),
+          formulasCount: res.formulas?.length,
+          lotNumber: res.lotNumber,
+        },
+      });
+
+      this.showToast(`Orden Manual ${res.orderNumber} modificada por Administrador.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al modificar orden manual';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteManualProductionOrder(id: string) {
+    if (!this.isAdmin()) {
+      this.showToast('Acceso restringido: Únicamente los usuarios con rol de Administrador pueden eliminar órdenes del modelo manual.', 'error');
+      throw new Error('Solo el Administrador puede eliminar órdenes manuales.');
+    }
+
+    try {
+      const order = this.productionOrders().find(o => o.id === id);
+      await firstValueFrom<{ success: boolean }>(
+        this.http.delete<{ success: boolean }>(`/api/production-orders/manual/${id}`)
+      );
+
+      // Audit Log for manual production order deleted
+      await this.recordAuditLog({
+        module: 'produccion',
+        actionType: 'orden_manual_eliminada',
+        title: `Eliminación de Orden Manual: ${order?.orderNumber || id}`,
+        description: `El Administrador ${this.currentUser().fullName} eliminó la orden manual ${order?.orderNumber || id} de la planificación.`,
+        severity: 'warning',
+        details: {
+          targetId: id,
+          targetCode: order?.orderNumber,
+          user: this.currentUser().fullName,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      this.showToast(`Orden Manual ${order?.orderNumber || id} eliminada.`);
+      await this.refreshAllData();
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar orden manual';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  // --- PROVEEDORES & CATÁLOGO DE PRECIOS ---
+  public async addSupplier(data: Omit<Supplier, 'id' | 'createdAt'>) {
+    try {
+      const created = await firstValueFrom<Supplier>(
+        this.http.post<Supplier>('/api/suppliers', data)
+      );
+      await this.recordAuditLog({
+        module: 'inventario',
+        actionType: 'proveedor_registrado',
+        title: `Nuevo Proveedor Registrado: ${created.businessName}`,
+        description: `Ficha fija de contacto y catálogo creada para ${created.businessName} (RIF: ${created.taxId}).`,
+        severity: 'info',
+        details: {
+          targetId: created.id,
+          taxId: created.taxId,
+          mainContact: created.mainContact,
+          phones: created.phones,
+        },
+      });
+      this.showToast(`Proveedor ${created.businessName} registrado exitosamente.`);
+      await this.refreshAllData();
+      return created;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al registrar proveedor';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updateSupplier(id: string, updates: Partial<Supplier>) {
+    try {
+      const updated = await firstValueFrom<Supplier>(
+        this.http.put<Supplier>(`/api/suppliers/${id}`, updates)
+      );
+      this.showToast(`Proveedor ${updated.businessName} actualizado.`);
+      await this.refreshAllData();
+      return updated;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar proveedor';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteSupplier(id: string) {
+    try {
+      const sup = this.suppliers().find(s => s.id === id);
+      await firstValueFrom<{ success: boolean }>(
+        this.http.delete<{ success: boolean }>(`/api/suppliers/${id}`)
+      );
+      this.showToast(`Proveedor ${sup?.businessName || id} eliminado.`);
+      await this.refreshAllData();
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar proveedor';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async addSupplierPriceItem(supplierId: string, item: Omit<SupplierPriceItem, 'id' | 'lastUpdated'>) {
+    try {
+      const created = await firstValueFrom<SupplierPriceItem>(
+        this.http.post<SupplierPriceItem>(`/api/suppliers/${supplierId}/prices`, item)
+      );
+      this.showToast(`Precio para ${created.materialName} agregado al catálogo.`);
+      await this.refreshAllData();
+      return created;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al registrar precio de proveedor';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteSupplierPriceItem(supplierId: string, priceId: string) {
+    try {
+      await firstValueFrom<{ success: boolean }>(
+        this.http.delete<{ success: boolean }>(`/api/suppliers/${supplierId}/prices/${priceId}`)
+      );
+      this.showToast('Ítem de precio eliminado del catálogo.');
+      await this.refreshAllData();
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar precio del proveedor';
       this.showToast(msg, 'error');
       throw err;
     }

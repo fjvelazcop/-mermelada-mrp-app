@@ -47,6 +47,41 @@ export class PayrollComponent {
     return this.inactiveWeeks().reduce((acc, w) => acc + w.fixedAbsorptionCost, 0);
   });
 
+  public roleBonusMap = signal<Record<string, number>>({});
+
+  public distinctRoles = computed(() => {
+    const roles = new Set<string>();
+    this.employees().forEach(e => {
+      if (e.roleTitle) roles.add(e.roleTitle);
+    });
+    return Array.from(roles);
+  });
+
+  public roleBonusSummary = computed(() => {
+    const map = this.roleBonusMap();
+    const emps = this.employees();
+    return this.distinctRoles().map(role => {
+      const count = emps.filter(e => e.roleTitle === role).length;
+      const defaultAmount = role.toLowerCase().includes('maestro') || role.toLowerCase().includes('supervisor') ? 20 : (role.toLowerCase().includes('marmita') ? 15 : 10);
+      const bonus = map[role] !== undefined ? map[role] : defaultAmount;
+      return {
+        roleTitle: role,
+        count,
+        bonusAmount: bonus,
+        subtotal: count * bonus,
+      };
+    });
+  });
+
+  public totalBonusCalculated = computed(() => {
+    return this.roleBonusSummary().reduce((acc, r) => acc + r.subtotal, 0);
+  });
+
+  public onRoleBonusChange(role: string, val: string | number) {
+    const num = Math.max(0, Number(val) || 0);
+    this.roleBonusMap.update(m => ({ ...m, [role]: num }));
+  }
+
   public openNewWeekModal() {
     const nextWeekNum = (this.payrollWeeks()[0]?.weekNumber || 40) + 1;
     this.newWeekForm.patchValue({
@@ -56,6 +91,20 @@ export class PayrollComponent {
       bonusPerEmployee: 12,
       notes: '',
     });
+
+    // Initialize default bonus map per employee role
+    const initialMap: Record<string, number> = {};
+    this.distinctRoles().forEach(role => {
+      if (role.toLowerCase().includes('maestro') || role.toLowerCase().includes('supervisor')) {
+        initialMap[role] = 20;
+      } else if (role.toLowerCase().includes('marmita')) {
+        initialMap[role] = 15;
+      } else {
+        initialMap[role] = 10;
+      }
+    });
+    this.roleBonusMap.set(initialMap);
+
     this.isNewWeekModalOpen.set(true);
   }
 
@@ -69,11 +118,13 @@ export class PayrollComponent {
     const staff = this.employees();
 
     const isProd = Boolean(v.isActiveProduction);
-    const bonus = isProd ? Number(v.bonusPerEmployee || 0) : 0;
+    const bonusMap = this.roleBonusMap();
 
     let totalPaid = 0;
     const payments = staff.map(emp => {
       const base = emp.weeklyBaseSalary;
+      // Bono discriminado por el cargo del empleado
+      const bonus = isProd ? (bonusMap[emp.roleTitle] !== undefined ? bonusMap[emp.roleTitle] : 10) : 0;
       const net = base + bonus - 1.50; // minor deduction
       totalPaid += net;
       return {
@@ -97,6 +148,7 @@ export class PayrollComponent {
       isActiveProduction: isProd,
       inactivityReason: !isProd ? v.inactivityReason : undefined,
       payments,
+      roleBonuses: isProd ? this.roleBonusSummary() : undefined,
       totalPayrollPaid: Number(totalPaid.toFixed(2)),
       fixedAbsorptionCost: fixedAbsorption,
       notes: v.notes || (!isProd ? 'Semana sin cocción en marmitas.' : 'Semana de producción activa.'),

@@ -120,6 +120,23 @@
 
     <button
       type="button"
+      (click)="activeInventoryTab.set('suppliers')"
+      class="px-4 py-2.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[44px]"
+      [class.border-stone-900]="activeInventoryTab() === 'suppliers'"
+      [class.text-stone-900]="activeInventoryTab() === 'suppliers'"
+      [class.border-transparent]="activeInventoryTab() !== 'suppliers'"
+      [class.text-stone-500]="activeInventoryTab() !== 'suppliers'"
+      [class.hover:text-stone-800]="activeInventoryTab() !== 'suppliers'"
+    >
+      <mat-icon class="text-base" [class.text-amber-800]="activeInventoryTab() === 'suppliers'">storefront</mat-icon>
+      <span>Directorio de Proveedores & Precios</span>
+      <span class="ml-1 text-xs px-2 py-0.5 rounded-full font-mono bg-stone-100 text-stone-700">
+        {{ suppliers().length }}
+      </span>
+    </button>
+
+    <button
+      type="button"
       (click)="activeInventoryTab.set('audit')"
       class="px-4 py-2.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all whitespace-nowrap min-h-[44px]"
       [class.border-stone-900]="activeInventoryTab() === 'audit'"
@@ -502,6 +519,348 @@
   </div>
   }
 
+  <!-- TAB: DIRECTORIO MAESTRO DE PROVEEDORES & CATÁLOGO DE PRECIOS -->
+  @if (activeInventoryTab() === 'suppliers') {
+    <div class="space-y-6">
+      <!-- Top Action Toolbar -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-stone-200 rounded-2xl p-4 shadow-xs">
+        <div>
+          <h2 class="text-base font-bold text-stone-900 flex items-center gap-2">
+            <mat-icon class="text-amber-800 text-lg">storefront</mat-icon>
+            <span>Directorio Maestro de Proveedores & Catálogo de Precios</span>
+          </h2>
+          <p class="text-xs text-stone-500 mt-0.5">
+            Ficha estandarizada de contactos comerciales y catálogo histórico de cotizaciones de insumos y materia prima
+          </p>
+        </div>
+
+        <button
+          type="button"
+          (click)="openNewSupplierModal()"
+          class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-stone-900 text-white rounded-xl shadow-xs hover:bg-stone-800 transition-colors shrink-0"
+        >
+          <mat-icon class="text-sm">add_business</mat-icon>
+          <span>Nuevo Proveedor</span>
+        </button>
+      </div>
+
+      <!-- Filters & Search Toolbar -->
+      <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <!-- Category Filter Pills -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <button
+            type="button"
+            (click)="supplierCategoryFilter.set('all')"
+            class="px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0"
+            [class.bg-stone-900]="supplierCategoryFilter() === 'all'"
+            [class.text-white]="supplierCategoryFilter() === 'all'"
+            [class.bg-stone-100]="supplierCategoryFilter() !== 'all'"
+            [class.text-stone-700]="supplierCategoryFilter() !== 'all'"
+          >
+            Todos ({{ suppliers().length }})
+          </button>
+          <button
+            type="button"
+            (click)="supplierCategoryFilter.set('frutas')"
+            class="px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0"
+            [class.bg-amber-800]="supplierCategoryFilter() === 'frutas'"
+            [class.text-white]="supplierCategoryFilter() === 'frutas'"
+            [class.bg-stone-100]="supplierCategoryFilter() !== 'frutas'"
+            [class.text-stone-700]="supplierCategoryFilter() !== 'frutas'"
+          >
+            Frutas & Pulpa
+          </button>
+          <button
+            type="button"
+            (click)="supplierCategoryFilter.set('azucar_edulcorantes')"
+            class="px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0"
+            [class.bg-amber-800]="supplierCategoryFilter() === 'azucar_edulcorantes'"
+            [class.text-white]="supplierCategoryFilter() === 'azucar_edulcorantes'"
+            [class.bg-stone-100]="supplierCategoryFilter() !== 'azucar_edulcorantes'"
+            [class.text-stone-700]="supplierCategoryFilter() !== 'azucar_edulcorantes'"
+          >
+            Azúcar
+          </button>
+          <button
+            type="button"
+            (click)="supplierCategoryFilter.set('envases_tapas')"
+            class="px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0"
+            [class.bg-amber-800]="supplierCategoryFilter() === 'envases_tapas'"
+            [class.text-white]="supplierCategoryFilter() === 'envases_tapas'"
+            [class.bg-stone-100]="supplierCategoryFilter() !== 'envases_tapas'"
+            [class.text-stone-700]="supplierCategoryFilter() !== 'envases_tapas'"
+          >
+            Envases & Tapas
+          </button>
+          <button
+            type="button"
+            (click)="supplierCategoryFilter.set('etiquetas_empaque')"
+            class="px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0"
+            [class.bg-amber-800]="supplierCategoryFilter() === 'etiquetas_empaque'"
+            [class.text-white]="supplierCategoryFilter() === 'etiquetas_empaque'"
+            [class.bg-stone-100]="supplierCategoryFilter() !== 'etiquetas_empaque'"
+            [class.text-stone-700]="supplierCategoryFilter() !== 'etiquetas_empaque'"
+          >
+            Etiquetas
+          </button>
+          <button
+            type="button"
+            (click)="supplierCategoryFilter.set('quimicos_aditivos')"
+            class="px-3 py-1.5 rounded-lg font-semibold transition-colors shrink-0"
+            [class.bg-amber-800]="supplierCategoryFilter() === 'quimicos_aditivos'"
+            [class.text-white]="supplierCategoryFilter() === 'quimicos_aditivos'"
+            [class.bg-stone-100]="supplierCategoryFilter() !== 'quimicos_aditivos'"
+            [class.text-stone-700]="supplierCategoryFilter() !== 'quimicos_aditivos'"
+          >
+            Pectina & Químicos
+          </button>
+        </div>
+
+        <!-- Search Box -->
+        <div class="relative w-full md:w-80">
+          <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm">search</mat-icon>
+          <input
+            type="text"
+            [value]="supplierSearch()"
+            (input)="supplierSearch.set($any($event.target).value)"
+            placeholder="Buscar por nombre, RIF, contacto o producto..."
+            class="w-full bg-stone-50 border border-stone-300 rounded-xl pl-9 pr-3 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+          />
+        </div>
+      </div>
+
+      <!-- Grid of Suppliers (Similar UX to B2B Customers in Sales) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        @for (s of filteredSuppliers(); track s.id) {
+          <div
+            class="bg-white border rounded-2xl p-5 shadow-xs transition-all flex flex-col justify-between"
+            [class.border-stone-200]="selectedSupplierForPrices()?.id !== s.id"
+            [class.border-amber-600]="selectedSupplierForPrices()?.id === s.id"
+            [class.ring-2]="selectedSupplierForPrices()?.id === s.id"
+            [class.ring-amber-500/20]="selectedSupplierForPrices()?.id === s.id"
+          >
+            <div>
+              <!-- Header: TaxId & Category Badge -->
+              <div class="flex items-center justify-between pb-3 border-b border-stone-100">
+                <span class="text-xs font-mono font-bold text-stone-700 bg-stone-100 px-2 py-0.5 rounded border border-stone-200">
+                  {{ s.taxId }}
+                </span>
+                <span
+                  class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                  [class.bg-amber-100]="s.category === 'frutas' || s.category === 'azucar_edulcorantes'"
+                  [class.text-amber-900]="s.category === 'frutas' || s.category === 'azucar_edulcorantes'"
+                  [class.bg-sky-100]="s.category === 'envases_tapas'"
+                  [class.text-sky-900]="s.category === 'envases_tapas'"
+                  [class.bg-purple-100]="s.category === 'etiquetas_empaque'"
+                  [class.text-purple-900]="s.category === 'etiquetas_empaque'"
+                  [class.bg-emerald-100]="s.category === 'quimicos_aditivos'"
+                  [class.text-emerald-900]="s.category === 'quimicos_aditivos'"
+                >
+                  {{ s.category.replace('_', ' ') }}
+                </span>
+              </div>
+
+              <!-- Business Name -->
+              <h3 class="font-bold text-stone-900 text-sm mt-3 flex items-center gap-1.5">
+                <mat-icon class="text-stone-400 text-sm">business</mat-icon>
+                <span>{{ s.businessName }}</span>
+              </h3>
+
+              <!-- FICHA ESTANDARIZADA DE CONTACTOS (Campos obligatorios requeridos) -->
+              <div class="mt-3 bg-stone-50 border border-stone-200/70 rounded-xl p-3 text-xs space-y-2">
+                <div class="flex items-start gap-2">
+                  <mat-icon class="text-stone-400 text-xs mt-0.5">person</mat-icon>
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-stone-400 block">Contacto Principal:</span>
+                    <span class="font-semibold text-stone-900">{{ s.contactPerson }}</span>
+                  </div>
+                </div>
+
+                <div class="flex items-start gap-2">
+                  <mat-icon class="text-stone-400 text-xs mt-0.5">call</mat-icon>
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-stone-400 block">Teléfonos:</span>
+                    <span class="font-mono text-stone-800 font-semibold">{{ s.phone }}</span>
+                  </div>
+                </div>
+
+                <div class="flex items-start gap-2">
+                  <mat-icon class="text-stone-400 text-xs mt-0.5">place</mat-icon>
+                  <div>
+                    <span class="text-[10px] uppercase font-bold text-stone-400 block">Dirección Fiscal / Física:</span>
+                    <span class="text-stone-600 line-clamp-2 leading-tight">{{ s.fiscalAddress }}</span>
+                  </div>
+                </div>
+
+                @if (s.email) {
+                  <div class="flex items-start gap-2">
+                    <mat-icon class="text-stone-400 text-xs mt-0.5">email</mat-icon>
+                    <span class="text-stone-500 font-mono text-[11px] truncate">{{ s.email }}</span>
+                  </div>
+                }
+              </div>
+
+              <!-- Commercial Terms & Bank Info -->
+              <div class="mt-3 pt-2 border-t border-stone-100 text-[11px] text-stone-600 space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-400">Condición de Pago:</span>
+                  <span class="font-semibold text-stone-800">{{ s.paymentTerms }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-400">Tiempo de Entrega:</span>
+                  <span class="font-mono text-stone-800">{{ s.deliveryLeadTimeDays }} días hábiles</span>
+                </div>
+                @if (s.preferredBank) {
+                  <div class="flex items-center justify-between">
+                    <span class="text-stone-400">Banco Receptor:</span>
+                    <span class="font-semibold text-amber-900 truncate max-w-[170px]" [title]="s.preferredBank">
+                      {{ s.preferredBank }}
+                    </span>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <!-- Card Actions & Price Catalog Trigger -->
+            <div class="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                (click)="toggleSupplierPrices(s)"
+                class="px-3 py-1.5 text-xs font-bold rounded-lg border flex items-center gap-1.5 transition-colors"
+                [class.bg-amber-50]="selectedSupplierForPrices()?.id === s.id"
+                [class.text-amber-900]="selectedSupplierForPrices()?.id === s.id"
+                [class.border-amber-300]="selectedSupplierForPrices()?.id === s.id"
+                [class.bg-white]="selectedSupplierForPrices()?.id !== s.id"
+                [class.text-stone-700]="selectedSupplierForPrices()?.id !== s.id"
+                [class.border-stone-200]="selectedSupplierForPrices()?.id !== s.id"
+              >
+                <mat-icon class="text-xs">menu_book</mat-icon>
+                <span>Catálogo ({{ s.priceCatalog.length }})</span>
+              </button>
+
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  (click)="openPriceItemModal(s)"
+                  class="p-1.5 text-stone-500 hover:text-amber-900 hover:bg-stone-100 rounded-lg transition-colors border border-stone-200"
+                  title="Añadir ítem/cotización al catálogo"
+                >
+                  <mat-icon class="text-xs">add</mat-icon>
+                </button>
+                @if (api.isAdmin()) {
+                  <button
+                    type="button"
+                    (click)="deleteSupplier(s)"
+                    class="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-200"
+                    title="Eliminar proveedor (Admin)"
+                  >
+                    <mat-icon class="text-xs">delete</mat-icon>
+                  </button>
+                }
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- EXPANDED PRICE CATALOG FOR SELECTED SUPPLIER -->
+      @if (selectedSupplierForPrices(); as currentSup) {
+        <div class="bg-white border-2 border-amber-600/30 rounded-2xl p-6 shadow-md space-y-4 animate-in fade-in duration-150">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-stone-200">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900">
+                  {{ currentSup.taxId }}
+                </span>
+                <h3 class="text-base font-bold text-stone-900">
+                  Catálogo de Precios & Cotizaciones: {{ currentSup.businessName }}
+                </h3>
+              </div>
+              <p class="text-xs text-stone-500 mt-1">
+                Historial de insumos cotizados, presentación de entrega y equivalencia en Bolívares a tasa oficial
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                (click)="openPriceItemModal(currentSup)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-800 text-white rounded-lg hover:bg-amber-900 transition-colors shadow-xs"
+              >
+                <mat-icon class="text-xs">add</mat-icon>
+                <span>Añadir Ítem de Precio</span>
+              </button>
+              <button
+                type="button"
+                (click)="selectedSupplierForPrices.set(null)"
+                class="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100"
+                title="Cerrar vista de catálogo"
+              >
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          </div>
+
+          <!-- Price Catalog Table -->
+          <div class="overflow-x-auto border border-stone-200 rounded-xl">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold text-[11px] uppercase">
+                  <th class="py-2.5 px-3">Código</th>
+                  <th class="py-2.5 px-3">Insumo / Descripción</th>
+                  <th class="py-2.5 px-3">Presentación</th>
+                  <th class="py-2.5 px-3 text-center">Unidad</th>
+                  <th class="py-2.5 px-3 text-right">Precio USD ($)</th>
+                  <th class="py-2.5 px-3 text-right">Precio Bs. (Tasa {{ api.exchangeRates()?.currentUsd || 48.35 }})</th>
+                  <th class="py-2.5 px-3 text-center">Pedido Mínimo</th>
+                  <th class="py-2.5 px-3 text-center">Entrega</th>
+                  <th class="py-2.5 px-3">Última Actualización</th>
+                  <th class="py-2.5 px-3 text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-stone-100">
+                @for (item of currentSup.priceCatalog; track item.id) {
+                  <tr class="hover:bg-stone-50/70 transition-colors">
+                    <td class="py-2.5 px-3 font-mono font-bold text-stone-900">{{ item.itemCode || item.id }}</td>
+                    <td class="py-2.5 px-3 font-semibold text-stone-800">{{ item.itemName || item.materialName }}</td>
+                    <td class="py-2.5 px-3 text-stone-600">{{ item.presentation || '-' }}</td>
+                    <td class="py-2.5 px-3 text-center font-mono text-stone-500">{{ item.unit }}</td>
+                    <td class="py-2.5 px-3 text-right font-mono font-bold text-stone-900">
+                      ${{ (item.unitPriceUsd ?? item.priceUsd ?? 0).toFixed(2) }}
+                    </td>
+                    <td class="py-2.5 px-3 text-right font-mono font-bold text-amber-900 bg-amber-50/30">
+                      {{ ((item.unitPriceUsd ?? item.priceUsd ?? 0) * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+                    </td>
+                    <td class="py-2.5 px-3 text-center font-mono">{{ item.minOrderQuantity || 1 }} {{ item.unit }}</td>
+                    <td class="py-2.5 px-3 text-center text-stone-500 font-mono">{{ item.leadTimeDays }} días</td>
+                    <td class="py-2.5 px-3 text-stone-400 font-mono text-[11px]">{{ item.lastUpdated }}</td>
+                    <td class="py-2.5 px-3 text-center">
+                      <button
+                        type="button"
+                        (click)="deletePriceItem(currentSup.id, item.id)"
+                        class="p-1 text-stone-400 hover:text-rose-600 rounded transition-colors"
+                        title="Eliminar este ítem del catálogo"
+                      >
+                        <mat-icon class="text-xs">delete</mat-icon>
+                      </button>
+                    </td>
+                  </tr>
+                }
+                @if (currentSup.priceCatalog.length === 0) {
+                  <tr>
+                    <td colspan="10" class="py-6 text-center text-stone-400 italic">
+                      Este proveedor no tiene ítems registrados en su catálogo de precios aún.
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
   <!-- TAB 3: AUDITORÍA & TRAZABILIDAD HACCP -->
   @if (activeInventoryTab() === 'audit') {
     <app-audit-log
@@ -772,4 +1131,341 @@
       </div>
     </div>
   }
+
+  <!-- MODAL: REGISTRAR FICHA DE PROVEEDOR (CAMPOS OBLIGATORIOS) -->
+  @if (isNewSupplierModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
+      <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl border border-stone-200 my-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+              <mat-icon class="text-sm">add_business</mat-icon>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-stone-900">Registrar Ficha de Proveedor</h3>
+              <p class="text-xs text-stone-500">Ficha fija estandarizada de contactos y condiciones comerciales</p>
+            </div>
+          </div>
+          <button type="button" (click)="closeNewSupplierModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="supplierForm" (ngSubmit)="submitSupplier()" class="space-y-4 mt-4">
+          <!-- Datos Fiscales -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Razón Social / Empresa <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="businessName"
+                placeholder="ej: Inversiones Frutas del Campo C.A."
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                RIF Fiscal (J- / V- / G-) <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="taxId"
+                placeholder="ej: J-31089201-4"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono uppercase text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Categoría de Suministro <span class="text-rose-500">*</span>
+              </label>
+              <select
+                formControlName="category"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              >
+                <option value="frutas">Frutas Frescas & Pulpa Concentrada</option>
+                <option value="azucar_edulcorantes">Azúcar Refinada & Dulces Industriales</option>
+                <option value="envases_tapas">Envases de Vidrio & Tapas Twist-Off</option>
+                <option value="etiquetas_empaque">Etiquetas Litográficas & Empaque Secundario</option>
+                <option value="quimicos_aditivos">Pectina Cítrica, Ácido Cítrico & Químicos</option>
+                <option value="servicios_mantenimiento">Servicios de Mantenimiento & Equipamiento</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- FICHA FIJA DE CONTACTOS OBLIGATORIA (Requerimiento 2) -->
+          <div class="p-3.5 bg-amber-50/40 border border-amber-200/60 rounded-xl space-y-3">
+            <span class="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+              <mat-icon class="text-xs text-amber-800">badge</mat-icon>
+              <span>Ficha Fija de Contactos (Campos Obligatorios)</span>
+            </span>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Contacto Principal <span class="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  formControlName="contactPerson"
+                  placeholder="ej: Ing. Rafael Mendoza"
+                  class="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                />
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Teléfonos de Contacto <span class="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  formControlName="phone"
+                  placeholder="ej: +58 414-298-4410 / 0243-551-9022"
+                  class="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                />
+              </div>
+
+              <div class="sm:col-span-2">
+                <label class="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Dirección Fiscal / Física <span class="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows="2"
+                  formControlName="fiscalAddress"
+                  placeholder="ej: Zona Industrial San Vicente II, Galpón Nro. 18, Maracay, Edo. Aragua"
+                  class="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                ></textarea>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Correo Electrónico
+                </label>
+                <input
+                  type="email"
+                  formControlName="email"
+                  placeholder="ej: ventas@frutasdelcampo.com"
+                  class="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                />
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-700 mb-1">
+                  Banco Receptor Habitual
+                </label>
+                <input
+                  type="text"
+                  formControlName="preferredBank"
+                  placeholder="ej: 0108 - Banco Provincial"
+                  class="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Condiciones Comerciales -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Condición de Pago <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="paymentTerms"
+                placeholder="ej: Contado contra entrega / Crédito 15 días"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Tiempo de Entrega (Días Hábiles) <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                formControlName="deliveryLeadTimeDays"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Observaciones Adicionales
+              </label>
+              <input
+                type="text"
+                formControlName="notes"
+                placeholder="ej: Despachos directos en planta los días martes y jueves"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+            <button
+              type="button"
+              (click)="closeNewSupplierModal()"
+              class="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="supplierForm.invalid"
+              class="px-4 py-2 text-xs font-bold bg-stone-900 text-white rounded-xl hover:bg-stone-800 disabled:opacity-50 shadow-xs"
+            >
+              Guardar Ficha de Proveedor
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: AÑADIR ÍTEM AL CATÁLOGO DE PRECIOS -->
+  @if (isPriceItemModalOpen() && supplierForNewPrice(); as sup) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+              <mat-icon class="text-sm">price_change</mat-icon>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-stone-900">Añadir Precio al Catálogo</h3>
+              <p class="text-xs text-stone-500">{{ sup.businessName }} ({{ sup.taxId }})</p>
+            </div>
+          </div>
+          <button type="button" (click)="closePriceItemModal()" class="text-stone-400 hover:text-stone-700">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="priceItemForm" (ngSubmit)="submitPriceItem()" class="space-y-4 mt-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Código del Insumo / Ítem
+              </label>
+              <input
+                type="text"
+                formControlName="itemCode"
+                placeholder="ej: FRUT-GUA-01"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Nombre del Insumo <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="itemName"
+                placeholder="ej: Pulpa de Guayaba Fresca Criolla"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Presentación / Empaque <span class="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                formControlName="presentation"
+                placeholder="ej: Cesta plástica de 20 kg / Cuñete"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Unidad de Medida <span class="text-rose-500">*</span>
+              </label>
+              <select
+                formControlName="unit"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              >
+                <option value="kg">Kilogramos (kg)</option>
+                <option value="g">Gramos (g)</option>
+                <option value="unidades">Unidades (uds)</option>
+                <option value="l">Litros (l)</option>
+                <option value="cajas">Cajas</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Precio Unitario en USD ($) <span class="text-rose-500">*</span>
+              </label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-xs">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  formControlName="unitPriceUsd"
+                  class="w-full bg-stone-50 border border-stone-300 rounded-xl pl-7 pr-3 py-2 text-xs font-mono font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Pedido Mínimo
+              </label>
+              <input
+                type="number"
+                min="1"
+                formControlName="minOrderQuantity"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Tiempo de Entrega del Ítem (Días)
+              </label>
+              <input
+                type="number"
+                min="0"
+                formControlName="leadTimeDays"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              />
+            </div>
+          </div>
+
+          <div class="p-2.5 bg-stone-50 rounded-xl text-[11px] text-stone-500 flex items-center justify-between">
+            <span>Equivalente en Bolívares (Tasa {{ api.exchangeRates()?.currentUsd || 48.35 }}):</span>
+            <span class="font-mono font-bold text-stone-900">
+              {{ ((priceItemForm.controls.unitPriceUsd.value || 0) * (api.exchangeRates()?.currentUsd || 48.35)) | veCurrency:'Bs.':2 }}
+            </span>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+            <button
+              type="button"
+              (click)="closePriceItemModal()"
+              class="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="priceItemForm.invalid"
+              class="px-4 py-2 text-xs font-bold bg-stone-900 text-white rounded-xl hover:bg-stone-800 disabled:opacity-50 shadow-xs"
+            >
+              Guardar Ítem de Precio
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
 </div>
+

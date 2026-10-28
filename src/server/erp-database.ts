@@ -20,6 +20,9 @@ import {
   AuditLogEntry,
   Expense,
   ExpenseCategoryConfig,
+  Supplier,
+  SupplierPriceItem,
+  ManualOrderFormulaLine,
 } from '../app/core/models/erp.models.js';
 
 export interface DatabaseState {
@@ -29,6 +32,7 @@ export interface DatabaseState {
   recipes: RecipeBOM[];
   productionOrders: ProductionOrder[];
   customers: Customer[];
+  suppliers: Supplier[];
   salesOrders: SalesOrder[];
   deliveryNotes: DeliveryNote[];
   employees: Employee[];
@@ -1477,6 +1481,265 @@ export function createInitialDatabase(): DatabaseState {
     },
   ];
 
+  const suppliers: Supplier[] = [
+    {
+      id: 'sup-1',
+      businessName: 'Asociación de Fruticultores del Valle R.L.',
+      taxId: 'J-30129841-2',
+      category: 'frutas_pulpa',
+      categoryLabel: 'Frutas Frescas & Pulpa',
+      mainContact: 'Carlos Mendoza (Coordinador de Cosecha)',
+      phones: '0414-9512344 / 0212-3729900',
+      fiscalAddress: 'Km 12 Carretera Panamericana, Finca La Esperanza, Sector El Rincón, San Antonio de Los Altos, Edo. Miranda',
+      email: 'ventas@fruticultoresdelvalle.com.ve',
+      city: 'San Antonio de Los Altos',
+      paymentTerms: 'Crédito 7 días (Contra entrega y revisión Brix)',
+      bankName: '0108 - Banco Provincial (BBVA)',
+      bankAccountNumber: '0108-0123-45-0100123456',
+      rating: 5,
+      status: 'activo',
+      notes: 'Proveedor exclusivo de guayaba criolla roja cosechada en grado óptimo (10-12° Brix). Despacho en cestas de 20kg.',
+      createdAt: '2026-01-15',
+      priceCatalog: [
+        {
+          id: 'sp-1',
+          materialName: 'Guayaba Roja Criolla (Pulpa fresca seleccionada)',
+          unit: 'kg',
+          priceUsd: 1.25,
+          priceBs: 60.44,
+          leadTimeDays: 2,
+          lastUpdated: '2026-10-15',
+          notes: 'Fruta lavada, desinfectada y seleccionada para cocción en marmita',
+        },
+        {
+          id: 'sp-2',
+          materialName: 'Pulpa de Mora Silvestre Congelada',
+          unit: 'kg',
+          priceUsd: 1.80,
+          priceBs: 87.03,
+          leadTimeDays: 3,
+          lastUpdated: '2026-10-10',
+          notes: 'Mora despalillada pasteurizada a granel',
+        },
+        {
+          id: 'sp-3',
+          materialName: 'Pulpa de Fresa Criolla Grado A',
+          unit: 'kg',
+          priceUsd: 2.10,
+          priceBs: 101.54,
+          leadTimeDays: 4,
+          lastUpdated: '2026-09-28',
+          notes: 'Cultivo de altura (Colonia Tovar)',
+        },
+      ],
+    },
+    {
+      id: 'sup-2',
+      businessName: 'Central Azucarero Portuguesa C.A.',
+      taxId: 'J-00034112-9',
+      category: 'azucar_endulzantes',
+      categoryLabel: 'Azúcar & Endulzantes',
+      mainContact: 'Ing. Luis Rivas (Dpto. Ventas Industriales)',
+      phones: '0255-6218800 / 0424-5109922',
+      fiscalAddress: 'Carretera Nacional Acarigua-Payara, Km 4, Acarigua, Edo. Portuguesa',
+      email: 'pedidos@centralportuguesa.com',
+      city: 'Acarigua',
+      paymentTerms: 'Contado Anticipado (Transferencia)',
+      bankName: '0102 - Banco de Venezuela',
+      bankAccountNumber: '0102-0501-88-0000456789',
+      rating: 5,
+      status: 'activo',
+      notes: 'Sacos de 50 kg de azúcar refinada industrial blanca de alta solubilidad.',
+      createdAt: '2026-01-20',
+      priceCatalog: [
+        {
+          id: 'sp-4',
+          materialName: 'Azúcar Blanca Refinada Industrial',
+          unit: 'kg',
+          priceUsd: 0.95,
+          priceBs: 45.93,
+          leadTimeDays: 5,
+          lastUpdated: '2026-10-18',
+          notes: 'Saco 50kg, 99.8% pureza sacarosa',
+        },
+        {
+          id: 'sp-5',
+          materialName: 'Papelón Granulado Artesanal',
+          unit: 'kg',
+          priceUsd: 1.30,
+          priceBs: 62.86,
+          leadTimeDays: 4,
+          lastUpdated: '2026-09-15',
+          notes: 'Para línea de mermeladas tradicionales sin refinar',
+        },
+      ],
+    },
+    {
+      id: 'sup-3',
+      businessName: 'Envases Venezolanos S.A. (Enval)',
+      taxId: 'J-00012987-0',
+      category: 'envases_vidrio',
+      categoryLabel: 'Envases de Vidrio',
+      mainContact: 'Mariangel Gómez (Gerencia de Cuentas Clave)',
+      phones: '0212-9051122 / 0412-3304411',
+      fiscalAddress: 'Av. Rómulo Gallegos con Calle 4, Zona Industrial Los Cortijos de Lourdes, Caracas',
+      email: 'mgomez@envasesvenezolanos.com',
+      city: 'Caracas',
+      paymentTerms: 'Crédito 15 días (Factura Fiscal SENIAT)',
+      bankName: '0105 - Banco Mercantil',
+      bankAccountNumber: '0105-0012-33-0100987654',
+      rating: 4,
+      status: 'activo',
+      notes: 'Frascos de vidrio grado alimenticio para pasteurización al baño María y llenado en caliente (Hot-Fill 85°C).',
+      createdAt: '2026-02-01',
+      priceCatalog: [
+        {
+          id: 'sp-6',
+          materialName: 'Frasco de Vidrio Cilíndrico 250g (Boca 63mm)',
+          unit: 'unidad',
+          priceUsd: 0.35,
+          priceBs: 16.92,
+          leadTimeDays: 7,
+          lastUpdated: '2026-10-20',
+          notes: 'Paleta de 2.400 unidades, embalado termoencogible',
+        },
+        {
+          id: 'sp-7',
+          materialName: 'Frasco de Vidrio Facetado 500g (Boca 70mm)',
+          unit: 'unidad',
+          priceUsd: 0.52,
+          priceBs: 25.14,
+          leadTimeDays: 8,
+          lastUpdated: '2026-10-05',
+          notes: 'Presentación familiar gourmet',
+        },
+      ],
+    },
+    {
+      id: 'sup-4',
+      businessName: 'Tapas Corona Venezolana C.A. (Tacorven)',
+      taxId: 'J-07019842-1',
+      category: 'tapas_empaques',
+      categoryLabel: 'Tapas & Cierres Herméticos',
+      mainContact: 'Roberto Domínguez (Ventas Industriales)',
+      phones: '0241-8389011 / 0414-4208833',
+      fiscalAddress: 'Av. Henry Ford, Zona Industrial Sur, Valencia, Edo. Carabobo',
+      email: 'pedidos@tacorven.com.ve',
+      city: 'Valencia',
+      paymentTerms: 'Crédito 15 días',
+      bankName: '0134 - Banesco',
+      bankAccountNumber: '0134-0987-11-1000345678',
+      rating: 5,
+      status: 'activo',
+      notes: 'Tapas metálicas twist-off con botón de seguridad al vacío y liner plastisol resistente a acidez.',
+      createdAt: '2026-02-10',
+      priceCatalog: [
+        {
+          id: 'sp-8',
+          materialName: 'Tapa Metálica Twist-Off 63mm Dorada con Botón de Vacío',
+          unit: 'unidad',
+          priceUsd: 0.08,
+          priceBs: 3.87,
+          leadTimeDays: 4,
+          lastUpdated: '2026-10-12',
+          notes: 'Caja de 1.000 unidades con certificado de inocuidad',
+        },
+        {
+          id: 'sp-9',
+          materialName: 'Tapa Twist-Off 70mm Negra Mate con Botón',
+          unit: 'unidad',
+          priceUsd: 0.11,
+          priceBs: 5.32,
+          leadTimeDays: 5,
+          lastUpdated: '2026-09-22',
+          notes: 'Caja de 800 unidades',
+        },
+      ],
+    },
+    {
+      id: 'sup-5',
+      businessName: 'Litografía & Empaques del Centro C.A.',
+      taxId: 'J-31092837-4',
+      category: 'etiquetas',
+      categoryLabel: 'Etiquetas & Cajas Corrugadas',
+      mainContact: 'Patricia Silva (Atención al Cliente)',
+      phones: '0243-2476500 / 0416-6401122',
+      fiscalAddress: 'Av. Anton Phillips, Parcela 15, Sector San Vicente, Maracay, Edo. Aragua',
+      email: 'ventas@litodelcentro.com',
+      city: 'Maracay',
+      paymentTerms: '50% Anticipo / 50% Contra Entrega',
+      bankName: '0191 - BNC Banco Nacional de Crédito',
+      bankAccountNumber: '0191-0112-22-0100456123',
+      rating: 4,
+      status: 'activo',
+      notes: 'Impresión litográfica en polipropileno metalizado resistente a humedad de refrigeración y cajas master.',
+      createdAt: '2026-03-05',
+      priceCatalog: [
+        {
+          id: 'sp-10',
+          materialName: 'Etiqueta Autoadhesiva Laminada PulpaCraft Guayaba 250g',
+          unit: 'unidad',
+          priceUsd: 0.04,
+          priceBs: 1.93,
+          leadTimeDays: 6,
+          lastUpdated: '2026-10-14',
+          notes: 'Rollo de 2.000 etiquetas para etiquetadora semi-automática',
+        },
+        {
+          id: 'sp-11',
+          materialName: 'Caja Corrugado Master Kraft (Capacidad 12 frascos 250g)',
+          unit: 'unidad',
+          priceUsd: 0.65,
+          priceBs: 31.43,
+          leadTimeDays: 3,
+          lastUpdated: '2026-10-02',
+          notes: 'Con separadores internos antichoques',
+        },
+      ],
+    },
+    {
+      id: 'sup-6',
+      businessName: 'Químicos Alimentarios de Venezuela C.A. (QuimAlim)',
+      taxId: 'J-40192830-8',
+      category: 'pectina_quimicos',
+      categoryLabel: 'Pectina & Insumos Enológicos',
+      mainContact: 'Dr. Fernando Bello (Asesor Técnico)',
+      phones: '0212-2384499 / 0424-1198844',
+      fiscalAddress: 'Calle Vargas con 2da Transversal, Edif. Químicos, Piso 2, Boleíta Norte, Caracas',
+      email: 'soporte@quimalim.com.ve',
+      city: 'Caracas',
+      paymentTerms: 'Contado (Factura con IVA)',
+      bankName: '0108 - Banco Provincial (BBVA)',
+      bankAccountNumber: '0108-0055-66-0100778899',
+      rating: 5,
+      status: 'activo',
+      notes: 'Pectina cítrica de alto metoxilo especial para mermeladas ácidas y ácido cítrico anhidro USP.',
+      createdAt: '2026-03-12',
+      priceCatalog: [
+        {
+          id: 'sp-12',
+          materialName: 'Pectina Cítrica de Alto Metoxilo (Grado Mermeladas)',
+          unit: 'kg',
+          priceUsd: 18.50,
+          priceBs: 894.48,
+          leadTimeDays: 3,
+          lastUpdated: '2026-10-19',
+          notes: 'Saco 25kg grado alimenticio importado (FAS/USP)',
+        },
+        {
+          id: 'sp-13',
+          materialName: 'Ácido Cítrico Anhidro Grado Alimento',
+          unit: 'kg',
+          priceUsd: 3.20,
+          priceBs: 154.72,
+          leadTimeDays: 2,
+          lastUpdated: '2026-10-10',
+          notes: 'Regulador de pH para gelificación óptima',
+        },
+      ],
+    },
+  ];
+
   return {
     rawMaterials,
     inventoryMovements,
@@ -1484,6 +1747,7 @@ export function createInitialDatabase(): DatabaseState {
     recipes,
     productionOrders,
     customers,
+    suppliers,
     salesOrders,
     deliveryNotes,
     employees,
@@ -1721,11 +1985,23 @@ export class ErpDatabase {
     }
 
     // 2. Increase finished goods inventory
-    const fg = this.state.finishedGoods.find(f => f.presentation === order.presentation && f.flavor === order.flavor);
-    if (fg) {
-      fg.stockUnits += order.targetUnits;
-      fg.availableUnits = fg.stockUnits - fg.reservedUnits;
-      fg.baseCost = order.unitCost;
+    if (order.isManual && order.formulas && order.formulas.length > 0) {
+      for (const formula of order.formulas) {
+        const fg = this.state.finishedGoods.find(f => f.presentation === formula.presentation && f.flavor === formula.flavor);
+        if (fg) {
+          fg.stockUnits += formula.targetUnits;
+          // REQUERIMIENTO: Los productos resultantes deben quedar en inventario disponible (stock) SIN descontar ni afectar el inventario comprometido
+          fg.availableUnits = fg.stockUnits - fg.reservedUnits;
+          fg.baseCost = formula.unitCost;
+        }
+      }
+    } else {
+      const fg = this.state.finishedGoods.find(f => f.presentation === order.presentation && f.flavor === order.flavor);
+      if (fg) {
+        fg.stockUnits += order.targetUnits;
+        fg.availableUnits = fg.stockUnits - fg.reservedUnits;
+        fg.baseCost = order.unitCost;
+      }
     }
 
     // 3. Mark complete
@@ -1742,9 +2018,337 @@ export class ErpDatabase {
 
     return {
       success: true,
-      message: `Orden ${order.orderNumber} procesada exitosamente. Se descontaron los insumos del BOM y se ingresaron ${order.targetUnits} unidades de producto terminado al inventario (Lote: ${order.lotNumber}).`,
+      message: `Orden ${order.orderNumber} procesada exitosamente. Se descontaron los insumos del BOM y se ingresaron ${order.targetUnits} unidades de producto terminado al inventario disponible (Lote: ${order.lotNumber}).`,
       order,
     };
+  }
+
+  // --- MODELO MANUAL MULTI-FÓRMULA ---
+  public createManualProductionOrder(orderData: {
+    lotNumber?: string;
+    operatorNotes?: string;
+    formulas: { recipeId: string; batchCount: number }[];
+    targetStockOnly?: boolean;
+    user?: string;
+  }): { order: ProductionOrder; missingMaterials: { name: string; required: number; available: number; unit: string }[] } {
+    if (!orderData.formulas || orderData.formulas.length === 0) {
+      throw new Error('Debe incluir al menos una fórmula en la orden manual');
+    }
+
+    const currentRate = this.state.exchangeRates.currentUsd || 48.35;
+    const formulaLines: ManualOrderFormulaLine[] = [];
+    const aggregatedConsumedMaterialsMap = new Map<string, any>();
+
+    let totalDirectMaterialCost = 0;
+    let totalDirectLaborCost = 0;
+    let totalIndirectCost = 0;
+    let totalTargetUnits = 0;
+    let primaryFlavor = '';
+    let primaryPresentation: any = 'pequena_250g';
+    const missingMaterials: { name: string; required: number; available: number; unit: string }[] = [];
+
+    for (let i = 0; i < orderData.formulas.length; i++) {
+      const f = orderData.formulas[i];
+      const recipe = this.state.recipes.find(r => r.id === f.recipeId);
+      if (!recipe) continue;
+
+      if (i === 0) {
+        primaryFlavor = recipe.flavor;
+        primaryPresentation = recipe.presentation;
+      }
+
+      const batches = Math.max(1, f.batchCount || 1);
+      const units = recipe.batchSizeUnits * batches;
+      totalTargetUnits += units;
+
+      let fMatCost = 0;
+      for (const item of recipe.items) {
+        const mat = this.state.rawMaterials.find(m => m.id === item.materialId);
+        const reqQty = item.quantity * batches;
+        const unitCost = mat ? mat.costPerUnit : 0;
+        const itemTotal = Number((reqQty * unitCost).toFixed(2));
+        fMatCost += itemTotal;
+
+        const existing = aggregatedConsumedMaterialsMap.get(item.materialId);
+        if (existing) {
+          existing.quantityConsumed += reqQty;
+          existing.totalCost = Number((existing.totalCost + itemTotal).toFixed(2));
+        } else {
+          aggregatedConsumedMaterialsMap.set(item.materialId, {
+            materialId: item.materialId,
+            materialName: item.materialName,
+            quantityConsumed: reqQty,
+            unit: item.unit,
+            unitCost,
+            totalCost: itemTotal,
+          });
+        }
+      }
+
+      const fLaborCost = Number(((recipe.directLaborMinutes / 60) * 4.50 * batches).toFixed(2));
+      const fIndirectCost = Number((recipe.estimatedUtilityCost * batches).toFixed(2));
+      const fTotal = Number((fMatCost + fLaborCost + fIndirectCost).toFixed(2));
+      const fUnitCost = Number((fTotal / units).toFixed(2));
+
+      totalDirectMaterialCost += fMatCost;
+      totalDirectLaborCost += fLaborCost;
+      totalIndirectCost += fIndirectCost;
+
+      formulaLines.push({
+        id: 'fline-' + Date.now() + '-' + i,
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+        flavor: recipe.flavor,
+        presentation: recipe.presentation,
+        batchCount: batches,
+        batchSizeUnits: recipe.batchSizeUnits,
+        targetUnits: units,
+        unitCost: fUnitCost,
+        totalCost: fTotal,
+      });
+    }
+
+    // Verify stock availability for aggregated consumption
+    aggregatedConsumedMaterialsMap.forEach(matItem => {
+      const mat = this.state.rawMaterials.find(m => m.id === matItem.materialId);
+      const avail = mat ? mat.currentStock : 0;
+      if (avail < matItem.quantityConsumed) {
+        missingMaterials.push({
+          name: matItem.materialName,
+          required: matItem.quantityConsumed,
+          available: avail,
+          unit: matItem.unit,
+        });
+      }
+    });
+
+    const totalProductionCost = Number((totalDirectMaterialCost + totalDirectLaborCost + totalIndirectCost).toFixed(2));
+    const avgUnitCost = totalTargetUnits > 0 ? Number((totalProductionCost / totalTargetUnits).toFixed(2)) : 0;
+    const nextManualOpNum = 'OPM-2026-' + (this.state.productionOrders.filter(o => o.isManual).length + 1).toString().padStart(3, '0');
+    const autoLot = orderData.lotNumber || `L-MAN-${Date.now().toString().slice(-4)}`;
+
+    const newOrder: ProductionOrder = {
+      id: 'po-man-' + Date.now(),
+      orderNumber: nextManualOpNum,
+      recipeId: formulaLines[0]?.recipeId || '',
+      recipeName: formulaLines.length === 1 ? formulaLines[0].recipeName : `Multifórmula (${formulaLines.length} Recetas)`,
+      flavor: formulaLines.length === 1 ? primaryFlavor : 'Mixto / Multi-Sabor',
+      presentation: primaryPresentation,
+      targetUnits: totalTargetUnits,
+      batchCount: formulaLines.reduce((acc, f) => acc + f.batchCount, 0),
+      lotNumber: autoLot,
+      status: 'planificada',
+      startDate: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString().slice(0, 10),
+      exchangeRateUsed: currentRate,
+      consumedMaterials: Array.from(aggregatedConsumedMaterialsMap.values()),
+      directMaterialCost: Number(totalDirectMaterialCost.toFixed(2)),
+      directLaborCost: Number(totalDirectLaborCost.toFixed(2)),
+      indirectCost: Number(totalIndirectCost.toFixed(2)),
+      totalProductionCost,
+      totalCost: totalProductionCost,
+      unitCost: avgUnitCost,
+      totalProductionCostBs: Number((totalProductionCost * currentRate).toFixed(2)),
+      unitCostBs: Number((avgUnitCost * currentRate).toFixed(2)),
+      operatorNotes: orderData.operatorNotes || 'Orden manual multi-fórmula programada para stock disponible',
+      isManual: true,
+      formulas: formulaLines,
+      targetStockOnly: true, // Queda en stock disponible sin descontar ni afectar inventario comprometido
+      lastModifiedBy: orderData.user || 'Administrador General',
+      lastModifiedAt: new Date().toISOString(),
+    };
+
+    this.state.productionOrders.unshift(newOrder);
+    return { order: newOrder, missingMaterials };
+  }
+
+  public updateManualProductionOrder(id: string, updates: {
+    lotNumber?: string;
+    operatorNotes?: string;
+    formulas?: { recipeId: string; batchCount: number }[];
+  }, user: string): ProductionOrder {
+    const order = this.state.productionOrders.find(o => o.id === id);
+    if (!order) throw new Error('Orden no encontrada');
+    if (!order.isManual) throw new Error('Solo se pueden modificar órdenes del Modelo Manual');
+    if (order.status === 'completada') throw new Error('No se puede modificar una orden completada');
+
+    const currentRate = order.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
+
+    if (updates.lotNumber) order.lotNumber = updates.lotNumber;
+    if (updates.operatorNotes !== undefined) order.operatorNotes = updates.operatorNotes;
+
+    if (updates.formulas && updates.formulas.length > 0) {
+      const formulaLines: ManualOrderFormulaLine[] = [];
+      const aggregatedConsumedMaterialsMap = new Map<string, any>();
+      let totalDirectMaterialCost = 0;
+      let totalDirectLaborCost = 0;
+      let totalIndirectCost = 0;
+      let totalTargetUnits = 0;
+
+      for (let i = 0; i < updates.formulas.length; i++) {
+        const f = updates.formulas[i];
+        const recipe = this.state.recipes.find(r => r.id === f.recipeId);
+        if (!recipe) continue;
+
+        const batches = Math.max(1, f.batchCount || 1);
+        const units = recipe.batchSizeUnits * batches;
+        totalTargetUnits += units;
+
+        let fMatCost = 0;
+        for (const item of recipe.items) {
+          const mat = this.state.rawMaterials.find(m => m.id === item.materialId);
+          const reqQty = item.quantity * batches;
+          const unitCost = mat ? mat.costPerUnit : 0;
+          const itemTotal = Number((reqQty * unitCost).toFixed(2));
+          fMatCost += itemTotal;
+
+          const existing = aggregatedConsumedMaterialsMap.get(item.materialId);
+          if (existing) {
+            existing.quantityConsumed += reqQty;
+            existing.totalCost = Number((existing.totalCost + itemTotal).toFixed(2));
+          } else {
+            aggregatedConsumedMaterialsMap.set(item.materialId, {
+              materialId: item.materialId,
+              materialName: item.materialName,
+              quantityConsumed: reqQty,
+              unit: item.unit,
+              unitCost,
+              totalCost: itemTotal,
+            });
+          }
+        }
+
+        const fLaborCost = Number(((recipe.directLaborMinutes / 60) * 4.50 * batches).toFixed(2));
+        const fIndirectCost = Number((recipe.estimatedUtilityCost * batches).toFixed(2));
+        const fTotal = Number((fMatCost + fLaborCost + fIndirectCost).toFixed(2));
+        const fUnitCost = Number((fTotal / units).toFixed(2));
+
+        totalDirectMaterialCost += fMatCost;
+        totalDirectLaborCost += fLaborCost;
+        totalIndirectCost += fIndirectCost;
+
+        formulaLines.push({
+          id: 'fline-' + Date.now() + '-' + i,
+          recipeId: recipe.id,
+          recipeName: recipe.name,
+          flavor: recipe.flavor,
+          presentation: recipe.presentation,
+          batchCount: batches,
+          batchSizeUnits: recipe.batchSizeUnits,
+          targetUnits: units,
+          unitCost: fUnitCost,
+          totalCost: fTotal,
+        });
+      }
+
+      order.formulas = formulaLines;
+      order.consumedMaterials = Array.from(aggregatedConsumedMaterialsMap.values());
+      order.targetUnits = totalTargetUnits;
+      order.batchCount = formulaLines.reduce((acc, f) => acc + f.batchCount, 0);
+      order.directMaterialCost = Number(totalDirectMaterialCost.toFixed(2));
+      order.directLaborCost = Number(totalDirectLaborCost.toFixed(2));
+      order.indirectCost = Number(totalIndirectCost.toFixed(2));
+      const totalProductionCost = Number((totalDirectMaterialCost + totalDirectLaborCost + totalIndirectCost).toFixed(2));
+      order.totalProductionCost = totalProductionCost;
+      order.totalCost = totalProductionCost;
+      order.unitCost = totalTargetUnits > 0 ? Number((totalProductionCost / totalTargetUnits).toFixed(2)) : 0;
+      order.totalProductionCostBs = Number((totalProductionCost * currentRate).toFixed(2));
+      order.unitCostBs = Number((order.unitCost * currentRate).toFixed(2));
+      order.recipeName = formulaLines.length === 1 ? formulaLines[0].recipeName : `Multifórmula (${formulaLines.length} Recetas)`;
+    }
+
+    order.lastModifiedBy = user;
+    order.lastModifiedAt = new Date().toISOString();
+    return order;
+  }
+
+  public deleteManualProductionOrder(id: string, user = 'Administrador'): boolean {
+    const idx = this.state.productionOrders.findIndex(o => o.id === id);
+    if (idx === -1) throw new Error('Orden no encontrada');
+    const order = this.state.productionOrders[idx];
+    if (!order.isManual) throw new Error('Solo se pueden eliminar órdenes del Modelo Manual');
+    if (order.status === 'completada') throw new Error('No se puede eliminar una orden completada');
+    this.state.productionOrders.splice(idx, 1);
+    this.addAuditLog({
+      module: 'produccion',
+      actionType: 'orden_manual_eliminada',
+      title: 'Orden manual de producción eliminada',
+      description: `Orden manual de producción eliminada: ${order.orderNumber} (Lote: ${order.lotNumber})`,
+      userId: user,
+      userName: user,
+      userRole: 'admin',
+      severity: 'warning',
+      details: {
+        targetId: id,
+        targetCode: order.orderNumber,
+        lotNumber: order.lotNumber,
+      },
+    });
+    return true;
+  }
+
+  // --- SUPPLIERS & PRICE CATALOG ---
+  public getSuppliers(): Supplier[] {
+    if (!this.state.suppliers) {
+      this.state.suppliers = [];
+    }
+    return this.state.suppliers;
+  }
+
+  public addSupplier(data: Omit<Supplier, 'id' | 'createdAt'>): Supplier {
+    if (!this.state.suppliers) this.state.suppliers = [];
+    const newSup: Supplier = {
+      ...data,
+      id: 'sup-' + Date.now(),
+      createdAt: new Date().toISOString().slice(0, 10),
+      priceCatalog: data.priceCatalog || [],
+      rating: data.rating || 5,
+      status: data.status || 'activo',
+    };
+    this.state.suppliers.push(newSup);
+    return newSup;
+  }
+
+  public updateSupplier(id: string, updates: Partial<Supplier>): Supplier {
+    if (!this.state.suppliers) this.state.suppliers = [];
+    const idx = this.state.suppliers.findIndex(s => s.id === id);
+    if (idx === -1) throw new Error('Proveedor no encontrado');
+    this.state.suppliers[idx] = { ...this.state.suppliers[idx], ...updates };
+    return this.state.suppliers[idx];
+  }
+
+  public deleteSupplier(id: string): boolean {
+    if (!this.state.suppliers) return false;
+    const idx = this.state.suppliers.findIndex(s => s.id === id);
+    if (idx === -1) return false;
+    this.state.suppliers.splice(idx, 1);
+    return true;
+  }
+
+  public addSupplierPriceItem(supplierId: string, item: Omit<SupplierPriceItem, 'id' | 'lastUpdated'>): SupplierPriceItem {
+    if (!this.state.suppliers) this.state.suppliers = [];
+    const supplier = this.state.suppliers.find(s => s.id === supplierId);
+    if (!supplier) throw new Error('Proveedor no encontrado');
+    const rate = this.state.exchangeRates.currentUsd || 48.35;
+    const newItem: SupplierPriceItem = {
+      ...item,
+      id: 'sp-' + Date.now(),
+      lastUpdated: new Date().toISOString().slice(0, 10),
+      priceBs: item.priceBs || Number((item.priceUsd * rate).toFixed(2)),
+    };
+    if (!supplier.priceCatalog) supplier.priceCatalog = [];
+    supplier.priceCatalog.unshift(newItem);
+    return newItem;
+  }
+
+  public deleteSupplierPriceItem(supplierId: string, priceId: string): boolean {
+    if (!this.state.suppliers) return false;
+    const supplier = this.state.suppliers.find(s => s.id === supplierId);
+    if (!supplier || !supplier.priceCatalog) return false;
+    const idx = supplier.priceCatalog.findIndex(p => p.id === priceId);
+    if (idx === -1) return false;
+    supplier.priceCatalog.splice(idx, 1);
+    return true;
   }
 
   // --- CUSTOMERS ---

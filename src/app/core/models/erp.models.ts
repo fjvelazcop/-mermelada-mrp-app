@@ -128,9 +128,22 @@ export interface RecipeBOM {
 
 export type ProductionOrderStatus = 'planificada' | 'en_proceso' | 'completada' | 'cancelada';
 
+export interface ManualOrderFormulaLine {
+  id: string;
+  recipeId: string;
+  recipeName: string;
+  flavor: string;
+  presentation: PresentationType;
+  batchCount: number;
+  batchSizeUnits: number;
+  targetUnits: number;
+  unitCost: number;
+  totalCost: number;
+}
+
 export interface ProductionOrder {
   id: string;
-  orderNumber: string; // ej: OP-2026-089
+  orderNumber: string; // ej: OP-2026-089 o OPM-2026-001 (Manual)
   recipeId: string;
   recipeName: string;
   flavor: string;
@@ -162,6 +175,13 @@ export interface ProductionOrder {
   totalProductionCostBs?: number;
   unitCostBs?: number;
   operatorNotes?: string;
+
+  // Campos exclusivos del Modelo Manual Multi-Fórmula
+  isManual?: boolean;
+  formulas?: ManualOrderFormulaLine[];
+  targetStockOnly?: boolean; // True: productos ingresan a stock disponible sin descontar inventario comprometido
+  lastModifiedBy?: string;
+  lastModifiedAt?: string;
 }
 
 export interface Customer {
@@ -175,6 +195,7 @@ export interface Customer {
   clientType: 'panaderia' | 'fabricante_bocadillos' | 'pasteleria' | 'distribuidor' | 'otro';
   creditLimit: number;
   paymentTerms: string; // Contado, 7 días, 15 días
+  bank?: string;
 }
 
 export type SalesOrderStatus = 'pendiente' | 'en_produccion' | 'listo_despacho' | 'despachado' | 'cobrado';
@@ -295,6 +316,12 @@ export interface PayrollWeek {
   totalPayrollPaid: number;
   fixedAbsorptionCost: number; // Costo fijo absorbido o trasladado a gastos operativos
   notes?: string;
+  roleBonuses?: {
+    roleTitle: string;
+    bonusAmount: number;
+    count: number;
+    subtotal: number;
+  }[];
 }
 
 export interface CostStructureAnalysis {
@@ -513,7 +540,7 @@ export interface FinishedPresentationCost {
   };
 }
 
-export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas' | 'gastos';
+export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas' | 'gastos' | 'proveedores' | 'nomina';
 export type AuditSeverity = 'info' | 'success' | 'warning' | 'critical';
 
 export interface AuditLogDetails {
@@ -531,6 +558,10 @@ export interface AuditLogDetails {
   referenceDoc?: string;
   salesOrderId?: string;
   operatorNotes?: string;
+  formulasCount?: number;
+  user?: string;
+  taxId?: string;
+  [key: string]: unknown;
 }
 
 export interface AuditLogEntry {
@@ -547,7 +578,14 @@ export interface AuditLogEntry {
     | 'receta_bom_creada'
     | 'alerta_stock_critico'
     | 'gasto_registrado'
-    | 'gasto_eliminado';
+    | 'gasto_eliminado'
+    | 'orden_manual_creada'
+    | 'orden_manual_modificada'
+    | 'orden_manual_eliminada'
+    | 'proveedor_registrado'
+    | 'proveedor_modificado'
+    | 'proveedor_eliminado'
+    | string;
   title: string;
   description: string;
   userId: string;
@@ -608,6 +646,11 @@ export interface Expense {
   notes?: string;
   registeredBy: string;
 
+  // Localización Bancaria Venezuela (Obligatorio banco emisor)
+  issuingBank?: string; // ej: '0108 - Banco Provincial (BBVA)'
+  issuingBankCode?: string; // ej: '0108'
+  receivingBank?: string;
+
   // Mapeo contable y fiscal para futuro desarrollo (Libro de Compras, Libro Diario, Libro Mayor)
   taxCategory: ExpenseTaxCategory;
   taxRatePercent?: number; // ej: 16.0
@@ -617,4 +660,71 @@ export interface Expense {
   accountingAccountName?: string;
   fiscalBookEligible: boolean; // True si califica para el Libro de Compras formal SENIAT
 }
+
+// --- DIRECTORIO MAESTRO DE PROVEEDORES & CATÁLOGO DE PRECIOS ---
+
+export interface SupplierPriceItem {
+  id: string;
+  materialId?: string;
+  materialName: string;
+  unit: UnitOfMeasure | string;
+  priceUsd: number;
+  priceBs?: number;
+  leadTimeDays: number;
+  lastUpdated: string; // YYYY-MM-DD
+  notes?: string;
+
+  // Compatibility aliases for inventory module
+  itemCode?: string;
+  itemName?: string;
+  presentation?: string;
+  unitPriceUsd?: number;
+  minOrderQuantity?: number;
+}
+
+export type SupplierCategory =
+  | 'frutas_pulpa'
+  | 'azucar_endulzantes'
+  | 'pectina_quimicos'
+  | 'envases_vidrio'
+  | 'tapas_empaques'
+  | 'etiquetas'
+  | 'servicios'
+  | 'mantenimiento'
+  | 'frutas'
+  | 'azucar_edulcorantes'
+  | 'envases_tapas'
+  | 'etiquetas_empaque'
+  | 'quimicos_aditivos'
+  | 'servicios_mantenimiento'
+  | 'otro'
+  | string;
+
+export interface Supplier {
+  id: string;
+  businessName: string; // Razón social / Nombre comercial
+  taxId: string; // RIF fiscal venezolano (ej: J-12345678-9)
+  category: SupplierCategory;
+  categoryLabel: string;
+  mainContact: string; // Contacto principal (obligatorio)
+  phones: string; // Teléfonos (obligatorio)
+  fiscalAddress: string; // Dirección fiscal/física (obligatorio)
+  email?: string;
+  city?: string;
+  paymentTerms: string; // ej: Contado, Crédito 7 días, Crédito 15 días
+  bankName?: string; // Banco oficial para transferencias
+  bankAccountNumber?: string; // Código cuenta 20 dígitos
+  rating?: number; // 1-5 estrellas
+  status: 'activo' | 'inactivo';
+  priceCatalog: SupplierPriceItem[];
+  notes?: string;
+  createdAt: string;
+
+  // Compatibility aliases for inventory module
+  contactPerson?: string;
+  phone?: string;
+  deliveryLeadTimeDays?: number;
+  preferredBank?: string;
+}
+
 

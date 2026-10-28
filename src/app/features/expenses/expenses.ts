@@ -7,6 +7,8 @@ import {Expense, ExpenseCategoryConfig, ExpenseTaxCategory} from '../../core/mod
 import {VeCurrencyPipe} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel} from '../../core/utils/export.utils';
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
+import {BankAutocomplete} from '../../shared/components/bank-autocomplete/bank-autocomplete';
+import {VenezuelanBank} from '../../core/constants/venezuelan-banks';
 
 export interface CategoryBudgetAnalysis {
   category: ExpenseCategoryConfig;
@@ -23,7 +25,7 @@ export interface CategoryBudgetAnalysis {
 @Component({
   selector: 'app-expenses',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog],
+  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog, BankAutocomplete],
   templateUrl: './expenses.html',
 })
 export class ExpensesComponent {
@@ -92,6 +94,8 @@ export class ExpensesComponent {
     documentNumber: new FormControl<string>('', {nonNullable: true}),
     paymentMethod: new FormControl<'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta'>('transferencia_bancaria', {nonNullable: true}),
     paymentReference: new FormControl<string>('', {nonNullable: true}),
+    issuingBank: new FormControl<string>('0108 - Banco Provincial', {nonNullable: true, validators: [Validators.required]}),
+    issuingBankCode: new FormControl<string>('0108', {nonNullable: true}),
     taxCategory: new FormControl<ExpenseTaxCategory>('con_factura_iva', {nonNullable: true}),
     taxRatePercent: new FormControl<number>(16.0, {nonNullable: true}),
     fiscalBookEligible: new FormControl<boolean>(true, {nonNullable: true}),
@@ -100,6 +104,14 @@ export class ExpensesComponent {
     date: new FormControl<string>(new Date().toISOString().slice(0, 10), {nonNullable: true, validators: [Validators.required]}),
     notes: new FormControl<string>('', {nonNullable: true}),
   });
+
+  public onBankSelected(event: { bank: VenezuelanBank | null; formatted: string }) {
+    this.expenseForm.patchValue({
+      issuingBank: event.formatted,
+      issuingBankCode: event.bank?.code || (event.formatted.slice(0, 4) || ''),
+    });
+  }
+
 
   // Reactive Form: Custom Category Definition
   public categoryForm = new FormGroup({
@@ -386,6 +398,8 @@ export class ExpensesComponent {
       documentNumber: '',
       paymentMethod: 'transferencia_bancaria',
       paymentReference: '',
+      issuingBank: '0108 - Banco Provincial',
+      issuingBankCode: '0108',
       taxCategory: 'con_factura_iva',
       taxRatePercent: 16.0,
       fiscalBookEligible: true,
@@ -518,6 +532,8 @@ export class ExpensesComponent {
       documentNumber: v.documentNumber || undefined,
       paymentMethod: v.paymentMethod,
       paymentReference: v.paymentReference || undefined,
+      issuingBank: v.issuingBank || '0108 - Banco Provincial',
+      issuingBankCode: v.issuingBankCode || '0108',
       notes: v.notes || undefined,
       registeredBy: `${this.api.currentUser().fullName} (${this.api.currentUser().roleName})`,
       taxCategory: v.taxCategory,

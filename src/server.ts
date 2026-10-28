@@ -168,6 +168,97 @@ app.post('/api/production-orders/:id/process', (req, res) => {
   }
 });
 
+// --- MODELO MANUAL MULTI-FÓRMULA ---
+app.post('/api/production-orders/manual', (req, res) => {
+  try {
+    const result = dbInstance.createManualProductionOrder(req.body);
+    res.status(201).json(result);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al crear orden manual';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.put('/api/production-orders/manual/:id', (req, res) => {
+  try {
+    const updated = dbInstance.updateManualProductionOrder(req.params.id, req.body, req.body.user || 'Administrador');
+    res.json(updated);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al actualizar orden manual';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.delete('/api/production-orders/manual/:id', (req, res) => {
+  try {
+    const success = dbInstance.deleteManualProductionOrder(req.params.id, req.body?.user || 'Administrador');
+    res.json({ success });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al eliminar orden manual';
+    res.status(400).json({ error: msg });
+  }
+});
+
+// --- PROVEEDORES & CATÁLOGO DE PRECIOS ---
+app.get('/api/suppliers', (req, res) => {
+  try {
+    res.json(dbInstance.getSuppliers());
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al consultar proveedores';
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.post('/api/suppliers', (req, res) => {
+  try {
+    const created = dbInstance.addSupplier(req.body);
+    res.status(201).json(created);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al registrar proveedor';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.put('/api/suppliers/:id', (req, res) => {
+  try {
+    const updated = dbInstance.updateSupplier(req.params.id, req.body);
+    res.json(updated);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al actualizar proveedor';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.delete('/api/suppliers/:id', (req, res) => {
+  try {
+    const success = dbInstance.deleteSupplier(req.params.id);
+    res.json({ success });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al eliminar proveedor';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.post('/api/suppliers/:id/prices', (req, res) => {
+  try {
+    const item = dbInstance.addSupplierPriceItem(req.params.id, req.body);
+    res.status(201).json(item);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al registrar ítem en catálogo de precios';
+    res.status(400).json({ error: msg });
+  }
+});
+
+app.delete('/api/suppliers/:id/prices/:priceId', (req, res) => {
+  try {
+    const success = dbInstance.deleteSupplierPriceItem(req.params.id, req.params.priceId);
+    res.json({ success });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al eliminar ítem de precio';
+    res.status(400).json({ error: msg });
+  }
+});
+
 // --- CUSTOMERS ---
 app.get('/api/sales/customers', (req, res) => {
   try {

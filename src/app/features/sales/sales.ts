@@ -5,6 +5,7 @@ import {ErpApiService} from '../../core/services/erp-api.service';
 import {DeliveryNote, FinishedGood, PriceTierType} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf, downloadDeliveryNotePdf} from '../../core/utils/export.utils';
+import {BankAutocomplete} from '../../shared/components/bank-autocomplete/bank-autocomplete';
 
 export interface PriceTierOption {
   tier: PriceTierType;
@@ -20,7 +21,7 @@ export interface PriceTierOption {
 @Component({
   selector: 'app-sales',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe],
+  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, BankAutocomplete],
   templateUrl: './sales.html',
 })
 export class SalesComponent {
@@ -55,7 +56,14 @@ export class SalesComponent {
     clientType: new FormControl<'panaderia' | 'fabricante_bocadillos' | 'pasteleria' | 'distribuidor' | 'otro'>('panaderia', {nonNullable: true}),
     creditLimit: new FormControl<number>(500, {nonNullable: true}),
     paymentTerms: new FormControl<string>('Contado contra entrega', {nonNullable: true}),
+    bank: new FormControl<string>('0108 - Banco Provincial', {nonNullable: true}),
   });
+
+  public onCustomerBankSelected(event: { bank: any; formatted: string }) {
+    this.newCustomerForm.patchValue({
+      bank: event.formatted,
+    });
+  }
 
   public newOrderForm = new FormGroup({
     customerId: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
@@ -376,6 +384,7 @@ export class SalesComponent {
       clientType: 'panaderia',
       creditLimit: 500,
       paymentTerms: 'Contado contra entrega',
+      bank: '0108 - Banco Provincial',
     });
     this.isNewCustomerModalOpen.set(true);
   }
@@ -397,6 +406,7 @@ export class SalesComponent {
       clientType: v.clientType,
       creditLimit: Number(v.creditLimit),
       paymentTerms: v.paymentTerms,
+      bank: v.bank,
     });
     this.closeNewCustomerModal();
   }
