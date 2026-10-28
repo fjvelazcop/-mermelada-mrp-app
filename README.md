@@ -245,6 +245,7 @@ Production artifacts are included in the repository:
 | `deploy/nginx/`, `deploy/caddy/` | HTTPS reverse-proxy examples. |
 | `.env.production.example` | Production environment template (secrets stay out of git). Set `NG_ALLOWED_HOSTS` to your domain so Angular SSR accepts the public Host header. |
 | `scripts/backup-db.mjs` | Consistent SQLite backup with integrity check and retention. |
+| `scripts/backup-cron.sh` | Cron wrapper: loads `.env`/`.env.production`, backs up and prunes old copies. |
 | `scripts/healthcheck.mjs` | Container/uptime health probe. |
 | `scripts/smoke-test.mjs` | Post-deploy functional smoke test. |
 | `.github/workflows/` | CI (lint, tests, build, Docker) and tag-based CD to GHCR + SSH deploy. |

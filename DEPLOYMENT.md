@@ -389,9 +389,16 @@ docker compose --env-file .env.production exec app node scripts/backup-db.mjs
 docker compose --env-file .env.production --profile backup up -d
 docker compose --env-file .env.production logs backup
 
-# Cron diario en el host (02:30)
+# Cron en el host (02:30) con Docker
 30 2 * * * cd /opt/mermelada && docker compose --env-file .env.production exec -T app node scripts/backup-db.mjs >> logs/backup.log 2>&1
+
+# Cron en el host con PM2 (dos veces al día: 02:00 y 14:00)
+# backup-cron.sh carga .env.production (o .env) y aplica BACKUP_RETENTION_DAYS.
+0 2,14 * * * PATH=/ruta/a/node/bin:/usr/local/bin:/usr/bin:/bin /opt/mermelada/scripts/backup-cron.sh
 ```
+
+La retención se controla con `BACKUP_RETENTION_DAYS` (por ejemplo `15` borra
+las copias con más de 15 días; `0` desactiva la purga).
 
 Formato: `backups/mermelada-<ISO>.db`. Añade copia externa (S3, rclone,
 restic) para protección ante pérdida del servidor:
