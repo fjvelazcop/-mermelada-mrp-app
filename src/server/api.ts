@@ -31,6 +31,13 @@ import {
 } from './auth.js';
 import { ApiError, apiNotFoundHandler, errorHandler } from './errors.js';
 import {
+  createRateLimiter,
+  isRateLimitExempt,
+  loginRateLimitKey,
+  readRateLimitConfig,
+  securityHeaders,
+} from './security.js';
+import {
   createNotificationRecipientHandler,
   deleteNotificationRecipientHandler,
   ensureSeedNotificationRecipients,
@@ -160,7 +167,39 @@ function auditActor(req: Request): AuditActor {
  */
 export function createApiApp(): express.Express {
   const app = express();
+  // Do not advertise the stack: `X-Powered-By: Express` is a fingerprinting
+  // freebie for attackers.
+  app.disable('x-powered-by');
+  // Only the loopback reverse proxy (cloudflared/Nginx) is trusted to set
+  // X-Forwarded-*, so req.ip and req.secure resolve to the real client.
+  app.set('trust proxy', 'loopback');
+  app.use(securityHeaders());
   app.use(express.json({ limit: '2mb' }));
+
+  // Rate limiting. Health checks, the OpenAPI docs and the loopback tunnel
+  // callback are exempt so monitoring and the tunnel supervisor never get
+  // throttled. Login has its own, stricter bucket keyed by IP + username.
+  const rateLimits = readRateLimitConfig();
+  if (rateLimits.enabled) {
+    app.use(
+      '/api',
+      createRateLimiter({
+        windowMs: rateLimits.windowMs,
+        max: rateLimits.max,
+        skip: isRateLimitExempt,
+      })
+    );
+    app.use(
+      '/api/auth/login',
+      createRateLimiter({
+        windowMs: rateLimits.loginWindowMs,
+        max: rateLimits.loginMax,
+        keyGenerator: loginRateLimitKey,
+        message:
+          'Demasiados intentos de inicio de sesión. Espere unos minutos e intente de nuevo.',
+      })
+    );
+  }
 
   // Loopback-only callback used by scripts/tunnel.mjs (PM2). It must be
   // registered before the bearer-token middleware because cloudflared has no

@@ -67,6 +67,23 @@ describe('GET /api/health', () => {
     expect(body.database.path).toBe(dbPath);
     expect(Date.parse(body.timestamp)).not.toBeNaN();
   });
+
+  it('applies the security headers and hides the framework banner', async () => {
+    const response = await fetch(`${baseUrl}/api/health`);
+
+    expect(response.headers.get('x-powered-by')).toBeNull();
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('x-frame-options')).toBe('DENY');
+    expect(response.headers.get('referrer-policy')).toBe(
+      'strict-origin-when-cross-origin'
+    );
+    expect(response.headers.get('permissions-policy')).toContain(
+      'geolocation=()'
+    );
+    expect(
+      response.headers.get('content-security-policy-report-only')
+    ).toContain("frame-ancestors 'none'");
+  });
 });
 
 describe('inventory API', () => {

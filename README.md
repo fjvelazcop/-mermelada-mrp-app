@@ -12,6 +12,13 @@ The system is designed to be modular and extensible: each domain‑specific resp
 
 ---
 
+## 📚 Manuales
+
+- **[Manual de usuario](docs/MANUAL-USUARIO.md):** acceso, roles, módulos, flujos diarios, reglas de auditoría y estado fiscal.
+- **[Manual de administración](docs/MANUAL-ADMINISTRADOR.md):** despliegue PM2, variables, usuarios, backups y restauración, túnel, correo, seguridad y checklist de puesta en marcha.
+
+---
+
 ## 🏗️ Architecture
 
 ### Agents (core/domain layers)
@@ -145,6 +152,12 @@ each session in `tunnel_sessions` and sends the notification email.
   Angular shell and static assets. The API keeps its bearer-token + RBAC flow.
   Cloudflare Access (Zero Trust free tier) can be added on top for per-email
   identity and OTP/SSO.
+- **Hardening:** `X-Powered-By` is disabled and every response carries
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+  `Permissions-Policy`, HSTS (only over HTTPS) and a `Report-Only` CSP. The API
+  applies an in-memory per-IP rate limit plus a stricter login bucket that
+  answers `429` with `Retry-After`. Health checks, the OpenAPI docs and the
+  loopback tunnel callback are exempt.
 - **Email:** SMTP credentials and `SMTP_BCC` come from the environment. Destinations
   live in `notification_recipients`; `SMTP_TO` only seeds that table on the first
   startup, so later changes from the API survive restarts. Every attempt is
@@ -154,6 +167,9 @@ each session in `tunnel_sessions` and sends the notification email.
 |----------|---------|---------|
 | `UI_AUTH_ENABLED` | `false` | Enables Basic Auth for the UI (fails closed if credentials are missing). |
 | `UI_AUTH_USER` / `UI_AUTH_PASSWORD` | — | Shared UI credentials. |
+| `RATE_LIMIT_ENABLED` | `true` (`false` in tests) | Enables the in-memory limiter. |
+| `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX` | `60000` / `300` | Global API window and request budget per client IP. |
+| `RATE_LIMIT_LOGIN_WINDOW_MS` / `RATE_LIMIT_LOGIN_MAX` | `900000` / `10` | Stricter window and budget for `POST /api/auth/login` per IP + username. |
 | `TUNNEL_ENABLED` | `false` | Adds `mermelada-tunnel` to the PM2 ecosystem. |
 | `TUNNEL_MODE` | `quick` | `quick` (`*.trycloudflare.com`) or `token` (named tunnel). |
 | `TUNNEL_TOKEN` | — | Cloudflare tunnel token for `token` mode. |

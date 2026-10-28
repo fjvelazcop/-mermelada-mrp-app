@@ -76,6 +76,11 @@ chmod 600 .env.production
 | `UI_AUTH_ENABLED` | `true` | No | Basic Auth delante de la UI/SSR (la API conserva Bearer + RBAC). |
 | `UI_AUTH_USER` | `erp-ui` | Si UI auth | Usuario compartido de la UI. |
 | `UI_AUTH_PASSWORD` | `openssl rand -base64 24` | Si UI auth | Clave compartida de la UI. |
+| `RATE_LIMIT_ENABLED` | `true` | No | Activa el limitador en memoria (se desactiva solo en tests). |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | No | Ventana global del limitador de API. |
+| `RATE_LIMIT_MAX` | `300` | No | Solicitudes por IP y ventana global. |
+| `RATE_LIMIT_LOGIN_WINDOW_MS` | `900000` | No | Ventana del limitador de login. |
+| `RATE_LIMIT_LOGIN_MAX` | `10` | No | Intentos de login por IP + usuario y ventana. |
 | `GEMINI_API_KEY` | `...` | No | Funciones de IA; vacío las desactiva. |
 | `SMTP_HOST` | `smtp.example.com` | No | Servidor SMTP para el correo del túnel. |
 | `SMTP_PORT` | `587` | No | Puerto SMTP. |
@@ -268,6 +273,16 @@ La URL vigente se consulta (admin) en `GET /api/system/tunnel` y en
   La API sigue usando Bearer + RBAC. Para identidad por usuario se puede añadir
   **Cloudflare Access** (Zero Trust gratuito hasta 50 usuarios) delante del
   hostname; en ese caso el Basic Auth actúa como segunda barrera.
+- Endurecimiento HTTP siempre activo: se elimina `X-Powered-By` y se envían
+  `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+  `Permissions-Policy`, HSTS (solo si la petición llega por HTTPS) y una CSP en
+  modo `Report-Only` para validarla antes de aplicarla.
+- Limitador en memoria por IP (`RATE_LIMIT_*`) y cubo más estricto para
+  `POST /api/auth/login` por IP + usuario. Responde `429` con `Retry-After`.
+  `/api/health`, `/api/openapi.json`, `/api/docs` y el callback interno del
+  túnel están exentos. En un despliegue con varias instancias hay que mover el
+  limitador a un almacén compartido (Redis).
+
 - Configura `SMTP_*`, `SMTP_FROM`, `SMTP_BCC` y `SMTP_TO` en `.env.production`.
   `SMTP_TO` solo siembra `notification_recipients` la primera vez; después los
   destinatarios se gestionan por API (`/api/notifications/recipients`) y

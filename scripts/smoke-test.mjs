@@ -5,12 +5,25 @@
  * Environment variables:
  *  - SMOKE_BASE_URL     Target base URL (default: http://127.0.0.1:4000)
  *  - SMOKE_TIMEOUT_MS   Per-request timeout (default: 10000)
+ *  - UI_AUTH_ENABLED / UI_AUTH_USER / UI_AUTH_PASSWORD
+ *                       When UI auth is on, the Basic Authorization header is
+ *                       sent so the Angular shell check keeps passing.
  */
 const baseUrl = (process.env.SMOKE_BASE_URL || 'http://127.0.0.1:4000').replace(
   /\/$/,
   ''
 );
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 10_000);
+
+const uiAuthEnabled = process.env.UI_AUTH_ENABLED === 'true';
+const uiUser = process.env.UI_AUTH_USER || '';
+const uiPassword = process.env.UI_AUTH_PASSWORD || '';
+const baseHeaders = { accept: 'application/json, text/html' };
+if (uiAuthEnabled && uiUser && uiPassword) {
+  baseHeaders.authorization = `Basic ${Buffer.from(
+    `${uiUser}:${uiPassword}`
+  ).toString('base64')}`;
+}
 
 const checks = [];
 let failed = false;
@@ -22,7 +35,7 @@ async function check(name, path, validate) {
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       signal: controller.signal,
-      headers: { accept: 'application/json, text/html' },
+      headers: baseHeaders,
     });
     const contentType = response.headers.get('content-type') || '';
     const body = contentType.includes('application/json')

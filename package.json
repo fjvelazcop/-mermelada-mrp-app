@@ -18,7 +18,7 @@
     "backup:db": "node scripts/backup-db.mjs",
     "backup:remote": "node --env-file-if-exists=.env --env-file-if-exists=.env.production scripts/backup-remote.mjs",
     "healthcheck": "node scripts/healthcheck.mjs",
-    "smoke:prod": "node scripts/smoke-test.mjs"
+    "smoke:prod": "node --env-file-if-exists=.env --env-file-if-exists=.env.production scripts/smoke-test.mjs"
   },
   "private": true,
   "engines": {
