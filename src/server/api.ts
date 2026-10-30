@@ -693,6 +693,41 @@ export function createApiApp(): express.Express {
     '/api/sales/orders',
     validateBody(salesOrderSchema),
     mutation((req, res) => {
+      // Validación fiscal previa a la emisión
+      const fiscalSettings = dbInstance.getFiscalSettings();
+      if (!fiscalSettings.companyName || !fiscalSettings.companyTaxId) {
+        throw new ApiError(
+          400,
+          'La configuración fiscal no está completa. Configure los datos de la empresa en Configuración → Datos Fiscales primero.'
+        );
+      }
+      if (!fiscalSettings.taxRatePercent) {
+        throw new ApiError(400, 'La alícuota de IVA no está configurada.');
+      }
+      if (!fiscalSettings.invoicePrefix) {
+        throw new ApiError(400, 'El prefijo de factura no está configurado.');
+      }
+      if (!fiscalSettings.nextInvoiceNumber) {
+        throw new ApiError(
+          400,
+          'El siguiente número de factura no está definido.'
+        );
+      }
+
+      // Validar que el cliente tenga RIF
+      const customer = dbInstance
+        .getCustomers()
+        .find(c => c.id === req.body.customerId);
+      if (!customer) {
+        throw new ApiError(404, 'Cliente no encontrado');
+      }
+      if (!customer.taxId) {
+        throw new ApiError(
+          400,
+          'El cliente debe tener RIF (campo obligatorio para facturación)'
+        );
+      }
+
       const created = dbInstance.addSalesOrder(req.body, auditActor(req));
       res.status(201).json(created);
     })

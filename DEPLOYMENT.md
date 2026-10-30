@@ -270,7 +270,9 @@ La URL vigente se consulta (admin) en `GET /api/system/tunnel` y en
 ### 5.2 Protección de la UI y correo
 
 - `UI_AUTH_ENABLED=true` exige Basic Auth para el shell Angular y los assets.
-  La API sigue usando Bearer + RBAC. Para identidad por usuario se puede añadir
+  La API sigue usando Bearer + RBAC. Si se usa un túnel rápido y se quiere
+  evitar el doble login, se puede dejar en `false`; el login de la aplicación
+  y el RBAC siguen siendo obligatorios. Para identidad por usuario se puede añadir
   **Cloudflare Access** (Zero Trust gratuito hasta 50 usuarios) delante del
   hostname; en ese caso el Basic Auth actúa como segunda barrera.
 - Endurecimiento HTTP siempre activo: se elimina `X-Powered-By` y se envían

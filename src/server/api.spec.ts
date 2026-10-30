@@ -576,6 +576,84 @@ describe('mutating endpoints', () => {
     expect(notes.some((n) => n.id === note.body['id'])).toBe(true);
   });
 
+  it('blocks sales orders when fiscal data is incomplete', async () => {
+    const { dbInstance } = await import('./erp-database.js');
+    const settings = dbInstance.getFiscalSettings();
+    const customer = dbInstance.getCustomers()[0];
+    const originalTaxId = customer.taxId;
+
+    const goods = (await (
+      await fetch(`${baseUrl}/api/inventory/finished-goods`)
+    ).json()) as {
+      id: string;
+      flavor: string;
+      presentation: string;
+      presentationLabel: string;
+      suggestedWholesalePrice: number;
+    }[];
+    const good = goods[0];
+    const subtotal = Number((good.suggestedWholesalePrice * 2).toFixed(2));
+
+    const buildOrder = (customerId: string) => ({
+      customerId,
+      customerName: 'Cliente de prueba',
+      customerTaxId: 'J-99999999-9',
+      orderDate: '2026-10-30',
+      deliveryDate: '2026-11-05',
+      status: 'pendiente',
+      items: [
+        {
+          finishedGoodId: good.id,
+          flavor: good.flavor,
+          presentation: good.presentation,
+          presentationLabel: good.presentationLabel,
+          quantity: 2,
+          unitPrice: good.suggestedWholesalePrice,
+          subtotal,
+        },
+      ],
+      subtotal,
+      taxAmount: 0.32,
+      total: Number((subtotal + 0.32).toFixed(2)),
+    });
+
+    try {
+      dbInstance.updateFiscalSettings({ companyName: '' });
+      const noFiscalConfig = await jsonRequest(
+        '/api/sales/orders',
+        'POST',
+        buildOrder(customer.id)
+      );
+      expect(noFiscalConfig.response.status).toBe(400);
+      expect(noFiscalConfig.body['error']).toContain('configuración fiscal');
+    } finally {
+      dbInstance.updateFiscalSettings({
+        companyName: settings.companyName,
+      });
+    }
+
+    try {
+      customer.taxId = '';
+      const noTaxId = await jsonRequest(
+        '/api/sales/orders',
+        'POST',
+        buildOrder(customer.id)
+      );
+      expect(noTaxId.response.status).toBe(400);
+      expect(noTaxId.body['error']).toContain('RIF');
+    } finally {
+      customer.taxId = originalTaxId;
+    }
+
+    const unknownCustomer = await jsonRequest(
+      '/api/sales/orders',
+      'POST',
+      buildOrder('missing-customer')
+    );
+    expect(unknownCustomer.response.status).toBe(404);
+    expect(unknownCustomer.body['error']).toContain('Cliente no encontrado');
+  });
+
   it('returns 404/400 for unknown sales resources', async () => {
     const missingStatus = await jsonRequest(
       '/api/sales/orders/missing/status',

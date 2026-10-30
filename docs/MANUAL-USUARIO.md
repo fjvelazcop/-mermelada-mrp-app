@@ -35,12 +35,12 @@ descuenta inventario y deja rastro en la auditoría.
 1. Abra la URL pública vigente del ERP. La URL cambia cuando se reinicia el
    túnel rápido; el administrador la recibe por correo y también puede
    consultarla en `GET /api/system/tunnel`.
-2. Si el navegador muestra una ventana de **autenticación básica**, introduzca
-   las credenciales de la interfaz:
-   - Usuario: `erp-ui`
-   - Contraseña: la definida por el administrador en `UI_AUTH_PASSWORD`.
+2. Si el administrador activó la protección adicional de la interfaz
+   (`UI_AUTH_ENABLED=true`), el navegador mostrará una ventana de
+   **autenticación básica** antes de cargar la aplicación. En la configuración
+   actual esa protección está desactivada, así que verá directamente el login.
 3. A continuación aparece la pantalla de **inicio de sesión del ERP**. Use su
-   usuario personal y su contraseña.
+   usuario personal y su contraseña. Este login es siempre obligatorio.
 
 ### 2.2. Primer ingreso y cambio de contraseña
 
@@ -218,7 +218,7 @@ Mientras tanto, **no use las notas de entrega como documento fiscal**.
 
 | Síntoma | Causa probable | Qué hacer |
 |---|---|---|
-| El navegador pide usuario y contraseña antes del login | Basic Auth de la interfaz | Use `erp-ui` y la clave de UI; luego ingrese con su usuario personal. |
+| El navegador pide usuario y contraseña antes del login | Basic Auth de la interfaz activada (`UI_AUTH_ENABLED=true`) | Use las credenciales de UI y luego ingrese con su usuario personal. Si no debe pedirlas, el administrador puede desactivar esa barrera. |
 | “Usuario o contraseña inválidos” | Credenciales incorrectas o usuario inactivo | Verifique mayúsculas; pida al administrador restablecer la clave. |
 | “Demasiados intentos de inicio de sesión” | Límite de seguridad (429) | Espere unos minutos y reintente; no siga probando claves. |
 | Un módulo no aparece | Su rol no tiene permiso de lectura | Solicite permisos al administrador. |

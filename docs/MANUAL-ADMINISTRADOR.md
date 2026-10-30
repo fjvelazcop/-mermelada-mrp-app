@@ -355,8 +355,9 @@ debe validarse con un contador público antes de producción.
 | Síntoma | Diagnóstico | Acción |
 |---|---|---|
 | `502`/página en blanco | App caída | `pm2 status`, `pm2 logs mermelada-erp` |
-| `401` en la UI | Basic Auth mal configurado | Revise `UI_AUTH_USER`/`UI_AUTH_PASSWORD` y reinicie con `--update-env` |
-| `503` en la UI | `UI_AUTH_ENABLED=true` sin credenciales | Defina ambas variables; el sistema falla cerrado |
+| `401` en la UI | Basic Auth mal configurado (solo si `UI_AUTH_ENABLED=true`) | Revise `UI_AUTH_USER`/`UI_AUTH_PASSWORD` y reinicie con `--update-env`, o desactive esa barrera |
+| `503` en la UI | `UI_AUTH_ENABLED=true` sin credenciales | Defina ambas variables o desactive `UI_AUTH_ENABLED`; el sistema falla cerrado |
+| La API no responde por el túnel | URL vieja, túnel caído o falta el token | `pm2 status`, `curl <URL>/api/health`, consulte la URL vigente en `GET /api/system/tunnel` y envíe `Authorization: Bearer <token>` |
 | `401` en `/api/*` | Token ausente o expirado | Obtenga token en `/api/auth/login` (TTL 8 h) |
 | `403` en el callback del túnel | `TUNNEL_INTERNAL_TOKEN` distinto | Iguale el secreto en backend y entorno del túnel |
 | `429` | Rate limit | Espere la ventana o ajuste `RATE_LIMIT_*` |
@@ -370,7 +371,9 @@ debe validarse con un contador público antes de producción.
 
 - [ ] `AUTH_ENABLED=true` y `AUTH_SECRET` propio.
 - [ ] Contraseñas de los 5 usuarios demo cambiadas.
-- [ ] `UI_AUTH_ENABLED=true` con credenciales fuertes.
+- [ ] Definir `UI_AUTH_ENABLED`: `true` para una barrera adicional con
+      credenciales fuertes, o `false` si se prefiere evitar el doble login en el
+      túnel (el login de la aplicación sigue siendo obligatorio).
 - [ ] `RATE_LIMIT_*` con los valores esperados.
 - [ ] `pm2 save` ejecutado.
 - [ ] Servicio `pm2-fjvel` habilitado con `pm2 startup` (pendiente si no se ha
