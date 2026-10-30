@@ -206,6 +206,25 @@ export function createApiApp(): express.Express {
   // user session; it authenticates with a shared internal token instead.
   app.post('/api/internal/tunnel', internalTunnelHandler);
 
+  // --- API INDEX (public) ---
+  // Opening the API root used to return a bare "route not found" error. This
+  // index tells operators where the health check, docs and login live without
+  // exposing business data.
+  app.get('/api', (_req, res) => {
+    res.json({
+      name: 'Mermelada ERP API',
+      version: process.env['APP_VERSION'] || 'dev',
+      status: 'ok',
+      authEnabled: isAuthEnabled(),
+      health: '/api/health',
+      documentation: '/api/docs',
+      openapi: '/api/openapi.json',
+      login: '/api/auth/login',
+      message:
+        'Raíz de la API. Use /api/health, /api/docs o /api/openapi.json. Las rutas de negocio requieren Authorization: Bearer <token>.',
+    });
+  });
+
   // Authentication / RBAC middleware. Both are no-ops unless AUTH_ENABLED=true.
   app.use(authenticate);
   app.use(authorizeRequest);

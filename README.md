@@ -70,6 +70,7 @@ The server persists the full ERP state in a real SQLite database using `better-s
 
 - **Auto‑save:** every mutating operation on `dbInstance` writes the new snapshot to the relational tables in a single transaction (via a Proxy that wraps `ErpDatabase`). See `src/server/database/relational-persistence.ts`.
 - **Legacy migration:** databases created before the relational schema are imported once from the old `app_state` JSON table.
+- **API index:** `GET /api` returns the API version plus links to health, Swagger/OpenAPI and login, so opening the API root in a browser is informative instead of a bare 404.
 - **Health check:** `GET /api/health` verifies the SQLite connection and returns the database path, version, environment and uptime.
 
 To start fresh, delete `data/mermelada.db` (and the `-wal`/`-shm` files) or call `POST /api/system/reset`.

@@ -68,6 +68,18 @@ describe('GET /api/health', () => {
     expect(Date.parse(body.timestamp)).not.toBeNaN();
   });
 
+  it('serves a discoverable API index at /api', async () => {
+    const { response, body } = await jsonRequest('/api', 'GET');
+
+    expect(response.status).toBe(200);
+    expect(body['name']).toBe('Mermelada ERP API');
+    expect(body['health']).toBe('/api/health');
+    expect(body['documentation']).toBe('/api/docs');
+    expect(body['openapi']).toBe('/api/openapi.json');
+    expect(body['login']).toBe('/api/auth/login');
+    expect(body['message']).toContain('Bearer');
+  });
+
   it('applies the security headers and hides the framework banner', async () => {
     const response = await fetch(`${baseUrl}/api/health`);
 
