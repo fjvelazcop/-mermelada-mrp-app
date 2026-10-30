@@ -375,10 +375,27 @@ function migrate(db: Database.Database): void {
       company_name TEXT NOT NULL,
       company_tax_id TEXT NOT NULL,
       fiscal_address TEXT NOT NULL,
+      company_phone TEXT NOT NULL DEFAULT '',
+      company_email TEXT NOT NULL DEFAULT '',
+      economic_activity TEXT NOT NULL DEFAULT '',
+      tax_regime TEXT NOT NULL DEFAULT 'ordinario',
       tax_rate_percent REAL NOT NULL,
       invoice_prefix TEXT NOT NULL,
+      invoice_serie TEXT NOT NULL DEFAULT 'A',
       next_invoice_number INTEGER NOT NULL,
+      control_prefix TEXT NOT NULL DEFAULT '',
+      next_control_number INTEGER NOT NULL DEFAULT 1,
       authorization_code TEXT NOT NULL,
+      authorization_valid_until TEXT NOT NULL DEFAULT '',
+      branch_name TEXT NOT NULL DEFAULT '',
+      branch_address TEXT NOT NULL DEFAULT '',
+      vat_withholding_agent INTEGER NOT NULL DEFAULT 0,
+      vat_withholding_percent REAL NOT NULL DEFAULT 75,
+      islr_withholding_agent INTEGER NOT NULL DEFAULT 0,
+      islr_withholding_percent REAL NOT NULL DEFAULT 0,
+      special_taxpayer INTEGER NOT NULL DEFAULT 0,
+      books_format TEXT NOT NULL DEFAULT 'xlsx',
+      historical_orders_treatment TEXT NOT NULL DEFAULT 'revisar',
       print_notes TEXT NOT NULL
     );
 
@@ -567,6 +584,23 @@ function migrate(db: Database.Database): void {
   ensureColumn(db, 'expenses', 'issuing_bank_name', 'TEXT');
   ensureColumn(db, 'sales_orders', 'collection_json', 'TEXT');
   ensureColumn(db, 'sales_orders', 'created_by', 'TEXT');
+  ensureColumn(db, 'fiscal_settings', 'company_phone', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'company_email', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'economic_activity', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'tax_regime', "TEXT NOT NULL DEFAULT 'ordinario'");
+  ensureColumn(db, 'fiscal_settings', 'invoice_serie', "TEXT NOT NULL DEFAULT 'A'");
+  ensureColumn(db, 'fiscal_settings', 'control_prefix', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'next_control_number', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'fiscal_settings', 'authorization_valid_until', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'branch_name', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'branch_address', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'vat_withholding_agent', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_settings', 'vat_withholding_percent', 'REAL NOT NULL DEFAULT 75');
+  ensureColumn(db, 'fiscal_settings', 'islr_withholding_agent', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_settings', 'islr_withholding_percent', 'REAL NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_settings', 'special_taxpayer', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_settings', 'books_format', "TEXT NOT NULL DEFAULT 'xlsx'");
+  ensureColumn(db, 'fiscal_settings', 'historical_orders_treatment', "TEXT NOT NULL DEFAULT 'revisar'");
 
   const row = db
     .prepare('SELECT MAX(version) AS version FROM schema_migrations')

@@ -74,6 +74,23 @@
         <mat-icon class="text-sm">visibility</mat-icon>
         <span>Simulador de Accesos en Vivo</span>
       </button>
+
+      @if (isAdmin()) {
+        <button
+          (click)="setSection('fiscal')"
+          class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+          [class.bg-amber-600]="activeSection() === 'fiscal'"
+          [class.text-white]="activeSection() === 'fiscal'"
+          [class.shadow-xs]="activeSection() === 'fiscal'"
+          [class.bg-amber-50]="activeSection() !== 'fiscal'"
+          [class.text-amber-900]="activeSection() !== 'fiscal'"
+          [class.border]="activeSection() !== 'fiscal'"
+          [class.border-amber-200]="activeSection() !== 'fiscal'"
+        >
+          <mat-icon class="text-sm">receipt_long</mat-icon>
+          <span>Datos Fiscales (Solo Admin)</span>
+        </button>
+      }
     </div>
   </div>
 
@@ -867,5 +884,325 @@
         </form>
       </div>
     </div>
+  }
+
+  <!-- SECTION 4: DATOS FISCALES (SOLO ADMINISTRADOR) -->
+  @if (activeSection() === 'fiscal' && isAdmin()) {
+    <form [formGroup]="fiscalForm" (ngSubmit)="saveFiscalSettings()" class="space-y-5">
+      <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 flex items-start gap-3">
+        <mat-icon class="text-amber-700 mt-0.5">gavel</mat-icon>
+        <div class="text-xs sm:text-sm text-amber-900">
+          <div class="font-bold">Configuración fiscal del emisor</div>
+          <p class="mt-1 text-amber-800">
+            Estos datos se guardan en la base de datos y se usan en facturas, notas de entrega y libros fiscales.
+            Solo el rol <strong>Administrador</strong> puede ver y modificar esta sección. Valide los datos con su contador
+            antes de emitir documentos fiscales reales.
+          </p>
+        </div>
+      </div>
+
+      <!-- Identificación del emisor -->
+      <div class="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+        <div class="flex items-center gap-2 border-b border-stone-100 pb-3">
+          <mat-icon class="text-amber-600 text-sm">business</mat-icon>
+          <h2 class="text-sm sm:text-base font-bold text-stone-900">Identificación del Emisor</h2>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Razón Social *</label>
+            <input
+              type="text"
+              formControlName="companyName"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+            @if (fiscalForm.controls.companyName.touched && fiscalForm.controls.companyName.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">Indique la razón social (mínimo 3 caracteres).</span>
+            }
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">RIF / NIT / RFC *</label>
+            <input
+              type="text"
+              formControlName="companyTaxId"
+              placeholder="J-40899231-0"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+            @if (fiscalForm.controls.companyTaxId.touched && fiscalForm.controls.companyTaxId.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">El RIF es obligatorio.</span>
+            }
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Dirección Fiscal</label>
+            <input
+              type="text"
+              formControlName="fiscalAddress"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Teléfono</label>
+            <input
+              type="text"
+              formControlName="companyPhone"
+              placeholder="+58 412-0000000"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Correo del Emisor</label>
+            <input
+              type="email"
+              formControlName="companyEmail"
+              placeholder="administracion@empresa.com"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+            @if (fiscalForm.controls.companyEmail.touched && fiscalForm.controls.companyEmail.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">Ingrese un correo válido o déjelo vacío.</span>
+            }
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Régimen Tributario</label>
+            <select
+              formControlName="taxRegime"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            >
+              <option value="ordinario">Contribuyente Ordinario</option>
+              <option value="especial">Contribuyente Especial / SPE</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Actividad Económica</label>
+            <input
+              type="text"
+              formControlName="economicActivity"
+              placeholder="Fabricación de conservas de frutas y mermeladas"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Sucursal / Establecimiento</label>
+            <input
+              type="text"
+              formControlName="branchName"
+              placeholder="Sede principal"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Dirección de la Sucursal</label>
+            <input
+              type="text"
+              formControlName="branchAddress"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Numeración, autorización e IVA -->
+      <div class="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+        <div class="flex items-center gap-2 border-b border-stone-100 pb-3">
+          <mat-icon class="text-amber-600 text-sm">tag</mat-icon>
+          <h2 class="text-sm sm:text-base font-bold text-stone-900">Numeración, Autorización e IVA</h2>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="sm:col-span-2 lg:col-span-3 flex items-center gap-3 bg-stone-50 border border-stone-200 rounded-xl p-3">
+            <input id="fiscal-enabled" type="checkbox" formControlName="enabled" class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300" />
+            <label for="fiscal-enabled" class="text-xs font-semibold text-stone-800">
+              Facturación fiscal habilitada (desactive para bloquear la emisión)
+            </label>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Alícuota IVA (%) *</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              formControlName="taxRatePercent"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+            @if (fiscalForm.controls.taxRatePercent.touched && fiscalForm.controls.taxRatePercent.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">Valor entre 0 y 100.</span>
+            }
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Prefijo de Factura</label>
+            <input
+              type="text"
+              formControlName="invoicePrefix"
+              placeholder="FISC-"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Serie de Factura</label>
+            <input
+              type="text"
+              formControlName="invoiceSerie"
+              placeholder="A"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Siguiente Nro. de Factura *</label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              formControlName="nextInvoiceNumber"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Prefijo Nro. de Control</label>
+            <input
+              type="text"
+              formControlName="controlPrefix"
+              placeholder="CTRL-"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Siguiente Nro. de Control *</label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              formControlName="nextControlNumber"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Código / Autorización SENIAT</label>
+            <input
+              type="text"
+              formControlName="authorizationCode"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Autorización Válida Hasta</label>
+            <input
+              type="date"
+              formControlName="authorizationValidUntil"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Retenciones, SPE, libros e históricos -->
+      <div class="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+        <div class="flex items-center gap-2 border-b border-stone-100 pb-3">
+          <mat-icon class="text-amber-600 text-sm">policy</mat-icon>
+          <h2 class="text-sm sm:text-base font-bold text-stone-900">Retenciones, SPE, Libros e Históricos</h2>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="bg-stone-50 border border-stone-200 rounded-xl p-3 space-y-2">
+            <label class="flex items-center gap-2 text-xs font-semibold text-stone-800">
+              <input type="checkbox" formControlName="vatWithholdingAgent" class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300" />
+              <span>Agente de Retención de IVA</span>
+            </label>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider">% Retención IVA</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              formControlName="vatWithholdingPercent"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div class="bg-stone-50 border border-stone-200 rounded-xl p-3 space-y-2">
+            <label class="flex items-center gap-2 text-xs font-semibold text-stone-800">
+              <input type="checkbox" formControlName="islrWithholdingAgent" class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300" />
+              <span>Agente de Retención de ISLR</span>
+            </label>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider">% Retención ISLR</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              formControlName="islrWithholdingPercent"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div class="bg-stone-50 border border-stone-200 rounded-xl p-3 flex items-center gap-2">
+            <input id="fiscal-spe" type="checkbox" formControlName="specialTaxpayer" class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300" />
+            <label for="fiscal-spe" class="text-xs font-semibold text-stone-800">
+              Sujeto Pasivo Especial (SPE)
+            </label>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Formato de Libros Fiscales</label>
+            <select
+              formControlName="booksFormat"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            >
+              <option value="xlsx">Excel (.xlsx)</option>
+              <option value="csv">CSV (.csv)</option>
+              <option value="pdf">PDF (.pdf)</option>
+              <option value="txt">Texto (.txt)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Órdenes Históricas</label>
+            <select
+              formControlName="historicalOrdersTreatment"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            >
+              <option value="no_emitir">No emitir factura (solo registro operativo)</option>
+              <option value="emitir_actual">Emitir con fecha actual</option>
+              <option value="revisar">Revisar caso por caso</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2 lg:col-span-3">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Leyendas de Impresión / Notas Fiscales</label>
+            <textarea
+              rows="3"
+              formControlName="printNotes"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white"
+            ></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="text-xs">
+          @if (fiscalForm.invalid && (fiscalForm.touched || fiscalForm.dirty)) {
+            <span class="text-rose-600 font-semibold">Revise los campos marcados antes de guardar.</span>
+          } @else if (fiscalSaved()) {
+            <span class="text-emerald-700 font-semibold flex items-center gap-1">
+              <mat-icon class="text-sm">check_circle</mat-icon>
+              Configuración fiscal guardada en la base de datos.
+            </span>
+          } @else if (fiscalForm.dirty) {
+            <span class="text-amber-700 font-semibold">Hay cambios sin guardar.</span>
+          } @else {
+            <span class="text-stone-500">Los datos fiscales están sincronizados con la base de datos.</span>
+          }
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            (click)="resetFiscalForm()"
+            [disabled]="fiscalSaving()"
+            class="px-4 py-2 border border-stone-300 text-stone-700 hover:bg-stone-50 rounded-xl font-medium text-xs min-h-[44px] disabled:opacity-50"
+          >
+            Descartar Cambios
+          </button>
+          <button
+            type="submit"
+            [disabled]="fiscalSaving() || fiscalForm.invalid || !fiscalForm.dirty"
+            class="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-semibold text-xs shadow-xs transition-colors min-h-[44px] flex items-center gap-2"
+          >
+            <mat-icon class="text-sm">{{ fiscalSaving() ? 'hourglass_top' : 'save' }}</mat-icon>
+            <span>{{ fiscalSaving() ? 'Guardando…' : 'Guardar Datos Fiscales' }}</span>
+          </button>
+        </div>
+      </div>
+    </form>
   }
 </div>

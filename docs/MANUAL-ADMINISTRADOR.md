@@ -333,14 +333,36 @@ Flujo recomendado: trabajar en `develop`, verificar los cuatro comandos y luego
 ## 9. Estado fiscal (issue #11)
 
 El ERP **no emite facturas fiscales todavía**. Implementado: RIF de clientes y
-proveedores, IVA 16 %, configuración fiscal, gastos con crédito de IVA y notas
-de entrega.
+proveedores, IVA 16 %, configuración fiscal administrable, gastos con crédito de
+IVA y notas de entrega.
+
+### 9.1. Configuración fiscal desde la interfaz (solo administrador)
+
+Ruta: **Configuración → Datos Fiscales**. La pestaña solo aparece para el rol
+`admin` y el endpoint de escritura `PUT /api/fiscal-settings` también exige ese
+rol (la lectura se mantiene disponible para usuarios autenticados porque las
+notas de entrega la necesitan).
+
+Datos que se guardan en la tabla `fiscal_settings` de SQLite:
+
+| Grupo | Campos |
+|---|---|
+| Emisor | razón social, RIF, dirección fiscal, teléfono, correo, actividad económica y régimen tributario |
+| Sucursal | nombre y dirección del establecimiento |
+| IVA y numeración | alícuota, prefijo/serie, siguiente número de factura, prefijo y siguiente número de control, autorización SENIAT y vigencia |
+| Retenciones | condición de agente de IVA/ISLR y porcentajes aplicables |
+| SPE y libros | Sujeto Pasivo Especial, formato de libros (XLSX/CSV/PDF/TXT) y tratamiento de órdenes históricas |
+| Impresión | leyendas legales que se imprimen en los documentos |
+
+Cada guardado actualiza la base de datos de forma inmediata. Antes de emitir
+documentos fiscales reales, el administrador debe confirmar estos valores con el
+contador y verificar la numeración/autorización vigente.
 
 Brechas principales y hoja de ruta:
 
 | Fase | Alcance | Estado |
 |---|---|---|
-| 0 | Datos fiscales validados, régimen de IVA, series y numeración | Pendiente de datos del contador |
+| 0 | Datos fiscales validados, régimen de IVA, series y numeración | Base implementada; pendiente confirmar datos con el contador |
 | 1 | Factura fiscal inmutable, PDF, anulación y notas de crédito/débito | Pendiente |
 | 2 | Libro de ventas y compras, cierre mensual, exportación | Pendiente |
 | 3 | Contabilidad y estados financieros | Pendiente |
@@ -385,4 +407,5 @@ debe validarse con un contador público antes de producción.
 - [ ] Copia externa probada (si `BACKUP_REMOTE != none`).
 - [ ] SMTP configurado y correo del túnel recibido.
 - [ ] `GET /api/health` en verde desde la URL pública.
-- [ ] Datos fiscales revisados con el contador.
+- [ ] Datos fiscales completados en **Configuración → Datos Fiscales** y
+      revisados con el contador.

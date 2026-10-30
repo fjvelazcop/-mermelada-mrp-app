@@ -1359,6 +1359,16 @@ export function authorizeRequest(
     return;
   }
 
+  // Fiscal settings are needed to print operational documents by any role.
+  // Reading is allowed for authenticated users; writing stays admin-only.
+  if (
+    apiPath(req) === '/api/fiscal-settings' &&
+    (req.method === 'GET' || req.method === 'HEAD')
+  ) {
+    next();
+    return;
+  }
+
   // Demo reset is reserved for administrators.
   if (apiPath(req) === '/api/system/reset' && auth.user.roleId !== 'admin') {
     res.status(403).json({

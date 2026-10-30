@@ -12,6 +12,8 @@ export type AppModuleId =
   | 'settings'
   | 'architecture';
 
+export type SettingsSection = 'users' | 'roles' | 'simulator' | 'fiscal';
+
 export interface ModulePermissions {
   canView: boolean;
   canCreate: boolean;
@@ -340,15 +342,39 @@ export interface DeliveryNote {
   observations?: string;
 }
 
+export type FiscalRegime = 'ordinario' | 'especial';
+export type FiscalBooksFormat = 'xlsx' | 'csv' | 'pdf' | 'txt';
+export type HistoricalOrdersTreatment =
+  | 'no_emitir'
+  | 'emitir_actual'
+  | 'revisar';
+
 export interface FiscalSettings {
   enabled: boolean;
   companyName: string;
   companyTaxId: string; // RIF/NIT/RFC
   fiscalAddress: string;
+  companyPhone: string;
+  companyEmail: string;
+  economicActivity: string;
+  taxRegime: FiscalRegime;
   taxRatePercent: number; // ej: 16% IVA
   invoicePrefix: string; // ej: FACT-
+  invoiceSerie: string; // ej: A
   nextInvoiceNumber: number;
+  controlPrefix: string; // prefijo del número de control
+  nextControlNumber: number;
   authorizationCode: string;
+  authorizationValidUntil: string; // yyyy-mm-dd
+  branchName: string; // sucursal / establecimiento
+  branchAddress: string;
+  vatWithholdingAgent: boolean;
+  vatWithholdingPercent: number; // % de retención de IVA
+  islrWithholdingAgent: boolean;
+  islrWithholdingPercent: number; // % de retención de ISLR
+  specialTaxpayer: boolean; // Sujeto Pasivo Especial (SPE)
+  booksFormat: FiscalBooksFormat;
+  historicalOrdersTreatment: HistoricalOrdersTreatment;
   printNotes: string;
 }
 

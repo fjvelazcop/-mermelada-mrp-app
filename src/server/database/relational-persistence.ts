@@ -458,10 +458,28 @@ export function loadRelationalState(): DatabaseState | null {
         companyName: fiscalRow['company_name'],
         companyTaxId: fiscalRow['company_tax_id'],
         fiscalAddress: fiscalRow['fiscal_address'],
+        companyPhone: fiscalRow['company_phone'] ?? '',
+        companyEmail: fiscalRow['company_email'] ?? '',
+        economicActivity: fiscalRow['economic_activity'] ?? '',
+        taxRegime: fiscalRow['tax_regime'] ?? 'ordinario',
         taxRatePercent: fiscalRow['tax_rate_percent'],
         invoicePrefix: fiscalRow['invoice_prefix'],
+        invoiceSerie: fiscalRow['invoice_serie'] ?? 'A',
         nextInvoiceNumber: fiscalRow['next_invoice_number'],
+        controlPrefix: fiscalRow['control_prefix'] ?? '',
+        nextControlNumber: fiscalRow['next_control_number'] ?? 1,
         authorizationCode: fiscalRow['authorization_code'],
+        authorizationValidUntil: fiscalRow['authorization_valid_until'] ?? '',
+        branchName: fiscalRow['branch_name'] ?? '',
+        branchAddress: fiscalRow['branch_address'] ?? '',
+        vatWithholdingAgent: fiscalRow['vat_withholding_agent'] === 1,
+        vatWithholdingPercent: fiscalRow['vat_withholding_percent'] ?? 75,
+        islrWithholdingAgent: fiscalRow['islr_withholding_agent'] === 1,
+        islrWithholdingPercent: fiscalRow['islr_withholding_percent'] ?? 0,
+        specialTaxpayer: fiscalRow['special_taxpayer'] === 1,
+        booksFormat: fiscalRow['books_format'] ?? 'xlsx',
+        historicalOrdersTreatment:
+          fiscalRow['historical_orders_treatment'] ?? 'revisar',
         printNotes: fiscalRow['print_notes'],
       }
     : ({} as FiscalSettings);
@@ -1004,18 +1022,40 @@ export function saveRelationalState(state: DatabaseState): void {
     db.prepare(`
       INSERT INTO fiscal_settings (
         id, enabled, company_name, company_tax_id, fiscal_address,
-        tax_rate_percent, invoice_prefix, next_invoice_number,
-        authorization_code, print_notes
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        company_phone, company_email, economic_activity, tax_regime,
+        tax_rate_percent, invoice_prefix, invoice_serie, next_invoice_number,
+        control_prefix, next_control_number, authorization_code,
+        authorization_valid_until, branch_name, branch_address,
+        vat_withholding_agent, vat_withholding_percent,
+        islr_withholding_agent, islr_withholding_percent, special_taxpayer,
+        books_format, historical_orders_treatment, print_notes
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       b(snapshot.fiscalSettings.enabled),
       snapshot.fiscalSettings.companyName,
       snapshot.fiscalSettings.companyTaxId,
       snapshot.fiscalSettings.fiscalAddress,
+      snapshot.fiscalSettings.companyPhone,
+      snapshot.fiscalSettings.companyEmail,
+      snapshot.fiscalSettings.economicActivity,
+      snapshot.fiscalSettings.taxRegime,
       snapshot.fiscalSettings.taxRatePercent,
       snapshot.fiscalSettings.invoicePrefix,
+      snapshot.fiscalSettings.invoiceSerie,
       snapshot.fiscalSettings.nextInvoiceNumber,
+      snapshot.fiscalSettings.controlPrefix,
+      snapshot.fiscalSettings.nextControlNumber,
       snapshot.fiscalSettings.authorizationCode,
+      snapshot.fiscalSettings.authorizationValidUntil,
+      snapshot.fiscalSettings.branchName,
+      snapshot.fiscalSettings.branchAddress,
+      b(snapshot.fiscalSettings.vatWithholdingAgent),
+      snapshot.fiscalSettings.vatWithholdingPercent,
+      b(snapshot.fiscalSettings.islrWithholdingAgent),
+      snapshot.fiscalSettings.islrWithholdingPercent,
+      b(snapshot.fiscalSettings.specialTaxpayer),
+      snapshot.fiscalSettings.booksFormat,
+      snapshot.fiscalSettings.historicalOrdersTreatment,
       snapshot.fiscalSettings.printNotes
     );
 

@@ -25,6 +25,7 @@ import {
   ModulePermissions,
   SystemRole,
   SystemUser,
+  SettingsSection,
   AuditLogEntry,
   Expense,
   ExpenseCategoryConfig,
@@ -243,8 +244,16 @@ export class ErpApiService {
   // Cross-component tab navigation request signal
   public requestedTab = signal<AppModuleId | null>(null);
 
+  // Cross-component request to open a specific section inside Configuración.
+  public requestedSettingsSection = signal<SettingsSection | null>(null);
+
   public navigateToTab(tab: AppModuleId) {
     this.requestedTab.set(tab);
+  }
+
+  public navigateToSettings(section: SettingsSection) {
+    this.requestedSettingsSection.set(section);
+    this.navigateToTab('settings');
   }
 
   public toggleRole() {

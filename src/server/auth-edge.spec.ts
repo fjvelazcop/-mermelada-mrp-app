@@ -1333,8 +1333,35 @@ describe('module authorization middleware', () => {
     expect(bodyOf(denied.captured)['code']).toBe('FORBIDDEN');
   });
 
-  it('maps every module prefix to its permission module', () => {
-    const paths = [
+  it('lets any authenticated role read fiscal settings but blocks writes', () => {
+    const operator = authenticated(seedUser('operador'));
+
+    const read = captureNext();
+    auth.authorizeRequest(
+      makeRequest({
+        originalUrl: '/api/fiscal-settings',
+        method: 'GET',
+        auth: operator,
+      }),
+      captureResponse().res,
+      read.next
+    );
+    expect(read.called()).toBe(true);
+
+    const write = captureResponse();
+    auth.authorizeRequest(
+      makeRequest({
+        originalUrl: '/api/fiscal-settings',
+        method: 'PUT',
+        auth: operator,
+      }),
+      write.res,
+      captureNext().next
+    );
+    expect(write.captured.statusCode).toBe(403);
+  });
+
+  it('maps every module prefix to its permission module', () => {    const paths = [
       '/api/inventory/raw-materials',
       '/api/recipes',
       '/api/production-orders',

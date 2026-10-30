@@ -1027,6 +1027,7 @@ export function createApiApp(): express.Express {
 
   app.put(
     '/api/fiscal-settings',
+    requireAdmin,
     validateBody(fiscalSettingsSchema),
     mutation((req, res) => {
       const updated = dbInstance.updateFiscalSettings(req.body);

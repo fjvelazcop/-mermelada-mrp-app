@@ -1,9 +1,18 @@
-import {ChangeDetectionStrategy, Component, computed, inject, signal} from '@angular/core';
+import {ChangeDetectionStrategy, Component, computed, effect, inject, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {AppModuleId, ModulePermissions, SystemRole, SystemUser} from '../../core/models/erp.models';
+import {
+  AppModuleId,
+  FiscalBooksFormat,
+  FiscalRegime,
+  HistoricalOrdersTreatment,
+  ModulePermissions,
+  SettingsSection,
+  SystemRole,
+  SystemUser,
+} from '../../core/models/erp.models';
 
 interface ModuleConfigMeta {
   id: AppModuleId;
@@ -21,7 +30,13 @@ interface ModuleConfigMeta {
 export class Settings {
   public api = inject(ErpApiService);
 
-  public activeSection = signal<'users' | 'roles' | 'simulator'>('users');
+  public activeSection = signal<SettingsSection>('users');
+
+  /** Only administrators can see and edit the fiscal configuration. */
+  public isAdmin = computed(() => this.api.currentRole() === 'admin');
+
+  public fiscalSaving = signal<boolean>(false);
+  public fiscalSaved = signal<boolean>(false);
 
   // Modal / Form state for Users
   public showUserModal = signal<boolean>(false);
@@ -109,6 +124,79 @@ export class Settings {
     color: new FormControl('amber', {nonNullable: true, validators: [Validators.required]}),
   });
 
+  // Fiscal configuration form (admin only)
+  public fiscalForm = new FormGroup({
+    enabled: new FormControl<boolean>(true, {nonNullable: true}),
+    companyName: new FormControl<string>('', {nonNullable: true, validators: [Validators.required, Validators.minLength(3)]}),
+    companyTaxId: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
+    fiscalAddress: new FormControl<string>('', {nonNullable: true}),
+    companyPhone: new FormControl<string>('', {nonNullable: true}),
+    companyEmail: new FormControl<string>('', {nonNullable: true, validators: [Validators.email]}),
+    economicActivity: new FormControl<string>('', {nonNullable: true}),
+    taxRegime: new FormControl<FiscalRegime>('ordinario', {nonNullable: true}),
+    taxRatePercent: new FormControl<number>(16, {nonNullable: true, validators: [Validators.required, Validators.min(0), Validators.max(100)]}),
+    invoicePrefix: new FormControl<string>('', {nonNullable: true}),
+    invoiceSerie: new FormControl<string>('A', {nonNullable: true}),
+    nextInvoiceNumber: new FormControl<number>(1, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
+    controlPrefix: new FormControl<string>('', {nonNullable: true}),
+    nextControlNumber: new FormControl<number>(1, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
+    authorizationCode: new FormControl<string>('', {nonNullable: true}),
+    authorizationValidUntil: new FormControl<string>('', {nonNullable: true}),
+    branchName: new FormControl<string>('', {nonNullable: true}),
+    branchAddress: new FormControl<string>('', {nonNullable: true}),
+    vatWithholdingAgent: new FormControl<boolean>(false, {nonNullable: true}),
+    vatWithholdingPercent: new FormControl<number>(75, {nonNullable: true, validators: [Validators.min(0), Validators.max(100)]}),
+    islrWithholdingAgent: new FormControl<boolean>(false, {nonNullable: true}),
+    islrWithholdingPercent: new FormControl<number>(0, {nonNullable: true, validators: [Validators.min(0), Validators.max(100)]}),
+    specialTaxpayer: new FormControl<boolean>(false, {nonNullable: true}),
+    booksFormat: new FormControl<FiscalBooksFormat>('xlsx', {nonNullable: true}),
+    historicalOrdersTreatment: new FormControl<HistoricalOrdersTreatment>('revisar', {nonNullable: true}),
+    printNotes: new FormControl<string>('', {nonNullable: true}),
+  });
+
+  constructor() {
+    effect(() => {
+      const requested = this.api.requestedSettingsSection();
+      if (requested && this.isAdmin()) {
+        this.setSection(requested);
+        this.api.requestedSettingsSection.set(null);
+      }
+    });
+
+    effect(() => {
+      const cfg = this.api.fiscalSettings();
+      if (!cfg || this.fiscalForm.dirty) return;
+      this.fiscalForm.patchValue({
+        enabled: cfg.enabled,
+        companyName: cfg.companyName,
+        companyTaxId: cfg.companyTaxId,
+        fiscalAddress: cfg.fiscalAddress,
+        companyPhone: cfg.companyPhone,
+        companyEmail: cfg.companyEmail,
+        economicActivity: cfg.economicActivity,
+        taxRegime: cfg.taxRegime,
+        taxRatePercent: cfg.taxRatePercent,
+        invoicePrefix: cfg.invoicePrefix,
+        invoiceSerie: cfg.invoiceSerie,
+        nextInvoiceNumber: cfg.nextInvoiceNumber,
+        controlPrefix: cfg.controlPrefix,
+        nextControlNumber: cfg.nextControlNumber,
+        authorizationCode: cfg.authorizationCode,
+        authorizationValidUntil: cfg.authorizationValidUntil,
+        branchName: cfg.branchName,
+        branchAddress: cfg.branchAddress,
+        vatWithholdingAgent: cfg.vatWithholdingAgent,
+        vatWithholdingPercent: cfg.vatWithholdingPercent,
+        islrWithholdingAgent: cfg.islrWithholdingAgent,
+        islrWithholdingPercent: cfg.islrWithholdingPercent,
+        specialTaxpayer: cfg.specialTaxpayer,
+        booksFormat: cfg.booksFormat,
+        historicalOrdersTreatment: cfg.historicalOrdersTreatment,
+        printNotes: cfg.printNotes,
+      });
+    });
+  }
+
   public selectedRoleForMatrix = computed<SystemRole | undefined>(() => {
     const roles = this.api.systemRoles();
     const id = this.selectedRoleIdForMatrix();
@@ -135,8 +223,64 @@ export class Settings {
     {label: 'Gris Carbón (Admin)', value: 'stone'},
   ];
 
-  public setSection(section: 'users' | 'roles' | 'simulator') {
+  public setSection(section: SettingsSection) {
     this.activeSection.set(section);
+    if (section === 'fiscal') {
+      this.fiscalSaved.set(false);
+    }
+  }
+
+  public async saveFiscalSettings() {
+    if (!this.isAdmin()) return;
+    if (this.fiscalForm.invalid) {
+      this.fiscalForm.markAllAsTouched();
+      return;
+    }
+    this.fiscalSaving.set(true);
+    this.fiscalSaved.set(false);
+    try {
+      await this.api.saveFiscalSettings(this.fiscalForm.getRawValue());
+      this.fiscalForm.markAsPristine();
+      this.fiscalSaved.set(true);
+    } catch {
+      // The API service already shows the error toast.
+    } finally {
+      this.fiscalSaving.set(false);
+    }
+  }
+
+  public resetFiscalForm() {
+    const cfg = this.api.fiscalSettings();
+    if (!cfg) return;
+    this.fiscalForm.reset({
+      enabled: cfg.enabled,
+      companyName: cfg.companyName,
+      companyTaxId: cfg.companyTaxId,
+      fiscalAddress: cfg.fiscalAddress,
+      companyPhone: cfg.companyPhone,
+      companyEmail: cfg.companyEmail,
+      economicActivity: cfg.economicActivity,
+      taxRegime: cfg.taxRegime,
+      taxRatePercent: cfg.taxRatePercent,
+      invoicePrefix: cfg.invoicePrefix,
+      invoiceSerie: cfg.invoiceSerie,
+      nextInvoiceNumber: cfg.nextInvoiceNumber,
+      controlPrefix: cfg.controlPrefix,
+      nextControlNumber: cfg.nextControlNumber,
+      authorizationCode: cfg.authorizationCode,
+      authorizationValidUntil: cfg.authorizationValidUntil,
+      branchName: cfg.branchName,
+      branchAddress: cfg.branchAddress,
+      vatWithholdingAgent: cfg.vatWithholdingAgent,
+      vatWithholdingPercent: cfg.vatWithholdingPercent,
+      islrWithholdingAgent: cfg.islrWithholdingAgent,
+      islrWithholdingPercent: cfg.islrWithholdingPercent,
+      specialTaxpayer: cfg.specialTaxpayer,
+      booksFormat: cfg.booksFormat,
+      historicalOrdersTreatment: cfg.historicalOrdersTreatment,
+      printNotes: cfg.printNotes,
+    });
+    this.fiscalSaved.set(false);
   }
 
   // --- USER ACTIONS ---

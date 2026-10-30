@@ -337,6 +337,16 @@ describe('payload validation', () => {
     });
     expect(fiscal.response.status).toBe(422);
 
+    const invalidRegime = await jsonRequest('/api/fiscal-settings', 'PUT', {
+      taxRegime: 'inventado',
+    });
+    expect(invalidRegime.response.status).toBe(422);
+
+    const invalidWithholding = await jsonRequest('/api/fiscal-settings', 'PUT', {
+      vatWithholdingPercent: 150,
+    });
+    expect(invalidWithholding.response.status).toBe(422);
+
     const rates = await jsonRequest('/api/exchange-rates/update', 'POST', {
       usdRate: 0,
       usdtRate: 0,
@@ -821,6 +831,66 @@ describe('mutating endpoints', () => {
     });
     expect(simulation.response.status).toBe(200);
     expect(simulation.body['totalUnitCost']).toBe(2.27);
+  });
+
+  it('persists the extended fiscal settings and restricts writes to admin', async () => {
+    const denied = await fetch(`${baseUrl}/api/fiscal-settings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-demo-role': 'operator',
+      },
+      body: JSON.stringify({ companyName: 'No autorizado C.A.' }),
+    });
+    expect(denied.status).toBe(403);
+
+    const payload = {
+      companyPhone: '+58 412-1234567',
+      companyEmail: 'fiscal@mermeladasdelvalle.com',
+      economicActivity: 'Fabricación de conservas de frutas',
+      taxRegime: 'especial',
+      invoiceSerie: 'B',
+      controlPrefix: 'CTRL-B-',
+      nextControlNumber: 500,
+      authorizationValidUntil: '2027-04-18',
+      branchName: 'Sucursal Maracay',
+      branchAddress: 'Av. Bolívar, Maracay',
+      vatWithholdingAgent: true,
+      vatWithholdingPercent: 75,
+      islrWithholdingAgent: true,
+      islrWithholdingPercent: 5,
+      specialTaxpayer: true,
+      booksFormat: 'pdf',
+      historicalOrdersTreatment: 'no_emitir',
+    };
+
+    const updated = await jsonRequest(
+      '/api/fiscal-settings',
+      'PUT',
+      payload
+    );
+    expect(updated.response.status).toBe(200);
+    for (const [key, value] of Object.entries(payload)) {
+      expect(updated.body[key]).toEqual(value);
+    }
+
+    const read = await jsonRequest('/api/fiscal-settings', 'GET');
+    expect(read.response.status).toBe(200);
+    expect(read.body).toMatchObject(payload);
+
+    const row = getDb()
+      .prepare(
+        'SELECT company_phone, tax_regime, invoice_serie, next_control_number, special_taxpayer, books_format FROM fiscal_settings WHERE id = 1'
+      )
+      .get() as Record<string, unknown>;
+    expect(row).toMatchObject({
+      company_phone: payload.companyPhone,
+      tax_regime: 'especial',
+      invoice_serie: 'B',
+      next_control_number: 500,
+      special_taxpayer: 1,
+      books_format: 'pdf',
+    });
   });
 
   it('serves costing and dashboard reports', async () => {

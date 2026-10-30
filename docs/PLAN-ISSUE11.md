@@ -42,11 +42,11 @@
 
 | # | Requisito | Estado actual |
 |---|---|---|
-| 3.1 | Razón social, RIF, dirección fiscal, teléfono y correo del emisor **configurables y congelados por documento** al momento de emitir | ⬜ Pendiente (base: `FiscalSettings`; falta congelar por doc.) |
-| 3.1 | Actividad económica y régimen tributario (ordinario / especial) | ⬜ Pendiente |
-| 3.1 | Datos de la sucursal o establecimiento cuando aplique | ⬜ Pendiente |
+| 3.1 | Razón social, RIF, dirección fiscal, teléfono y correo del emisor **configurables y congelados por documento** al momento de emitir | ✅ Configurables en Configuración → Datos Fiscales (solo admin); ⬜ falta congelar por documento |
+| 3.1 | Actividad económica y régimen tributario (ordinario / especial) | ✅ Configurables en Configuración → Datos Fiscales |
+| 3.1 | Datos de la sucursal o establecimiento cuando aplique | ✅ Nombre y dirección de sucursal configurables |
 | 3.1 | **RIF de clientes y proveedores como campo obligatorio en los maestros** | ✅ Implementado (`Customer.taxId`, `Supplier.taxId`) |
-| 3.1 | **Configuración fiscal base: alícuota IVA, prefijo y próximo número de factura** | ⬜ Pendiente (API `/api/fiscal-settings` existe, falta UI completa) |
+| 3.1 | **Configuración fiscal base: alícuota IVA, prefijo y próximo número de factura** | ✅ UI completa en Configuración → Datos Fiscales (solo admin) |
 | 3.2 | **Número de factura consecutivo, único e irrepetible por serie** | ⬜ Pendiente (entidad `FiscalInvoice`) |
 | 3.2 | **Número de control consecutivo e irrepetible**, independiente del número de factura | ⬜ Pendiente |
 | 3.2 | Fecha y hora de emisión | ⬜ Pendiente |
@@ -216,7 +216,7 @@ Los flags se guardarán en una tabla `fiscal_features` con auditoría de activac
 
 ## 12. Próximo paso inmediato (Fase 0)
 
-1. Completar la configuración fiscal en la UI (`FiscalSettings`): razón social, RIF, dirección, alícuota IVA, prefijo y siguiente número de factura.
+1. ✅ Configuración fiscal en la UI (`FiscalSettings`): razón social, RIF, dirección, teléfono, correo, actividad económica, régimen, sucursal, alícuota IVA, serie, prefijo y numeración, retenciones, SPE, formato de libros y tratamiento de órdenes históricas. Pendiente: confirmar los datos reales con el contador.
 2. Hacer el RIF obligatorio en los formularios de cliente y proveedor (ya es campo en la base, falta validación en UI).
 3. Implementar la entidad `FiscalInvoice` con los campos mínimos: `serie`, `invoiceNumber`, `controlNumber`, `emitterSnapshot`, `customerSnapshot`, `status`, `issuedAt`, `annulledAt`, `annulledBy`.
 4. Añadir las validaciones previas a la creación de pedidos de venta: RIF del cliente, alícuota configurada, numeración disponible.

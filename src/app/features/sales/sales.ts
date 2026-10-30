@@ -30,7 +30,7 @@ export class SalesComponent {
   public isNewOrderModalOpen = signal<boolean>(false);
   public isNewCustomerModalOpen = signal<boolean>(false);
   public isDeliveryNoteModalOpen = signal<boolean>(false);
-  public isFiscalConfigModalOpen = signal<boolean>(false);
+  public exportCurrencyMode = signal<'USD' | 'Bs'>('USD');
   public isCollectModalOpen = signal<boolean>(false);
   public collectingOrder = signal<SalesOrder | null>(null);
   public collectingBankQuery = signal<string>('');
@@ -71,18 +71,6 @@ export class SalesComponent {
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     deliveryDate: new FormControl<string>(new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10), {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
-  });
-
-  public fiscalConfigForm = new FormGroup({
-    enabled: new FormControl<boolean>(true, {nonNullable: true}),
-    companyName: new FormControl<string>('Mermeladas Artesanales del Valle C.A.', {nonNullable: true}),
-    companyTaxId: new FormControl<string>('J-40899231-0', {nonNullable: true}),
-    fiscalAddress: new FormControl<string>('Zona Industrial El Valle, Galpón PulpaCraft 4', {nonNullable: true}),
-    taxRatePercent: new FormControl<number>(16.0, {nonNullable: true}),
-    invoicePrefix: new FormControl<string>('FACT-', {nonNullable: true}),
-    nextInvoiceNumber: new FormControl<number>(402, {nonNullable: true}),
-    authorizationCode: new FormControl<string>('SENIAT-PROV-2026-00914', {nonNullable: true}),
-    printNotes: new FormControl<string>('Contribuyente Ordinario. Retención de IVA aplicable según normativa fiscal vigente.', {nonNullable: true}),
   });
 
   /** Cobro bancario de un pedido (banco receptor obligatorio). */
@@ -567,21 +555,7 @@ RIF: J-40899231-0`
   }
 
   public openFiscalConfigModal() {
-    const cfg = this.fiscalSettings();
-    if (cfg) {
-      this.fiscalConfigForm.patchValue(cfg);
-    }
-    this.isFiscalConfigModalOpen.set(true);
-  }
-
-  public closeFiscalConfigModal() {
-    this.isFiscalConfigModalOpen.set(false);
-  }
-
-  public async saveFiscalConfig() {
-    if (this.fiscalConfigForm.invalid) return;
-    await this.api.saveFiscalSettings(this.fiscalConfigForm.getRawValue());
-    this.closeFiscalConfigModal();
+    this.api.navigateToSettings('fiscal');
   }
 
   // --- EXPORT FUNCTIONALITY: SALES ORDERS ---
