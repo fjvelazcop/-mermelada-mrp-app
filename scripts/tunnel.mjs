@@ -17,6 +17,7 @@
 
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { parseQuickTunnelUrl } from './tunnel-url.mjs';
 
 const log = (message) => console.log(`[tunnel] ${message}`);
 const fail = (message) => console.error(`[tunnel] ${message}`);
@@ -228,11 +229,6 @@ function startHealthMonitor() {
     }
   }, healthIntervalMs);
   healthTimer.unref?.();
-}
-
-function parseQuickTunnelUrl(chunk) {
-  const match = chunk.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
-  return match ? match[0] : '';
 }
 
 async function main() {
