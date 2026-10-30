@@ -136,7 +136,9 @@ eventos, pero la tabla SQLite conserva el histórico completo.
 ### 5.1. Configuración actual
 
 - Script: `scripts/backup-db.mjs`; wrapper de cron: `scripts/backup-cron.sh`.
-- Frecuencia: **dos veces al día** (`0 2,14 * * *`).
+- Frecuencia: **dos veces al día** (`0 2,14 * * *`) y **una copia al arranque**
+  del equipo (`@reboot`, con 90 s de espera). Cron no recupera ejecuciones
+  perdidas si el equipo estaba apagado; la copia de arranque cubre ese hueco.
 - Destino local: `backups/mermelada-<ISO>.db`, permisos `600`.
 - Retención local: **15 días** (`BACKUP_RETENTION_DAYS=15`).
 - Integridad: se ejecuta `PRAGMA integrity_check` antes de copiar y se aborta si
@@ -149,6 +151,7 @@ Crontab vigente:
 
 ```cron
 0 2,14 * * * PATH=/home/fjvel/.nvm/versions/node/v24.21.0/bin:/usr/local/bin:/usr/bin:/bin /home/fjvel/proyectos/mermelada/scripts/backup-cron.sh
+@reboot sleep 90 && PATH=/home/fjvel/.nvm/versions/node/v24.21.0/bin:/usr/local/bin:/usr/bin:/bin /home/fjvel/proyectos/mermelada/scripts/backup-cron.sh
 ```
 
 ### 5.2. Verificar
