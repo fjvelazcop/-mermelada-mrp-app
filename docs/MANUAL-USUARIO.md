@@ -1,12 +1,12 @@
 # Manual de Usuario — Mermelada ERP
 
-**Versión:** 1.0 · **Última actualización:** 28/10/2026
+**Versión:** 1.0 · **Última actualización:** 31/10/2026
 **Aplicación:** PulpaCraft MRP / Mermelada ERP
 **Alcance:** personal administrativo, supervisores, operadores de planta, almacén y costos.
 
 > Este manual describe cómo usar el sistema. No sustituye la asesoría contable
-> ni tributaria. El ERP **todavía no emite facturas fiscales**; consulte la
-> sección [Estado fiscal](#estado-fiscal-actual).
+> ni tributaria. La facturación disponible es preliminar y requiere validación;
+> consulte la sección [Estado fiscal](#estado-fiscal-actual).
 
 ---
 
@@ -200,17 +200,18 @@ usuario que las ejecuta; compartir cuentas rompe la trazabilidad.
 
 ## 6. Estado fiscal actual
 
-El sistema **no emite todavía facturas fiscales**. Hoy produce:
+El sistema registra facturas preliminares con numeración y control, anulación y
+reimpresión auditables. La representación actual requiere validación de un
+contador público y **no implica autorización del SENIAT**. Hoy también produce:
 
 - Pedidos de venta.
 - Notas de entrega.
 - Registro de cobros.
 - Gastos con datos fiscales y crédito de IVA.
 
-La facturación fiscal venezolana (numeración y control, libros de ventas y
-compras, notas de crédito/débito, retenciones y facturación digital) está
-planificada en el issue **#11** y requiere validación con un contador público.
-Mientras tanto, **no use las notas de entrega como documento fiscal**.
+Los libros de ventas/compras, notas de crédito/débito, retenciones y
+facturación digital siguen pendientes en el issue **#11**. Mientras tanto,
+**no use las notas de entrega como documento fiscal**.
 
 ---
 

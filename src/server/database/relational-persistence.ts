@@ -509,6 +509,7 @@ export function loadRelationalState(): DatabaseState | null {
       exchangeRateUsed: r['exchange_rate_used'],
       status: r['status'],
       issuedAt: r['issued_at'],
+      printCount: r['print_count'] ?? 0,
       annulledAt: o(r['annulled_at']),
       annulledBy: o(r['annulled_by']),
       annulmentReason: o(r['annulment_reason']),
@@ -1100,8 +1101,8 @@ export function saveRelationalState(state: DatabaseState): void {
         sales_order_number, emitter_snapshot, customer_snapshot, items_json,
         subtotal, tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
         exchange_rate_used, status, issued_at, annulled_at, annulled_by,
-        annulment_reason, period_year, period_month
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        annulment_reason, print_count, period_year, period_month
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const invoice of snapshot.fiscalInvoices || []) {
       insertFiscalInvoice.run(
@@ -1126,6 +1127,7 @@ export function saveRelationalState(state: DatabaseState): void {
         v(invoice.annulledAt),
         v(invoice.annulledBy),
         v(invoice.annulmentReason),
+        invoice.printCount ?? 0,
         invoice.periodYear,
         invoice.periodMonth
       );

@@ -1,0 +1,494 @@
+<section class="space-y-6">
+  <!-- Encabezado -->
+  <div class="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div class="flex items-start gap-3">
+      <div class="w-11 h-11 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+        <mat-icon>receipt_long</mat-icon>
+      </div>
+      <div>
+        <h2 class="text-lg font-bold text-stone-900">Facturación Fiscal</h2>
+        <p class="text-xs text-stone-500 mt-0.5">
+          Facturas emitidas automáticamente al registrar pedidos. Los consecutivos anulados no se reutilizan.
+        </p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        (click)="refresh()"
+        class="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-lg transition-colors min-h-[40px]"
+        title="Recargar el listado de facturas fiscales"
+      >
+        <mat-icon class="text-sm">refresh</mat-icon>
+        Actualizar
+      </button>
+    </div>
+  </div>
+
+  <!-- Resumen -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide font-semibold text-stone-500">Facturas emitidas</p>
+      <p class="text-2xl font-bold text-stone-900 mt-1">{{ summary().issuedCount }}</p>
+      <p class="text-[11px] text-stone-500 mt-1">Vigentes en el período filtrado</p>
+    </div>
+
+    <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide font-semibold text-stone-500">Facturas anuladas</p>
+      <p class="text-2xl font-bold text-rose-700 mt-1">{{ summary().annulledCount }}</p>
+      <p class="text-[11px] text-stone-500 mt-1">No reutilizan número de control</p>
+    </div>
+
+    <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide font-semibold text-stone-500">Total facturado</p>
+      <p class="text-xl font-bold text-emerald-700 mt-1">{{ summary().totalBs | veCurrency: 'Bs.' }}</p>
+      <p class="text-[11px] text-stone-500 mt-1">{{ summary().totalUsd | veCurrency: '$' }}</p>
+    </div>
+
+    <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+      <p class="text-[11px] uppercase tracking-wide font-semibold text-stone-500">I.V.A. emitido</p>
+      <p class="text-xl font-bold text-stone-900 mt-1">{{ summary().taxBs | veCurrency: 'Bs.' }}</p>
+      <p class="text-[11px] text-stone-500 mt-1">{{ summary().taxUsd | veCurrency: '$' }}</p>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <label class="block">
+        <span class="block text-[11px] font-semibold uppercase tracking-wide text-stone-500 mb-1">Año</span>
+        <select
+          (change)="setYear($any($event.target).value)"
+          [value]="filterYear() ?? ''"
+          class="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/40 min-h-[40px]"
+        >
+          <option value="">Todos los años</option>
+          @for (year of availableYears(); track year) {
+            <option [value]="year">{{ year }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="block">
+        <span class="block text-[11px] font-semibold uppercase tracking-wide text-stone-500 mb-1">Mes</span>
+        <select
+          (change)="setMonth($any($event.target).value)"
+          [value]="filterMonth() ?? ''"
+          class="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/40 min-h-[40px]"
+        >
+          <option value="">Todos los meses</option>
+          @for (month of monthLabels; track month; let i = $index) {
+            <option [value]="i + 1">{{ month }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="block lg:col-span-2">
+        <span class="block text-[11px] font-semibold uppercase tracking-wide text-stone-500 mb-1">Buscar</span>
+        <div class="relative">
+          <mat-icon class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 text-base">
+            search
+          </mat-icon>
+          <input
+            type="text"
+            [value]="searchTerm()"
+            (input)="onSearch($any($event.target).value)"
+            placeholder="N° de factura, control, cliente, RIF o pedido"
+            class="w-full pl-9 pr-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/40 min-h-[40px]"
+          />
+        </div>
+      </label>
+    </div>
+
+    @if (hasActiveFilters()) {
+      <div class="flex items-center justify-between mt-3 pt-3 border-t border-stone-100">
+        <p class="text-[11px] text-stone-500">
+          {{ filteredInvoices().length }} de {{ invoices().length }} facturas coinciden con el filtro.
+        </p>
+        <button
+          type="button"
+          (click)="clearFilters()"
+          class="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:text-amber-900"
+        >
+          <mat-icon class="text-sm">filter_alt_off</mat-icon>
+          Limpiar filtros
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- Tabla -->
+  <div class="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+    <div class="px-4 py-3 border-b border-stone-100 flex items-center justify-between">
+      <h3 class="text-sm font-bold text-stone-900">Registro de Facturas Fiscales</h3>
+      <span class="text-[11px] text-stone-500">{{ filteredInvoices().length }} resultado(s)</span>
+    </div>
+
+    @if (filteredInvoices().length === 0) {
+      <div class="p-10 text-center">
+        <mat-icon class="text-stone-300 text-4xl">receipt</mat-icon>
+        <p class="text-sm font-semibold text-stone-700 mt-2">No hay facturas fiscales para mostrar</p>
+        <p class="text-xs text-stone-500 mt-1">
+          Las facturas se emiten automáticamente al registrar un pedido de venta.
+        </p>
+        @if (hasActiveFilters()) {
+          <button
+            type="button"
+            (click)="clearFilters()"
+            class="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-amber-700 text-white rounded-lg hover:bg-amber-800 transition-colors"
+          >
+            Ver todas las facturas
+          </button>
+        }
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs min-w-[900px]">
+          <thead class="bg-stone-50 text-stone-500 uppercase tracking-wide text-[10px]">
+            <tr>
+              <th class="text-left font-semibold px-4 py-3">N° Factura</th>
+              <th class="text-left font-semibold px-4 py-3">N° Control</th>
+              <th class="text-left font-semibold px-4 py-3">Fecha de emisión</th>
+              <th class="text-left font-semibold px-4 py-3">Cliente / RIF</th>
+              <th class="text-left font-semibold px-4 py-3">Pedido</th>
+              <th class="text-right font-semibold px-4 py-3">Total USD</th>
+              <th class="text-right font-semibold px-4 py-3">Total Bs.</th>
+              <th class="text-center font-semibold px-4 py-3">Estado</th>
+              <th class="text-right font-semibold px-4 py-3">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (invoice of filteredInvoices(); track invoice.id) {
+              <tr class="hover:bg-stone-50/70 transition-colors">
+                <td class="px-4 py-3">
+                  <span class="font-mono font-bold text-stone-900">{{ invoiceNumber(invoice) }}</span>
+                  <span class="block text-[10px] text-stone-400 mt-0.5">{{ monthLabel(invoice.periodMonth) }} {{ invoice.periodYear }}</span>
+                </td>
+                <td class="px-4 py-3 font-mono text-stone-600">{{ controlNumber(invoice) }}</td>
+                <td class="px-4 py-3 text-stone-600">{{ formatDate(invoice.issuedAt) }}</td>
+                <td class="px-4 py-3">
+                  <span class="block font-semibold text-stone-800">{{ invoice.customerSnapshot.businessName }}</span>
+                  <span class="block text-[10px] text-stone-500 font-mono">{{ invoice.customerSnapshot.taxId }}</span>
+                </td>
+                <td class="px-4 py-3 text-stone-600">{{ invoice.salesOrderNumber || '—' }}</td>
+                <td class="px-4 py-3 text-right font-semibold text-stone-900">{{ invoice.total | veCurrency: '$' }}</td>
+                <td class="px-4 py-3 text-right font-semibold text-stone-900">{{ totalBs(invoice) | veCurrency: 'Bs.' }}</td>
+                <td class="px-4 py-3 text-center">
+                  @if (invoice.status === 'emitida') {
+                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase">
+                      <mat-icon class="text-[12px] leading-none">check_circle</mat-icon>
+                      Emitida
+                    </span>
+                  } @else {
+                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold uppercase">
+                      <mat-icon class="text-[12px] leading-none">cancel</mat-icon>
+                      Anulada
+                    </span>
+                  }
+                </td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      (click)="openDetail(invoice)"
+                      class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] font-semibold transition-colors"
+                      title="Ver el detalle de la factura"
+                    >
+                      <mat-icon class="text-sm">visibility</mat-icon>
+                      Ver
+                    </button>
+                    @if (invoice.status === 'emitida' && isAdmin()) {
+                      <button
+                        type="button"
+                        (click)="openAnnul(invoice)"
+                        class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold transition-colors"
+                        title="Anular esta factura fiscal"
+                      >
+                        <mat-icon class="text-sm">block</mat-icon>
+                        Anular
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</section>
+
+<!-- MODAL: DETALLE DE FACTURA FISCAL -->
+@if (selectedInvoice(); as invoice) {
+  <div id="fiscal-invoice-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
+    <div class="fiscal-invoice-card bg-white rounded-2xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-stone-300 my-8 max-h-[92vh] overflow-y-auto">
+      <!-- Barra de acciones -->
+      <div class="flex flex-wrap items-center justify-between gap-3 pb-4 mb-6 border-b border-stone-200 print:hidden">
+        <div class="flex items-center gap-2">
+          <mat-icon class="text-amber-700">receipt_long</mat-icon>
+          <div>
+            <h3 class="text-base font-bold text-stone-900">Factura Fiscal {{ invoiceNumber(invoice) }}</h3>
+            <p class="text-[11px] text-stone-500">N° Control {{ controlNumber(invoice) }}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            (click)="printInvoice()"
+            [disabled]="printing()"
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-stone-100 text-stone-800 rounded-lg hover:bg-stone-200 transition-colors"
+            title="Imprimir la factura fiscal"
+          >
+            <mat-icon class="text-sm">print</mat-icon>
+            {{ printing() ? 'Registrando…' : 'Imprimir' }}
+          </button>
+          @if (invoice.status === 'emitida' && isAdmin()) {
+            <button
+              type="button"
+              (click)="openAnnul(invoice)"
+              class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-rose-700 text-white rounded-lg hover:bg-rose-800 transition-colors"
+              title="Anular la factura fiscal"
+            >
+              <mat-icon class="text-sm">block</mat-icon>
+              Anular
+            </button>
+          }
+          <button
+            type="button"
+            (click)="closeDetail()"
+            class="p-2 rounded-lg text-stone-500 hover:bg-stone-100"
+            title="Cerrar"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <!-- Documento -->
+      <div id="fiscal-invoice-print" class="border border-stone-300 rounded-xl p-6">
+        @if (duplicatePrint()) {
+          <div class="mb-5 border-2 border-rose-700 p-3 text-center text-lg font-black tracking-[0.3em] text-rose-800">
+            DUPLICADO
+          </div>
+        }
+        <!-- Emisor y datos fiscales -->
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-4 border-b border-stone-200">
+          <div>
+            <h4 class="text-base font-bold text-stone-900">{{ invoice.emitterSnapshot.companyName }}</h4>
+            <p class="text-xs text-stone-600 mt-1 font-mono">RIF: {{ invoice.emitterSnapshot.companyTaxId }}</p>
+            <p class="text-[11px] text-stone-500 mt-1 max-w-sm">{{ invoice.emitterSnapshot.fiscalAddress }}</p>
+            @if (invoice.emitterSnapshot.companyPhone || invoice.emitterSnapshot.companyEmail) {
+              <p class="text-[11px] text-stone-500 mt-1">
+                {{ invoice.emitterSnapshot.companyPhone || '' }}
+                @if (invoice.emitterSnapshot.companyPhone && invoice.emitterSnapshot.companyEmail) { · }
+                {{ invoice.emitterSnapshot.companyEmail || '' }}
+              </p>
+            }
+          </div>
+          <div class="text-left sm:text-right shrink-0">
+            <p class="text-[10px] uppercase tracking-wide font-bold text-stone-500">Factura</p>
+            <p class="text-lg font-mono font-bold text-stone-900">{{ invoiceNumber(invoice) }}</p>
+            <p class="text-[10px] uppercase tracking-wide font-bold text-stone-500 mt-2">N° Control</p>
+            <p class="text-sm font-mono font-semibold text-stone-700">{{ controlNumber(invoice) }}</p>
+            <p class="text-[11px] text-stone-500 mt-2">Emitida: {{ formatDate(invoice.issuedAt) }}</p>
+          </div>
+        </div>
+
+        @if (invoice.status === 'anulada') {
+          <div class="mt-4 p-3 rounded-lg bg-rose-50 border border-rose-200">
+            <p class="text-xs font-bold text-rose-800 uppercase tracking-wide flex items-center gap-1.5">
+              <mat-icon class="text-sm">cancel</mat-icon>
+              Factura anulada
+            </p>
+            <p class="text-[11px] text-rose-700 mt-1">
+              Anulada el {{ formatDate(invoice.annulledAt) }}
+              @if (invoice.annulledBy) { por {{ invoice.annulledBy }} }.
+            </p>
+            <p class="text-[11px] text-rose-700 mt-1"><span class="font-semibold">Motivo:</span> {{ invoice.annulmentReason }}</p>
+          </div>
+        }
+
+        <!-- Cliente -->
+        <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 rounded-lg bg-stone-50 border border-stone-200">
+          <div>
+            <p class="text-[10px] uppercase tracking-wide font-bold text-stone-500">Cliente</p>
+            <p class="text-sm font-semibold text-stone-900 mt-0.5">{{ invoice.customerSnapshot.businessName }}</p>
+            <p class="text-[11px] text-stone-600 font-mono mt-0.5">RIF: {{ invoice.customerSnapshot.taxId }}</p>
+            @if (invoice.customerSnapshot.address) {
+              <p class="text-[11px] text-stone-500 mt-0.5">{{ invoice.customerSnapshot.address }}</p>
+            }
+          </div>
+          <div class="sm:text-right">
+            <p class="text-[10px] uppercase tracking-wide font-bold text-stone-500">Referencias</p>
+            @if (invoice.salesOrderNumber) {
+              <p class="text-[11px] text-stone-600 mt-0.5">Pedido: <span class="font-mono font-semibold">{{ invoice.salesOrderNumber }}</span></p>
+            }
+            <p class="text-[11px] text-stone-600 mt-0.5">Período: {{ monthLabel(invoice.periodMonth) }} {{ invoice.periodYear }}</p>
+            <p class="text-[11px] text-stone-600 mt-0.5">Tasa usada: {{ invoice.exchangeRateUsed | veCurrency: 'Bs.' }}</p>
+          </div>
+        </div>
+
+        <!-- Líneas -->
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full text-[11px] min-w-[700px]">
+            <thead class="bg-stone-100 text-stone-600 uppercase tracking-wide text-[9px]">
+              <tr>
+                <th class="text-left font-bold px-2.5 py-2">Descripción</th>
+                <th class="text-right font-bold px-2.5 py-2">Cant.</th>
+                <th class="text-right font-bold px-2.5 py-2">P. Unit. USD</th>
+                <th class="text-right font-bold px-2.5 py-2">Tratamiento / IVA</th>
+                <th class="text-right font-bold px-2.5 py-2">Subtotal USD</th>
+                <th class="text-right font-bold px-2.5 py-2">IVA USD</th>
+                <th class="text-right font-bold px-2.5 py-2">Total USD</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-200">
+              @for (item of invoice.items; track $index) {
+                <tr>
+                  <td class="px-2.5 py-2 text-stone-800">{{ item.description }}</td>
+                  <td class="px-2.5 py-2 text-right text-stone-700">{{ formatNumber(item.quantity, 0) }}</td>
+                  <td class="px-2.5 py-2 text-right text-stone-700">{{ item.unitPrice | veCurrency: '$' }}</td>
+                  <td class="px-2.5 py-2 text-right text-stone-700">
+                    {{ taxCategoryLabel(item.taxCategory) }}
+                    @if (item.taxCategory !== 'exento' && item.taxCategory !== 'no_sujeto') {
+                      {{ formatNumber(item.taxRatePercent, 2) }}%
+                    }
+                  </td>
+                  <td class="px-2.5 py-2 text-right text-stone-700">{{ item.subtotal | veCurrency: '$' }}</td>
+                  <td class="px-2.5 py-2 text-right text-stone-700">{{ item.taxAmount | veCurrency: '$' }}</td>
+                  <td class="px-2.5 py-2 text-right font-semibold text-stone-900">{{ item.total | veCurrency: '$' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Totales -->
+        <div class="mt-4 flex flex-col sm:flex-row sm:justify-end">
+          <div class="w-full sm:w-72 text-[11px] space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-stone-600">Subtotal</span>
+              <span class="font-semibold text-stone-900">{{ invoice.subtotal | veCurrency: '$' }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-stone-600">I.V.A.</span>
+              <span class="font-semibold text-stone-900">{{ invoice.taxAmount | veCurrency: '$' }}</span>
+            </div>
+            @for (group of taxBreakdown(invoice); track group.label) {
+              <div class="flex items-center justify-between text-[10px] text-stone-500">
+                <span>Base {{ group.label }}</span>
+                <span>{{ group.subtotal | veCurrency: '$' }} · IVA {{ group.taxAmount | veCurrency: '$' }}</span>
+              </div>
+            }
+            <div class="flex items-center justify-between pt-1.5 border-t border-stone-200">
+              <span class="font-bold text-stone-900">Total USD</span>
+              <span class="font-bold text-stone-900">{{ invoice.total | veCurrency: '$' }}</span>
+            </div>
+            <div class="flex items-center justify-between text-stone-600">
+              <span>Subtotal Bs.</span>
+              <span>{{ subtotalBs(invoice) | veCurrency: 'Bs.' }}</span>
+            </div>
+            <div class="flex items-center justify-between text-stone-600">
+              <span>I.V.A. Bs.</span>
+              <span>{{ taxBs(invoice) | veCurrency: 'Bs.' }}</span>
+            </div>
+            <div class="flex items-center justify-between pt-1.5 border-t border-stone-200">
+              <span class="font-bold text-stone-900">Total Bs.</span>
+              <span class="font-bold text-amber-800">{{ totalBs(invoice) | veCurrency: 'Bs.' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pie legal -->
+        <div class="mt-5 pt-4 border-t border-stone-200 text-[10px] text-stone-500 space-y-1">
+          <p class="font-semibold text-stone-600">Documento fiscal generado automáticamente por Mermelada ERP.</p>
+          @if (invoice.emitterSnapshot.authorizationCode) {
+            <p>Autorización SENIAT: <span class="font-mono">{{ invoice.emitterSnapshot.authorizationCode }}</span></p>
+          }
+          @if (invoice.emitterSnapshot.authorizationValidUntil) {
+            <p>Vigencia de autorización: {{ invoice.emitterSnapshot.authorizationValidUntil }}</p>
+          }
+          @if (invoice.emitterSnapshot.printNotes) {
+            <p>{{ invoice.emitterSnapshot.printNotes }}</p>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- MODAL: ANULACIÓN DE FACTURA -->
+@if (invoiceToAnnul(); as invoice) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-300 my-8">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+            <mat-icon>block</mat-icon>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-stone-900">Anular factura fiscal</h3>
+            <p class="text-[11px] text-stone-500 mt-0.5">
+              El número de factura y de control no se reutilizarán.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          (click)="closeAnnul()"
+          [disabled]="annulling()"
+          class="p-2 rounded-lg text-stone-500 hover:bg-stone-100 disabled:opacity-40"
+          title="Cerrar"
+        >
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <div class="mt-4 p-3 rounded-lg bg-stone-50 border border-stone-200 text-[11px] space-y-1">
+        <p class="text-stone-600">Factura: <span class="font-mono font-bold text-stone-900">{{ invoiceNumber(invoice) }}</span></p>
+        <p class="text-stone-600">Control: <span class="font-mono font-semibold">{{ controlNumber(invoice) }}</span></p>
+        <p class="text-stone-600">Cliente: <span class="font-semibold text-stone-900">{{ invoice.customerSnapshot.businessName }}</span></p>
+        <p class="text-stone-600">Total: <span class="font-semibold text-stone-900">{{ invoice.total | veCurrency: '$' }} / {{ totalBs(invoice) | veCurrency: 'Bs.' }}</span></p>
+      </div>
+
+      <form [formGroup]="annulForm" (ngSubmit)="confirmAnnul()" class="mt-4">
+        <label class="block">
+          <span class="block text-xs font-semibold text-stone-700 mb-1">Motivo de la anulación *</span>
+          <textarea
+            formControlName="reason"
+            rows="3"
+            maxlength="500"
+            placeholder="Ej.: error en los datos del cliente, devolución total del pedido..."
+            class="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/40 resize-none"
+          ></textarea>
+        </label>
+        @if (annulForm.controls.reason.touched && annulForm.controls.reason.invalid) {
+          <p class="text-[11px] text-rose-700 mt-1">
+            Indica un motivo de al menos 3 caracteres.
+          </p>
+        }
+
+        <div class="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <button
+            type="button"
+            (click)="closeAnnul()"
+            [disabled]="annulling()"
+            class="px-4 py-2.5 text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-lg transition-colors disabled:opacity-50 min-h-[44px]"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            [disabled]="annulling() || annulForm.invalid"
+            class="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-rose-700 hover:bg-rose-800 text-white rounded-lg transition-colors disabled:opacity-50 min-h-[44px]"
+          >
+            <mat-icon class="text-sm">block</mat-icon>
+            {{ annulling() ? 'Anulando…' : 'Confirmar anulación' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}

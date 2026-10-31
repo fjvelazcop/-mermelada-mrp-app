@@ -546,6 +546,7 @@ export class ErpApiService {
   public expenseCategories = signal<ExpenseCategoryConfig[]>([]);
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
+  public fiscalInvoices = signal<FiscalInvoice[]>([]);
   public dashboardData = signal<any | null>(null);
   public exchangeRates = signal<DailyExchangeRates | null>(null);
   public auditLogs = signal<AuditLogEntry[]>([]);
@@ -834,6 +835,7 @@ export class ErpApiService {
         expenseCategoriesList,
         costing,
         fiscal,
+        invoices,
         dash,
         rates,
         audit,
@@ -854,6 +856,7 @@ export class ErpApiService {
         firstValueFrom(this.http.get<ExpenseCategoryConfig[]>('/api/expenses/categories')).catch(() => []),
         firstValueFrom(this.http.get<CostStructureAnalysis>('/api/costing/summary')),
         firstValueFrom(this.http.get<FiscalSettings>('/api/fiscal-settings')),
+        firstValueFrom(this.http.get<FiscalInvoice[]>('/api/fiscal-invoices')).catch(() => []),
         firstValueFrom(this.http.get<any>('/api/reports/dashboard')),
         firstValueFrom(this.http.get<DailyExchangeRates>('/api/exchange-rates')).catch(() => null),
         firstValueFrom(this.http.get<AuditLogEntry[]>('/api/audit-logs')).catch(() => []),
@@ -875,6 +878,7 @@ export class ErpApiService {
       this.expenseCategories.set(expenseCategoriesList || []);
       this.costStructure.set(costing);
       this.fiscalSettings.set(fiscal);
+      this.fiscalInvoices.set(invoices || []);
       this.dashboardData.set(dash);
       if (rates) {
         this.exchangeRates.set(rates);
@@ -1624,6 +1628,46 @@ export class ErpApiService {
     return firstValueFrom<FiscalInvoice[]>(
       this.http.get<FiscalInvoice[]>('/api/fiscal-invoices', { params })
     );
+  }
+
+  /** Reloads the fiscal invoice list into the shared signal. */
+  public async refreshFiscalInvoices() {
+    try {
+      const invoices = await this.getFiscalInvoices();
+      this.fiscalInvoices.set(invoices);
+      return invoices;
+    } catch (err: unknown) {
+      this.showToast(
+        this.apiErrorMessage(err) || 'No se pudo actualizar el listado de facturas fiscales',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async recordFiscalInvoicePrint(
+    id: string
+  ): Promise<{invoice: FiscalInvoice; isDuplicate: boolean}> {
+    try {
+      const result = await firstValueFrom(
+        this.http.post<{invoice: FiscalInvoice; isDuplicate: boolean}>(
+          `/api/fiscal-invoices/${id}/print`,
+          {}
+        )
+      );
+      this.fiscalInvoices.update((invoices) =>
+        invoices.map((invoice) =>
+          invoice.id === result.invoice.id ? result.invoice : invoice
+        )
+      );
+      return result;
+    } catch (err: unknown) {
+      this.showToast(
+        this.apiErrorMessage(err) || 'No se pudo registrar la impresión de la factura',
+        'error'
+      );
+      throw err;
+    }
   }
 
   public async annulFiscalInvoice(id: string, reason: string) {

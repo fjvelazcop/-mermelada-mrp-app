@@ -1,7 +1,7 @@
 # Plan Issue #11 — SENIAT / Facturación Fiscal Venezolana
 
-**Fecha:** 29/10/2026
-**Estado actual:** Sistema operativo con backup, seguridad y túnel. Sin facturación fiscal activa.
+**Fecha:** 31/10/2026
+**Estado actual:** Emisión automática de facturas, persistencia, anulación auditada y pantalla de consulta/impresión implementadas. La impresión marca duplicados y se audita. La solución aún no está validada por un contador ni debe tratarse como autorización del SENIAT.
 **Vigencia normativa:** SNAT/2011/0071 vence el **18/04/2027**; nuevo régimen SNAT/2026/00093 entra en vigor el **19/04/2027**.
 
 ---
@@ -42,25 +42,25 @@
 
 | # | Requisito | Estado actual |
 |---|---|---|
-| 3.1 | Razón social, RIF, dirección fiscal, teléfono y correo del emisor **configurables y congelados por documento** al momento de emitir | ✅ Configurables en Configuración → Datos Fiscales (solo admin); ⬜ falta congelar por documento |
+| 3.1 | Razón social, RIF, dirección fiscal, teléfono y correo del emisor **configurables y congelados por documento** al momento de emitir | ✅ Configurables en Configuración → Datos Fiscales y copiados al snapshot de la factura |
 | 3.1 | Actividad económica y régimen tributario (ordinario / especial) | ✅ Configurables en Configuración → Datos Fiscales |
 | 3.1 | Datos de la sucursal o establecimiento cuando aplique | ✅ Nombre y dirección de sucursal configurables |
 | 3.1 | **RIF de clientes y proveedores como campo obligatorio en los maestros** | ✅ Implementado (`Customer.taxId`, `Supplier.taxId`) |
 | 3.1 | **Configuración fiscal base: alícuota IVA, prefijo y próximo número de factura** | ✅ UI completa en Configuración → Datos Fiscales (solo admin) |
-| 3.2 | **Número de factura consecutivo, único e irrepetible por serie** | ⬜ Pendiente (entidad `FiscalInvoice`) |
-| 3.2 | **Número de control consecutivo e irrepetible**, independiente del número de factura | ⬜ Pendiente |
-| 3.2 | Fecha y hora de emisión | ⬜ Pendiente |
-| 3.2 | Nombre/razón social y RIF del emisor | ⬜ Pendiente (parte de 3.1) |
-| 3.2 | Nombre/razón social y RIF del adquirente; NIT cuando posea | ⬜ Pendiente |
-| 3.2 | Descripción de bienes/servicios, cantidad, precio unitario y monto total | ⬜ Pendiente |
-| 3.2 | **IVA discriminado por alícuota, separado del precio** | ⬜ Pendiente (base: `taxAmount`, `taxAmountBs`) |
+| 3.2 | **Número de factura consecutivo, único e irrepetible por serie** | ✅ Persistido con restricción única por serie |
+| 3.2 | **Número de control consecutivo e irrepetible**, independiente del número de factura | ✅ Persistido con restricción única por serie |
+| 3.2 | Fecha y hora de emisión | ✅ Incluidas en la factura |
+| 3.2 | Nombre/razón social y RIF del emisor | ✅ Copiados al snapshot |
+| 3.2 | Nombre/razón social y RIF del adquirente; NIT cuando posea | ⚠️ Razón social y RIF copiados; NIT aún no modelado |
+| 3.2 | Descripción de bienes/servicios, cantidad, precio unitario y monto total | ✅ Tomados del pedido |
+| 3.2 | **IVA discriminado por alícuota, separado del precio** | ✅ Por línea admite varias alícuotas y tratamientos gravado/exento/no sujeto; redondeo por línea y desglose en consulta/impresión. Las tasas y leyendas deben validarse con un contador |
 | 3.2 | Total en letras y en números | ⬜ Pendiente |
 | 3.2 | Condición de venta (contado/crédito) y forma de pago | ⬜ Pendiente |
-| 3.2 | Leyendas obligatorias: "sin derecho a crédito fiscal", régimen aplicable, etc. | ⬜ Pendiente |
-| 3.2 | **Anulación con motivo, usuario, fecha/hora y trazabilidad; el número no se reutiliza** | ⬜ Pendiente |
-| 3.2 | **Reimpresión marcada como DUPLICADO** | ⬜ Pendiente |
-| 3.2 | PDF/representación gráfica con todos los requisitos y sin datos truncados | ⬜ Pendiente |
-| 3.2 | **Registro inmutable: una factura emitida no se edita ni se elimina; se corrige con nota de crédito/débito** | ⬜ Pendiente |
+| 3.2 | Leyendas obligatorias: "sin derecho a crédito fiscal", régimen aplicable, etc. | ⚠️ Notas configurables; validar y completar leyendas con contador |
+| 3.2 | **Anulación con motivo, usuario, fecha/hora y trazabilidad; el número no se reutiliza** | ✅ Anulación restringida a admin, auditada; números conservados |
+| 3.2 | **Reimpresión marcada como DUPLICADO** | ✅ Contador persistente, marca de copia y auditoría |
+| 3.2 | PDF/representación gráfica con todos los requisitos y sin datos truncados | ⚠️ Vista imprimible disponible; faltan datos y validación legal |
+| 3.2 | **Registro inmutable: una factura emitida no se edita ni se elimina; se corrige con nota de crédito/débito** | ⚠️ No hay edición/eliminación; notas de crédito/débito aún pendientes |
 | 3.4 | Libro de Ventas mensual: fecha, número de factura, número de control, RIF y nombre del cliente, monto exento, base imponible por alícuota, IVA, total, operaciones a crédito, notas de crédito/débito y retenciones recibidas | ❌ No existe |
 | 3.4 | Libro de Compras mensual: fecha, número de factura, número de control, RIF y nombre del proveedor, monto exento, base imponible, IVA, total, retención de IVA practicada y condición de crédito fiscal | ⚠️ Base parcial (gastos tienen RIF, documento, alícuota, IVA y `fiscalBookEligible`, pero no hay libro ni cierre) |
 | 3.4 | Libro Diario: asientos cronológicos con cuenta, débito, crédito y referencia al documento | ❌ No existe |
@@ -68,9 +68,9 @@
 | 3.4 | Libro de Inventarios y Balances: inventario inicial, movimientos, inventario final y balances | ⚠️ Base parcial |
 | 3.4 | Balance General / Estado de Resultados | ❌ No existe |
 | 3.6 | Facturación digital: generación en formato/estructura exigida (XML/JSON), firma electrónica/sellado, transmisión al SENIAT, manejo de acuses, modo contingencia, adaptación a SNAT/2026/00093 | ❌ No existe |
-| 3.7 | Auditoría inmutable de emisión, anulación, reimpresión y cambio de configuración fiscal | ⬜ Base (audit_logs), falta validación fiscal |
-| 3.7 | Roles y permisos: emisión, anulación, cierre de período, configuración fiscal | ⬜ Pendiente |
-| 3.7 | Validaciones de RIF y de datos obligatorios antes de emitir | ⬜ Pendiente |
+| 3.7 | Auditoría inmutable de emisión, anulación, reimpresión y cambio de configuración fiscal | ⚠️ Emisión, anulación e impresión registradas; validar auditoría/cambio de configuración |
+| 3.7 | Roles y permisos: emisión, anulación, cierre de período, configuración fiscal | ⚠️ Venta según permiso de ventas, anulación admin y reimpresión con permiso de exportar; falta cierre |
+| 3.7 | Validaciones de RIF y de datos obligatorios antes de emitir | ⚠️ RIF y configuración base validados; faltan campos y escenarios fiscales |
 | 3.7 | Multi-moneda con tasa BCV registrada por operación | ✅ Base (`exchangeRateUsed`) |
 | 3.7 | Evaluación de IGTF en pagos en divisas, si aplica | ⬜ Pendiente |
 
@@ -216,11 +216,12 @@ Los flags se guardarán en una tabla `fiscal_features` con auditoría de activac
 
 ## 12. Próximo paso inmediato (Fase 0)
 
-1. ✅ Configuración fiscal en la UI (`FiscalSettings`): razón social, RIF, dirección, teléfono, correo, actividad económica, régimen, sucursal, alícuota IVA, serie, prefijo y numeración, retenciones, SPE, formato de libros y tratamiento de órdenes históricas. Pendiente: confirmar los datos reales con el contador.
-2. Hacer el RIF obligatorio en los formularios de cliente y proveedor (ya es campo en la base, falta validación en UI).
-3. Implementar la entidad `FiscalInvoice` con los campos mínimos: `serie`, `invoiceNumber`, `controlNumber`, `emitterSnapshot`, `customerSnapshot`, `status`, `issuedAt`, `annulledAt`, `annulledBy`.
-4. Añadir las validaciones previas a la creación de pedidos de venta: RIF del cliente, alícuota configurada, numeración disponible.
-5. Crear las pruebas de regresión para los casos borde: alícuotas, exentos, no sujetos, redondeos, anulaciones.
+1. ✅ Configuración fiscal, datos de cliente/proveedor y validación inicial de RIF.
+2. ✅ Entidad persistente `FiscalInvoice`, numeración única, snapshots, emisión y anulación auditada.
+3. ✅ Consulta e impresión con marca de DUPLICADO para las reimpresiones.
+4. ✅ Escenarios técnicos de IVA por línea (múltiples alícuotas, exentos/no sujetos) y pruebas de redondeo; falta validar tasas y leyendas con contador.
+5. ⬜ Completar los campos de emisión que faltan y validar la representación con el contador antes de usarla como documento fiscal real.
+6. ⬜ Fase 2: Libros de Ventas/Compras, conciliación, cierre mensual y exportaciones auditables.
 
 ---
 

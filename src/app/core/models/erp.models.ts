@@ -268,7 +268,12 @@ export interface SalesOrderItem {
   priceTier?: PriceTierType;
   profitMarginPercent?: number;
   baseCost?: number;
+  taxCategory?: SalesTaxCategory;
+  taxRatePercent?: number;
+  taxAmount?: number;
 }
+
+export type SalesTaxCategory = 'gravado' | 'exento' | 'no_sujeto';
 
 export interface SalesOrder {
   id: string;
@@ -417,6 +422,7 @@ export interface FiscalInvoiceLine {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+  taxCategory?: SalesTaxCategory;
   taxRatePercent: number;
   taxAmount: number;
   total: number;
@@ -441,6 +447,7 @@ export interface FiscalInvoice {
   exchangeRateUsed: number;
   status: FiscalInvoiceStatus;
   issuedAt: string;
+  printCount: number;
   annulledAt?: string;
   annulledBy?: string;
   annulmentReason?: string;
@@ -720,6 +727,8 @@ export interface AuditLogDetails {
   bankCode?: string;
   bankName?: string;
   totalUnits?: number;
+  printCount?: number;
+  isDuplicate?: boolean;
 }
 
 export interface AuditLogEntry {
@@ -749,7 +758,9 @@ export interface AuditLogEntry {
     | 'pedido_venta_creado'
     | 'cobro_registrado'
     | 'factura_emitida'
-    | 'factura_anulada';
+    | 'factura_anulada'
+    | 'factura_impresa'
+    | 'factura_reimpresa';
   title: string;
   description: string;
   userId: string;
@@ -821,4 +832,3 @@ export interface Expense {
   accountingAccountName?: string;
   fiscalBookEligible: boolean; // True si califica para el Libro de Compras formal SENIAT
 }
-

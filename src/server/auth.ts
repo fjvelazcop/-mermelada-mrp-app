@@ -1298,6 +1298,7 @@ export function requireRole(...roles: RoleId[]) {
 export const requireAdmin = requireRole('admin');
 
 function resolveModule(path: string): ModuleId | null {
+  if (path.startsWith('/api/fiscal-invoices')) return 'sales';
   if (path.startsWith('/api/inventory')) return 'inventory';
   if (path.startsWith('/api/recipes')) return 'production';
   if (path.startsWith('/api/production-orders')) return 'production';
@@ -1322,6 +1323,7 @@ function resolveAction(req: Request): PermissionAction {
   if (req.method === 'PUT' || req.method === 'PATCH') return 'edit';
   if (req.method === 'POST') {
     if (/\/(process|refresh|update|status|collect|annul)$/.test(apiPath(req))) return 'edit';
+    if (/\/print$/.test(apiPath(req))) return 'export';
     return 'create';
   }
   return 'view';

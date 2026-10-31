@@ -730,7 +730,12 @@ export function createApiApp(): express.Express {
           'La configuración fiscal no está completa. Configure los datos de la empresa en Configuración → Datos Fiscales primero.'
         );
       }
-      if (!fiscalSettings.taxRatePercent) {
+      const hasTaxableItemsWithoutRate = req.body.items.some(
+        (item: { taxCategory?: string; taxRatePercent?: number }) =>
+          (item.taxCategory ?? 'gravado') === 'gravado' &&
+          item.taxRatePercent === undefined
+      );
+      if (hasTaxableItemsWithoutRate && !fiscalSettings.taxRatePercent) {
         throw new ApiError(400, 'La alícuota de IVA no está configurada.');
       }
       if (!fiscalSettings.invoicePrefix) {
@@ -1064,6 +1069,21 @@ export function createApiApp(): express.Express {
         throw new ApiError(404, 'Factura fiscal no encontrada');
       }
       res.json(invoice);
+    })
+  );
+
+  app.post(
+    '/api/fiscal-invoices/:id/print',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const result = dbInstance.recordFiscalInvoicePrint(
+        routeId(req),
+        auditActor(req)
+      );
+      if (!result) {
+        throw new ApiError(404, 'Factura fiscal no encontrada');
+      }
+      res.json(result);
     })
   );
 

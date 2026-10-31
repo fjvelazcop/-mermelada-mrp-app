@@ -733,7 +733,7 @@ describe('mutating endpoints', () => {
     });
     expect(order.response.status).toBe(201);
 
-    type Invoice = {
+    interface Invoice {
       id: string;
       serie: string;
       invoiceNumber: number;
@@ -743,7 +743,7 @@ describe('mutating endpoints', () => {
       customerSnapshot: { taxId: string };
       annulledBy?: string;
       annulmentReason?: string;
-    };
+    }
 
     const invoices = (await (
       await fetch(`${baseUrl}/api/fiscal-invoices`)
@@ -755,6 +755,39 @@ describe('mutating endpoints', () => {
     expect(invoice!.controlNumber).toBe(settings.nextControlNumber);
     expect(invoice!.status).toBe('emitida');
     expect(invoice!.customerSnapshot.taxId).toBe(customer.taxId);
+
+    const firstPrint = await jsonRequest(
+      `/api/fiscal-invoices/${invoice!.id}/print`,
+      'POST',
+      {}
+    );
+    expect(firstPrint.response.status).toBe(200);
+    expect(firstPrint.body['isDuplicate']).toBe(false);
+    expect(
+      (firstPrint.body['invoice'] as Record<string, unknown>)['printCount']
+    ).toBe(1);
+
+    const secondPrint = await jsonRequest(
+      `/api/fiscal-invoices/${invoice!.id}/print`,
+      'POST',
+      {}
+    );
+    expect(secondPrint.response.status).toBe(200);
+    expect(secondPrint.body['isDuplicate']).toBe(true);
+    expect(
+      (secondPrint.body['invoice'] as Record<string, unknown>)['printCount']
+    ).toBe(2);
+
+    const printAudit = getDb()
+      .prepare(
+        "SELECT COUNT(*) AS count FROM audit_logs WHERE action_type IN ('factura_impresa', 'factura_reimpresa') AND details_json LIKE ?"
+      )
+      .get(`%${invoice!.id}%`) as {count: number};
+    expect(printAudit.count).toBe(2);
+    const printCount = getDb()
+      .prepare('SELECT print_count FROM fiscal_invoices WHERE id = ?')
+      .get(invoice!.id) as {print_count: number};
+    expect(printCount.print_count).toBe(2);
 
     const fiscalAfter = await jsonRequest('/api/fiscal-settings', 'GET');
     expect(fiscalAfter.body['nextInvoiceNumber']).toBe(
@@ -790,6 +823,105 @@ describe('mutating endpoints', () => {
     expect(persisted['status']).toBe('anulada');
     expect(persisted['annulled_by']).toBeTruthy();
     expect(persisted['annulment_reason']).toBe('Error en los datos del cliente');
+  });
+
+  it('calculates invoice VAT by line and preserves exempt and non-subject treatments', async () => {
+    const customers = (await (
+      await fetch(`${baseUrl}/api/sales/customers`)
+    ).json()) as { id: string; businessName: string; taxId: string }[];
+    const goods = (await (
+      await fetch(`${baseUrl}/api/inventory/finished-goods`)
+    ).json()) as {
+      id: string;
+      flavor: string;
+      presentation: string;
+      presentationLabel: string;
+    }[];
+    const customer = customers[0];
+    const good = goods[0];
+    const items = [
+      { taxCategory: 'gravado', taxRatePercent: 16.5 },
+      { taxCategory: 'gravado', taxRatePercent: 8 },
+      { taxCategory: 'exento', taxRatePercent: 16 },
+      { taxCategory: 'no_sujeto', taxRatePercent: 16 },
+    ].map(({ taxCategory, taxRatePercent }) => ({
+      finishedGoodId: good.id,
+      flavor: good.flavor,
+      presentation: good.presentation,
+      presentationLabel: good.presentationLabel,
+      quantity: 1,
+      unitPrice: 1.01,
+      subtotal: 1.01,
+      taxCategory,
+      taxRatePercent,
+    }));
+
+    const order = await jsonRequest('/api/sales/orders', 'POST', {
+      customerId: customer.id,
+      customerName: customer.businessName,
+      customerTaxId: customer.taxId,
+      orderDate: '2026-10-31',
+      deliveryDate: '2026-11-05',
+      status: 'pendiente',
+      exchangeRateUsed: 50,
+      items,
+      subtotal: 4.04,
+      taxAmount: 0,
+      total: 4.04,
+    });
+    expect(order.response.status).toBe(201);
+    expect(order.body['subtotal']).toBe(4.04);
+    expect(order.body['taxAmount']).toBe(0.25);
+    expect(order.body['total']).toBe(4.29);
+
+    const invoices = (await (
+      await fetch(`${baseUrl}/api/fiscal-invoices`)
+    ).json()) as {
+      salesOrderId: string;
+      subtotal: number;
+      taxAmount: number;
+      total: number;
+      items: {
+        taxCategory: string;
+        taxRatePercent: number;
+        taxAmount: number;
+        total: number;
+      }[];
+    }[];
+    const invoice = invoices.find(
+      (candidate) => candidate.salesOrderId === order.body['id']
+    );
+    expect(invoice).toMatchObject({
+      subtotal: 4.04,
+      taxAmount: 0.25,
+      total: 4.29,
+    });
+    expect(invoice?.items.map((item) => item.taxAmount)).toEqual([
+      0.17,
+      0.08,
+      0,
+      0,
+    ]);
+    expect(invoice?.items.map((item) => item.taxCategory)).toEqual([
+      'gravado',
+      'gravado',
+      'exento',
+      'no_sujeto',
+    ]);
+
+    const invalidTaxRate = await jsonRequest('/api/sales/orders', 'POST', {
+      customerId: customer.id,
+      customerName: customer.businessName,
+      customerTaxId: customer.taxId,
+      orderDate: '2026-10-31',
+      deliveryDate: '2026-11-05',
+      status: 'pendiente',
+      items: [{ ...items[0], taxRatePercent: 0 }],
+      subtotal: 1.01,
+      taxAmount: 0,
+      total: 1.01,
+    });
+    expect(invalidTaxRate.response.status).toBe(422);
   });
 
   it('returns 404/400 for unknown sales resources', async () => {

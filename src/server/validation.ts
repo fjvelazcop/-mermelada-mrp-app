@@ -81,6 +81,8 @@ const auditActionSchema = z.enum([
   'cobro_registrado',
   'factura_emitida',
   'factura_anulada',
+  'factura_impresa',
+  'factura_reimpresa',
 ]);
 const documentTypeSchema = z.enum([
   'factura_fiscal',
@@ -103,6 +105,7 @@ const taxCategorySchema = z.enum([
   'no_sujeto',
   'retencion_aplicada',
 ]);
+const salesTaxCategorySchema = z.enum(['gravado', 'exento', 'no_sujeto']);
 
 const money = z.coerce.number().finite().min(0);
 const positive = z.coerce.number().finite().positive();
@@ -262,6 +265,20 @@ const salesOrderItemSchema = z.object({
   priceTier: priceTierSchema.optional(),
   profitMarginPercent: z.coerce.number().finite().optional(),
   baseCost: money.optional(),
+  taxCategory: salesTaxCategorySchema.optional(),
+  taxRatePercent: z.coerce.number().finite().min(0).max(100).optional(),
+}).superRefine((item, ctx) => {
+  if (
+    (item.taxCategory ?? 'gravado') === 'gravado' &&
+    item.taxRatePercent !== undefined &&
+    item.taxRatePercent <= 0
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['taxRatePercent'],
+      message: 'La alícuota debe ser mayor que cero para productos gravados.',
+    });
+  }
 });
 
 export const salesOrderSchema = z.object({

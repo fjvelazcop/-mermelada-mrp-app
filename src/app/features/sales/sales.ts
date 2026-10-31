@@ -2,10 +2,11 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {DeliveryNote, FinishedGood, PriceTierType, SalesOrder} from '../../core/models/erp.models';
+import {DeliveryNote, FinishedGood, PriceTierType, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {VENEZUELAN_BANKS, bankLabel, findBank} from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel, exportToPdf, downloadDeliveryNotePdf} from '../../core/utils/export.utils';
+import {FiscalInvoicesComponent} from '../fiscal-invoices/fiscal-invoices';
 
 export interface PriceTierOption {
   tier: PriceTierType;
@@ -21,7 +22,7 @@ export interface PriceTierOption {
 @Component({
   selector: 'app-sales',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe],
+  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, FiscalInvoicesComponent],
   templateUrl: './sales.html',
 })
 export class SalesComponent {
@@ -68,6 +69,8 @@ export class SalesComponent {
     finishedGoodId: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
     quantity: new FormControl<number>(24, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     unitPrice: new FormControl<number>(1.65, {nonNullable: true, validators: [Validators.required, Validators.min(0.01)]}),
+    taxCategory: new FormControl<SalesTaxCategory>('gravado', {nonNullable: true}),
+    taxRatePercent: new FormControl<number>(16, {nonNullable: true, validators: [Validators.min(0), Validators.max(100)]}),
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     deliveryDate: new FormControl<string>(new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10), {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
@@ -232,6 +235,8 @@ export class SalesComponent {
       quantity: 24,
       unitPrice: initialPrice,
       exchangeRateUsed: rate,
+      taxCategory: 'gravado',
+      taxRatePercent: this.fiscalSettings()?.taxRatePercent ?? 16,
       notes: '',
     });
     this.isNewOrderModalOpen.set(true);
@@ -335,7 +340,10 @@ export class SalesComponent {
     const unitPrice = Number(v.unitPrice);
     const quantity = Number(v.quantity);
     const subtotal = Number((quantity * unitPrice).toFixed(2));
-    const taxRate = this.fiscalSettings()?.taxRatePercent || 16.0;
+    const taxCategory = v.taxCategory;
+    const taxRate = taxCategory === 'gravado'
+      ? Number(v.taxRatePercent ?? this.fiscalSettings()?.taxRatePercent ?? 16)
+      : 0;
     const taxAmount = Number(((subtotal * taxRate) / 100).toFixed(2));
     const total = Number((subtotal + taxAmount).toFixed(2));
 
@@ -363,6 +371,8 @@ export class SalesComponent {
           quantity,
           unitPrice,
           subtotal,
+          taxCategory,
+          taxRatePercent: taxRate,
           unitPriceBs: Number((unitPrice * rate).toFixed(2)),
           subtotalBs,
           priceTier: tier,
@@ -380,6 +390,20 @@ export class SalesComponent {
     });
 
     this.closeNewOrderModal();
+  }
+
+  public currentTaxRate(): number {
+    return this.newOrderForm.controls.taxCategory.value === 'gravado'
+      ? Number(this.newOrderForm.controls.taxRatePercent.value || 0)
+      : 0;
+  }
+
+  public currentTaxAmount(subtotal: number): number {
+    return Number(((subtotal * this.currentTaxRate()) / 100).toFixed(2));
+  }
+
+  public currentOrderSubtotal(quantity: number): number {
+    return Number((this.currentUnitPrice() * quantity).toFixed(2));
   }
 
   // --- SALES COLLECTION (BANK RECEIVER MANDATORY) ---

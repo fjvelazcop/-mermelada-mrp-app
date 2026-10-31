@@ -955,6 +955,28 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/fiscal-invoices/{id}/print': {
+    post: {
+      tags: ['Ventas'],
+      summary: 'Registrar la impresión de una factura fiscal',
+      description:
+        'La primera impresión se registra como original; las siguientes deben identificarse como DUPLICADO. Requiere permiso de exportación de ventas.',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Impresión registrada', {
+          type: 'object',
+          required: ['invoice', 'isDuplicate'],
+          properties: {
+            invoice: { type: 'object' },
+            isDuplicate: { type: 'boolean' },
+          },
+        }),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
   '/api/exchange-rates': {
     get: {
       tags: ['Configuración'],

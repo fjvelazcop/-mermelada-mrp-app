@@ -430,6 +430,7 @@ function migrate(db: SqliteDatabase): void {
       annulled_at TEXT,
       annulled_by TEXT,
       annulment_reason TEXT,
+      print_count INTEGER NOT NULL DEFAULT 0,
       period_year INTEGER NOT NULL,
       period_month INTEGER NOT NULL,
       UNIQUE (serie, invoice_number),
@@ -638,6 +639,7 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'fiscal_settings', 'special_taxpayer', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'fiscal_settings', 'books_format', "TEXT NOT NULL DEFAULT 'xlsx'");
   ensureColumn(db, 'fiscal_settings', 'historical_orders_treatment', "TEXT NOT NULL DEFAULT 'revisar'");
+  ensureColumn(db, 'fiscal_invoices', 'print_count', 'INTEGER NOT NULL DEFAULT 0');
 
   const row = db
     .prepare('SELECT MAX(version) AS version FROM schema_migrations')

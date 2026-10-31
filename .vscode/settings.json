@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^npx eslint src/app/core/services/auth\\.service\\.ts src/app/core/services/auth\\.service\\.spec\\.ts src/app/features/auth/login\\.ts$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

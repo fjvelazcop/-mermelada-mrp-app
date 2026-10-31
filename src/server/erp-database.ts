@@ -12,7 +12,6 @@ import {
   PayrollWeek,
   FiscalSettings,
   FiscalInvoice,
-  FiscalInvoiceStatus,
   CostStructureAnalysis,
   MonthlySalesStat,
   WeeklySalesStat,
@@ -2837,15 +2836,36 @@ export class ErpDatabase {
     const nextNum = 'PED-2026-0' + (this.state.salesOrders.length + 44);
     const rate = data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
 
-    const items = data.items.map(item => ({
-      ...item,
-      unitPriceBs: item.unitPriceBs || Number((item.unitPrice * rate).toFixed(2)),
-      subtotalBs: item.subtotalBs || Number((item.subtotal * rate).toFixed(2)),
-    }));
+    const fiscalTaxRate = this.state.fiscalSettings?.taxRatePercent ?? 0;
+    const items = data.items.map((item) => {
+      const taxCategory = item.taxCategory ?? 'gravado';
+      const taxRatePercent =
+        taxCategory === 'gravado'
+          ? item.taxRatePercent ?? fiscalTaxRate
+          : 0;
+      if (taxCategory === 'gravado' && taxRatePercent <= 0) {
+        throw new Error('La alícuota debe ser mayor que cero para productos gravados.');
+      }
+      const taxAmount =
+        taxCategory === 'gravado'
+          ? Number(((item.subtotal * taxRatePercent) / 100).toFixed(2))
+          : 0;
+      return {
+        ...item,
+        taxCategory,
+        taxRatePercent,
+        taxAmount,
+        unitPriceBs: item.unitPriceBs || Number((item.unitPrice * rate).toFixed(2)),
+        subtotalBs: item.subtotalBs || Number((item.subtotal * rate).toFixed(2)),
+      };
+    });
 
-    const subtotalBs = data.subtotalBs || Number((data.subtotal * rate).toFixed(2));
-    const taxAmountBs = data.taxAmountBs || Number((data.taxAmount * rate).toFixed(2));
-    const totalBs = data.totalBs || Number((data.total * rate).toFixed(2));
+    const subtotal = Number(items.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2));
+    const taxAmount = Number(items.reduce((sum, item) => sum + (item.taxAmount ?? 0), 0).toFixed(2));
+    const total = Number((subtotal + taxAmount).toFixed(2));
+    const subtotalBs = Number((subtotal * rate).toFixed(2));
+    const taxAmountBs = Number((taxAmount * rate).toFixed(2));
+    const totalBs = Number((total * rate).toFixed(2));
 
     const newOrder: SalesOrder = {
       ...data,
@@ -2853,6 +2873,9 @@ export class ErpDatabase {
       orderNumber: nextNum,
       exchangeRateUsed: rate,
       items,
+      subtotal,
+      taxAmount,
+      total,
       subtotalBs,
       taxAmountBs,
       totalBs,
@@ -3165,7 +3188,6 @@ export class ErpDatabase {
 
     const duplicated = invoices.some(
       (invoice) =>
-        invoice.status === 'emitida' &&
         invoice.serie === serie &&
         (invoice.invoiceNumber === invoiceNumber ||
           invoice.controlNumber === controlNumber)
@@ -3178,14 +3200,20 @@ export class ErpDatabase {
 
     const customer = this.state.customers.find((c) => c.id === order.customerId);
     const issuedAt = new Date();
-    const taxRatePercent =
-      order.subtotal > 0
-        ? Number(((order.taxAmount / order.subtotal) * 100).toFixed(2))
-        : fiscal.taxRatePercent;
-
     const items = order.items.map((item) => {
       const subtotal = Number(item.subtotal.toFixed(2));
-      const taxAmount = Number(((subtotal * taxRatePercent) / 100).toFixed(2));
+      const taxCategory = item.taxCategory ?? 'gravado';
+      const taxRatePercent =
+        taxCategory === 'gravado'
+          ? item.taxRatePercent ?? fiscal.taxRatePercent
+          : 0;
+      if (taxCategory === 'gravado' && taxRatePercent <= 0) {
+        throw new Error('La alícuota debe ser mayor que cero para productos gravados.');
+      }
+      const taxAmount =
+        taxCategory === 'gravado'
+          ? Number(((subtotal * taxRatePercent) / 100).toFixed(2))
+          : 0;
       return {
         description: [item.flavor, item.presentationLabel]
           .filter(Boolean)
@@ -3193,6 +3221,7 @@ export class ErpDatabase {
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         subtotal,
+        taxCategory,
         taxRatePercent,
         taxAmount,
         total: Number((subtotal + taxAmount).toFixed(2)),
@@ -3239,6 +3268,7 @@ export class ErpDatabase {
       exchangeRateUsed: order.exchangeRateUsed,
       status: 'emitida',
       issuedAt: issuedAt.toISOString(),
+      printCount: 0,
       periodYear: issuedAt.getFullYear(),
       periodMonth: issuedAt.getMonth() + 1,
     };
@@ -3313,6 +3343,40 @@ export class ErpDatabase {
     return invoice;
   }
 
+  /** Record an invoice print and mark every copy after the first as a duplicate. */
+  public recordFiscalInvoicePrint(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): { invoice: FiscalInvoice; isDuplicate: boolean } | null {
+    const invoice = this.getFiscalInvoiceById(id);
+    if (!invoice) return null;
+
+    const actor = this.manualOrderActor(actorInput);
+    const isDuplicate = invoice.printCount > 0;
+    invoice.printCount += 1;
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: isDuplicate ? 'factura_reimpresa' : 'factura_impresa',
+      title: `${isDuplicate ? 'Reimpresión' : 'Impresión'} de factura fiscal: ${invoice.serie}-${invoice.invoiceNumber}`,
+      description: isDuplicate
+        ? `Copia ${invoice.printCount} marcada como duplicado.`
+        : 'Primera impresión de la factura fiscal.',
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: isDuplicate ? 'warning' : 'info',
+      details: {
+        targetId: invoice.id,
+        targetCode: `${invoice.serie}-${invoice.invoiceNumber}`,
+        itemName: invoice.customerSnapshot.businessName,
+        printCount: invoice.printCount,
+        isDuplicate,
+      },
+    });
+
+    return {invoice, isDuplicate};
+  }
+
   // --- COSTING ANALYSIS & INTELLIGENCE ---
   public getCostStructure(): CostStructureAnalysis {
     const inactiveWeeks = this.state.payrollWeeks.filter(w => !w.isActiveProduction);
@@ -3360,7 +3424,7 @@ export class ErpDatabase {
           marginRetailPercent: 53.6,
         },
       ],
-    };
+    }
   }
 
   // --- DASHBOARD METRICS ---
@@ -3875,7 +3939,7 @@ const rawDbInstance = new ErpDatabase();
  * Methods that mutate the state. After any of these finish we automatically
  * persist the new state to SQLite. Read‑only `get*` methods are left untouched.
  */
-const MUTATING_METHOD = /^(add|update|delete|create|process|reset|fetch|annul)/;
+const MUTATING_METHOD = /^(add|update|delete|create|process|reset|fetch|annul|record)/;
 
 export const dbInstance = new Proxy(rawDbInstance, {
   get(target, prop, receiver) {
@@ -3900,4 +3964,3 @@ export const dbInstance = new Proxy(rawDbInstance, {
     return value;
   },
 }) as ErpDatabase;
-
