@@ -218,6 +218,152 @@
       </div>
     }
   </div>
+
+  <details class="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+    <summary class="cursor-pointer px-4 py-4 font-bold text-sm text-stone-900">
+      Notas de crédito y débito
+      <span class="ml-2 text-xs font-normal text-stone-500">({{ fiscalAdjustmentNotes().length }})</span>
+    </summary>
+    <div class="px-4 pb-4">
+      <p class="text-[11px] text-stone-500 mb-3">
+        Las notas conservan su propio consecutivo, quedan vinculadas a la factura original y no modifican el documento emitido.
+      </p>
+      @if (fiscalAdjustmentNotes().length === 0) {
+        <p class="rounded-lg bg-stone-50 p-4 text-xs text-stone-500">No hay notas fiscales emitidas.</p>
+      } @else {
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[700px] text-xs">
+            <thead class="bg-stone-50 text-stone-500 uppercase text-[10px]">
+              <tr>
+                <th class="px-3 py-2 text-left">Nota</th>
+                <th class="px-3 py-2 text-left">Factura referenciada</th>
+                <th class="px-3 py-2 text-left">Fecha</th>
+                <th class="px-3 py-2 text-left">Cliente</th>
+                <th class="px-3 py-2 text-left">Motivo</th>
+                <th class="px-3 py-2 text-right">Total USD</th>
+                <th class="px-3 py-2 text-right">Acción</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100">
+              @for (note of fiscalAdjustmentNotes(); track note.id) {
+                <tr>
+                  <td class="px-3 py-2 font-mono font-semibold">{{ noteNumber(note) }}</td>
+                  <td class="px-3 py-2 font-mono">{{ note.invoiceNumber }}</td>
+                  <td class="px-3 py-2">{{ formatShortDate(note.issuedAt) }}</td>
+                  <td class="px-3 py-2">{{ note.customerSnapshot.businessName }}</td>
+                  <td class="px-3 py-2">{{ adjustmentReasonLabel(note.reason) }}</td>
+                  <td class="px-3 py-2 text-right">{{ note.total | veCurrency: '$' }}</td>
+                  <td class="px-3 py-2 text-right">
+                    <button type="button" (click)="openAdjustmentNote(note)" class="rounded bg-stone-100 px-2.5 py-1.5 font-semibold hover:bg-stone-200">
+                      Ver / imprimir
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+  </details>
+
+  @if (isAdmin()) {
+    <details class="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+      <summary class="cursor-pointer px-4 py-4 font-bold text-sm text-stone-900">
+        Libros fiscales mensuales
+        <span class="ml-2 text-xs font-normal text-stone-500">Ventas y Compras</span>
+      </summary>
+      <div class="px-4 pb-4 space-y-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block">
+              <span class="mb-1 block text-[10px] font-semibold uppercase text-stone-500">Año</span>
+              <select [value]="bookYear()" (change)="setBookYear($any($event.target).value)" class="min-h-10 rounded-lg border border-stone-200 bg-stone-50 px-3 text-xs">
+                @for (year of bookYears(); track year) { <option [value]="year">{{ year }}</option> }
+              </select>
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-[10px] font-semibold uppercase text-stone-500">Mes</span>
+              <select [value]="bookMonth()" (change)="setBookMonth($any($event.target).value)" class="min-h-10 rounded-lg border border-stone-200 bg-stone-50 px-3 text-xs">
+                @for (month of monthLabels; track month; let i = $index) { <option [value]="i + 1">{{ month }}</option> }
+              </select>
+            </label>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" (click)="loadFiscalBooks()" [disabled]="booksLoading()" class="min-h-10 rounded-lg bg-stone-100 px-3 text-xs font-semibold hover:bg-stone-200 disabled:opacity-50">
+              {{ booksLoading() ? 'Cargando…' : 'Consultar libros' }}
+            </button>
+            @if (booksReport(); as report) {
+              <button type="button" (click)="exportFiscalBooks()" class="min-h-10 rounded-lg bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-800">
+                Exportar CSV
+              </button>
+              @if (!report.isClosed) {
+                <button type="button" (click)="closeFiscalBooks()" class="min-h-10 rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white hover:bg-amber-800">
+                  Cerrar período
+                </button>
+              }
+            }
+          </div>
+        </div>
+
+        @if (booksError()) {
+          <p class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{{ booksError() }}</p>
+        }
+        @if (booksReport(); as report) {
+          <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-xs"
+            [class.border-emerald-200]="report.isClosed" [class.bg-emerald-50]="report.isClosed"
+            [class.border-amber-200]="!report.isClosed" [class.bg-amber-50]="!report.isClosed">
+            <span class="font-bold">{{ monthLabel(report.month) }} {{ report.year }} · {{ report.isClosed ? 'CERRADO' : 'ABIERTO' }}</span>
+            @if (report.closure) {
+              <span>Cerrado por {{ report.closure.closedBy }} el {{ formatDate(report.closure.closedAt) }} · SHA-256 {{ report.closure.snapshotHash }}</span>
+            } @else {
+              <span>El cierre bloquea facturas, notas y cambios en gastos del período.</span>
+            }
+          </div>
+
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div class="rounded-xl border border-stone-200 p-3">
+              <h4 class="mb-2 text-xs font-bold text-stone-800">Libro de Ventas · {{ report.salesRows.length }} documentos</h4>
+              <div class="grid grid-cols-2 gap-2 text-[11px]">
+                @for (group of report.salesTotals.taxableBases; track group.rate) {
+                  <span>Base gravada {{ group.rate }}%</span>
+                  <strong class="text-right">{{ group.base | veCurrency: '$' }} · IVA {{ group.tax | veCurrency: '$' }}</strong>
+                }
+                <span>Exento</span><strong class="text-right">{{ report.salesTotals.exemptAmount | veCurrency: '$' }}</strong>
+                <span>No sujeto</span><strong class="text-right">{{ report.salesTotals.nonSubjectAmount | veCurrency: '$' }}</strong>
+                <span>IVA</span><strong class="text-right">{{ report.salesTotals.taxAmount | veCurrency: '$' }}</strong>
+                <span>Total neto</span><strong class="text-right">{{ report.salesTotals.total | veCurrency: '$' }}</strong>
+              </div>
+            </div>
+            <div class="rounded-xl border border-stone-200 p-3">
+              <h4 class="mb-2 text-xs font-bold text-stone-800">Libro de Compras · {{ report.purchaseRows.length }} documentos elegibles</h4>
+              <div class="grid grid-cols-2 gap-2 text-[11px]">
+                <span>Base gravada</span><strong class="text-right">{{ report.purchaseTotals.taxableBase | veCurrency: '$' }}</strong>
+                <span>Exento / No sujeto</span><strong class="text-right">{{ report.purchaseTotals.exemptAmount + report.purchaseTotals.nonSubjectAmount | veCurrency: '$' }}</strong>
+                <span>IVA</span><strong class="text-right">{{ report.purchaseTotals.taxAmount | veCurrency: '$' }}</strong>
+                <span>Retención IVA</span><strong class="text-right">{{ report.purchaseTotals.vatWithholding | veCurrency: '$' }}</strong>
+                <span>Total</span><strong class="text-right">{{ report.purchaseTotals.total | veCurrency: '$' }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-stone-200 p-3 text-[11px]">
+            <strong>Conciliación:</strong>
+            Ventas {{ report.reconciliation.salesDifference | veCurrency: '$' }} de diferencia ·
+            Compras {{ report.reconciliation.purchaseDifference | veCurrency: '$' }} de diferencia.
+            @if (report.reconciliation.salesDifference !== 0 || report.reconciliation.purchaseDifference !== 0) {
+              <span class="font-bold text-rose-700">Revisar antes del cierre.</span>
+            } @else {
+              <span class="font-bold text-emerald-700">Cuadrado contra documentos fuente.</span>
+            }
+          </div>
+        }
+        <p class="text-[10px] text-stone-500">
+          El libro de compras toma gastos marcados como elegibles. Las retenciones y el formato oficial deben validarse con el contador; el sistema no transmite ni presenta declaraciones al SENIAT.
+        </p>
+      </div>
+    </details>
+  }
 </section>
 
 <!-- MODAL: DETALLE DE FACTURA FISCAL -->
@@ -244,6 +390,17 @@
             <mat-icon class="text-sm">print</mat-icon>
             {{ printing() ? 'Registrando…' : 'Imprimir' }}
           </button>
+          @if (invoice.status === 'emitida' && isAdmin()) {
+            <button
+              type="button"
+              (click)="openAdjustment(invoice)"
+              class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-amber-700 text-white rounded-lg hover:bg-amber-800 transition-colors"
+              title="Emitir una nota de crédito o débito vinculada a esta factura"
+            >
+              <mat-icon class="text-sm">note_add</mat-icon>
+              Nota de ajuste
+            </button>
+          }
           @if (invoice.status === 'emitida' && isAdmin()) {
             <button
               type="button"
@@ -316,6 +473,9 @@
             <p class="text-[10px] uppercase tracking-wide font-bold text-stone-500">Cliente</p>
             <p class="text-sm font-semibold text-stone-900 mt-0.5">{{ invoice.customerSnapshot.businessName }}</p>
             <p class="text-[11px] text-stone-600 font-mono mt-0.5">RIF: {{ invoice.customerSnapshot.taxId }}</p>
+            @if (invoice.customerSnapshot.nit) {
+              <p class="text-[11px] text-stone-600 font-mono mt-0.5">NIT: {{ invoice.customerSnapshot.nit }}</p>
+            }
             @if (invoice.customerSnapshot.address) {
               <p class="text-[11px] text-stone-500 mt-0.5">{{ invoice.customerSnapshot.address }}</p>
             }
@@ -325,6 +485,10 @@
             @if (invoice.salesOrderNumber) {
               <p class="text-[11px] text-stone-600 mt-0.5">Pedido: <span class="font-mono font-semibold">{{ invoice.salesOrderNumber }}</span></p>
             }
+            <p class="text-[11px] text-stone-600 mt-0.5">
+              Condición: {{ invoice.saleCondition === 'credito' ? 'Crédito' : 'Contado' }}
+            </p>
+            <p class="text-[11px] text-stone-600 mt-0.5">Forma de pago: {{ paymentMethodLabel(invoice.paymentMethod) }}</p>
             <p class="text-[11px] text-stone-600 mt-0.5">Período: {{ monthLabel(invoice.periodMonth) }} {{ invoice.periodYear }}</p>
             <p class="text-[11px] text-stone-600 mt-0.5">Tasa usada: {{ invoice.exchangeRateUsed | veCurrency: 'Bs.' }}</p>
           </div>
@@ -398,6 +562,12 @@
               <span class="font-bold text-stone-900">Total Bs.</span>
               <span class="font-bold text-amber-800">{{ totalBs(invoice) | veCurrency: 'Bs.' }}</span>
             </div>
+            <p class="pt-2 text-[10px] leading-relaxed text-stone-600">
+              Son {{ totalInWords(invoice.total, 'dólar') }}.
+            </p>
+            <p class="text-[10px] leading-relaxed text-stone-600">
+              Son {{ totalInWords(totalBs(invoice), 'bolívar') }}.
+            </p>
           </div>
         </div>
 
@@ -489,6 +659,149 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+}
+
+@if (invoiceToAdjust(); as invoice) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-xs">
+    <div class="my-8 w-full max-w-xl rounded-2xl border border-stone-300 bg-white p-6 shadow-2xl">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-base font-bold text-stone-900">Emitir nota de ajuste fiscal</h3>
+          <p class="mt-1 text-[11px] text-stone-500">Factura {{ invoiceNumber(invoice) }} · {{ invoice.customerSnapshot.businessName }}</p>
+        </div>
+        <button type="button" (click)="closeAdjustment()" [disabled]="creatingAdjustment()" class="rounded-lg p-2 text-stone-500 hover:bg-stone-100">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <form [formGroup]="adjustmentForm" (ngSubmit)="createAdjustment()" class="mt-4 space-y-3">
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-stone-700">Tipo de nota</span>
+            <select formControlName="type" class="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm">
+              <option value="nota_credito">Nota de crédito (disminuye venta)</option>
+              <option value="nota_debito">Nota de débito (aumenta venta)</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-stone-700">Motivo</span>
+            <select formControlName="reason" class="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm">
+              <option value="devolucion">Devolución</option>
+              <option value="descuento">Descuento</option>
+              <option value="bonificacion">Bonificación</option>
+              <option value="error_precio">Error de precio</option>
+              <option value="anulacion_parcial">Anulación parcial</option>
+              <option value="otro">Otro</option>
+            </select>
+          </label>
+        </div>
+        @if (adjustmentForm.controls.reason.value === 'otro') {
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-stone-700">Detalle del motivo *</span>
+            <textarea formControlName="reasonDetails" rows="2" maxlength="500" class="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm"></textarea>
+          </label>
+        }
+        <label class="block">
+          <span class="mb-1 block text-xs font-semibold text-stone-700">Base a ajustar (USD)</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            [max]="adjustmentForm.controls.type.value === 'nota_credito' ? creditableSubtotal(invoice) : null"
+            formControlName="subtotal"
+            class="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-sm"
+          />
+          @if (adjustmentForm.controls.type.value === 'nota_credito') {
+            <span class="mt-1 block text-[10px] text-stone-500">Disponible para acreditar: {{ creditableSubtotal(invoice) | veCurrency: '$' }}. El sistema distribuye el ajuste entre las alícuotas y tratamientos originales.</span>
+          }
+          @if (adjustmentForm.controls.subtotal.touched && adjustmentForm.controls.subtotal.invalid) {
+            <span class="mt-1 block text-[10px] text-rose-700">Indica una base mayor que cero y dentro del saldo acreditable.</span>
+          }
+        </label>
+        <div class="flex justify-end gap-2 border-t border-stone-100 pt-4">
+          <button type="button" (click)="closeAdjustment()" [disabled]="creatingAdjustment()" class="rounded-lg bg-stone-100 px-4 py-2.5 text-xs font-semibold text-stone-800">Cancelar</button>
+          <button type="submit" [disabled]="creatingAdjustment() || adjustmentForm.invalid" class="rounded-lg bg-amber-700 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">
+            {{ creatingAdjustment() ? 'Emitiendo…' : 'Emitir nota' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+@if (selectedAdjustmentNote(); as note) {
+  <div id="fiscal-invoice-modal" class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-xs">
+    <div class="fiscal-invoice-card my-6 max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-stone-300 bg-white p-6 shadow-2xl">
+      <div class="print:hidden mb-4 flex items-center justify-between">
+        <h3 class="text-base font-bold text-stone-900">{{ note.type === 'nota_credito' ? 'Nota de crédito' : 'Nota de débito' }} {{ noteNumber(note) }}</h3>
+        <div class="flex gap-2">
+          <button type="button" (click)="printAdjustmentNote()" [disabled]="printingAdjustment()" class="inline-flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold hover:bg-stone-200">
+            <mat-icon class="text-sm">print</mat-icon>{{ printingAdjustment() ? 'Registrando…' : 'Imprimir' }}
+          </button>
+          <button type="button" (click)="closeAdjustmentNote()" class="rounded-lg p-2 text-stone-500 hover:bg-stone-100"><mat-icon>close</mat-icon></button>
+        </div>
+      </div>
+      <div id="fiscal-invoice-print" class="rounded-xl border border-stone-300 p-6">
+        @if (duplicateAdjustmentPrint()) {
+          <div class="mb-5 border-2 border-rose-700 p-3 text-center text-lg font-black tracking-[0.3em] text-rose-800">DUPLICADO</div>
+        }
+        <div class="flex flex-col justify-between gap-4 border-b border-stone-200 pb-4 sm:flex-row">
+          <div>
+            <h4 class="text-base font-bold text-stone-900">{{ note.emitterSnapshot.companyName }}</h4>
+            <p class="mt-1 font-mono text-xs text-stone-600">RIF: {{ note.emitterSnapshot.companyTaxId }}</p>
+            <p class="mt-1 max-w-sm text-[11px] text-stone-500">{{ note.emitterSnapshot.fiscalAddress }}</p>
+          </div>
+          <div class="sm:text-right">
+            <p class="text-[10px] font-bold uppercase text-stone-500">{{ note.type === 'nota_credito' ? 'Nota de crédito' : 'Nota de débito' }}</p>
+            <p class="font-mono text-lg font-bold">{{ noteNumber(note) }}</p>
+            <p class="mt-2 text-[10px] font-bold uppercase text-stone-500">N° Control</p>
+            <p class="font-mono text-sm">{{ note.controlNumber }}</p>
+            <p class="mt-2 text-[11px] text-stone-500">Emitida: {{ formatDate(note.issuedAt) }}</p>
+          </div>
+        </div>
+        <div class="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-stone-200 bg-stone-50 p-3 sm:grid-cols-2">
+          <div>
+            <p class="text-[10px] font-bold uppercase text-stone-500">Cliente</p>
+            <p class="mt-0.5 text-sm font-semibold">{{ note.customerSnapshot.businessName }}</p>
+            <p class="font-mono text-[11px] text-stone-600">RIF: {{ note.customerSnapshot.taxId }}</p>
+            @if (note.customerSnapshot.nit) { <p class="font-mono text-[11px] text-stone-600">NIT: {{ note.customerSnapshot.nit }}</p> }
+          </div>
+          <div class="sm:text-right">
+            <p class="text-[10px] font-bold uppercase text-stone-500">Factura afectada</p>
+            <p class="font-mono text-[11px]">{{ note.invoiceNumber }} · Control {{ note.invoiceControlNumber }}</p>
+            <p class="mt-1 text-[11px] text-stone-600">Fecha: {{ formatDate(note.invoiceIssuedAt) }}</p>
+            <p class="mt-1 text-[11px] text-stone-600">Motivo: {{ adjustmentReasonLabel(note.reason) }}{{ note.reasonDetails ? ' — ' + note.reasonDetails : '' }}</p>
+          </div>
+        </div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full min-w-[560px] text-[11px]">
+            <thead class="bg-stone-100 text-[9px] uppercase text-stone-600">
+              <tr><th class="px-2.5 py-2 text-left">Descripción</th><th class="px-2.5 py-2 text-right">Tratamiento / IVA</th><th class="px-2.5 py-2 text-right">Base USD</th><th class="px-2.5 py-2 text-right">IVA USD</th><th class="px-2.5 py-2 text-right">Total USD</th></tr>
+            </thead>
+            <tbody class="divide-y divide-stone-200">
+              @for (item of note.items; track $index) {
+                <tr>
+                  <td class="px-2.5 py-2">{{ item.description }}</td>
+                  <td class="px-2.5 py-2 text-right">{{ taxCategoryLabel(item.taxCategory) }} {{ item.taxCategory === 'gravado' ? formatNumber(item.taxRatePercent, 2) + '%' : '' }}</td>
+                  <td class="px-2.5 py-2 text-right">{{ item.subtotal | veCurrency: '$' }}</td>
+                  <td class="px-2.5 py-2 text-right">{{ item.taxAmount | veCurrency: '$' }}</td>
+                  <td class="px-2.5 py-2 text-right font-semibold">{{ item.total | veCurrency: '$' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-4 flex justify-end">
+          <div class="w-full space-y-1.5 text-right text-xs sm:w-72">
+            <p>Base: <strong>{{ note.subtotal | veCurrency: '$' }}</strong></p>
+            <p>IVA: <strong>{{ note.taxAmount | veCurrency: '$' }}</strong></p>
+            <p class="border-t border-stone-200 pt-1.5 text-sm">Total: <strong>{{ note.total | veCurrency: '$' }}</strong></p>
+            <p class="pt-1 text-[10px] text-stone-600">Son {{ totalInWords(note.total, 'dólar') }}.</p>
+          </div>
+        </div>
+        <p class="mt-5 border-t border-stone-200 pt-3 text-[10px] text-stone-500">Consecutivo de factura original no modificado. Emitido por {{ note.issuedBy }}.</p>
+      </div>
     </div>
   </div>
 }

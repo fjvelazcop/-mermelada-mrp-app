@@ -83,6 +83,9 @@ const auditActionSchema = z.enum([
   'factura_anulada',
   'factura_impresa',
   'factura_reimpresa',
+  'nota_fiscal_creada',
+  'nota_fiscal_impresa',
+  'libro_fiscal_cerrado',
 ]);
 const documentTypeSchema = z.enum([
   'factura_fiscal',
@@ -237,6 +240,7 @@ export const supplierPriceSchema = z.object({
 export const customerSchema = z.object({
   businessName: z.string().trim().min(1).max(200),
   taxId: z.string().trim().min(1).max(60),
+  nit: z.string().trim().max(60).optional(),
   contactPerson: z.string().trim().max(200),
   phone: z.string().trim().max(60),
   email: z.string().trim().max(200),
@@ -285,6 +289,17 @@ export const salesOrderSchema = z.object({
   customerId: z.string().trim().min(1).max(200),
   customerName: z.string().trim().min(1).max(200),
   customerTaxId: z.string().trim().min(1).max(60),
+  customerNit: z.string().trim().max(60).optional(),
+  saleCondition: z.enum(['contado', 'credito']).optional(),
+  paymentMethod: z.enum([
+    'transferencia_bancaria',
+    'pago_movil',
+    'efectivo_usd',
+    'efectivo_bs',
+    'zelle',
+    'tarjeta',
+    'credito',
+  ]).optional(),
   orderDate: dateLike,
   deliveryDate: dateLike,
   status: salesOrderStatusSchema,
@@ -297,6 +312,28 @@ export const salesOrderSchema = z.object({
   taxAmountBs: money.optional(),
   totalBs: money.optional(),
   notes: z.string().max(2000).optional(),
+}).superRefine((order, ctx) => {
+  if (
+    order.saleCondition === 'credito' &&
+    order.paymentMethod &&
+    order.paymentMethod !== 'credito'
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paymentMethod'],
+      message: 'Una venta a crédito debe indicar forma de pago crédito.',
+    });
+  }
+  if (
+    order.saleCondition === 'contado' &&
+    order.paymentMethod === 'credito'
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['paymentMethod'],
+      message: 'Una venta de contado no puede indicar pago a crédito.',
+    });
+  }
 });
 
 const BANK_PAYMENT_METHODS = [
@@ -488,6 +525,49 @@ export const fiscalSettingsSchema = z
 
 export const fiscalInvoiceAnnulmentSchema = z.object({
   reason: z.string().trim().min(3).max(500),
+});
+
+const fiscalAdjustmentLineSchema = z.object({
+  description: z.string().trim().min(1).max(300),
+  subtotal: positive,
+  taxCategory: salesTaxCategorySchema,
+  taxRatePercent: z.coerce.number().finite().min(0).max(100),
+}).superRefine((item, ctx) => {
+  if (item.taxCategory === 'gravado' && item.taxRatePercent <= 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['taxRatePercent'],
+      message: 'La alícuota debe ser mayor que cero para conceptos gravados.',
+    });
+  }
+});
+
+export const fiscalAdjustmentNoteSchema = z.object({
+  type: z.enum(['nota_credito', 'nota_debito']),
+  fiscalInvoiceId: z.string().trim().min(1).max(200),
+  reason: z.enum([
+    'devolucion',
+    'descuento',
+    'bonificacion',
+    'error_precio',
+    'anulacion_parcial',
+    'otro',
+  ]),
+  reasonDetails: z.string().trim().max(500).optional(),
+  items: z.array(fiscalAdjustmentLineSchema).min(1).max(100),
+}).superRefine((note, ctx) => {
+  if (note.reason === 'otro' && !note.reasonDetails) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['reasonDetails'],
+      message: 'Describa el motivo de la nota.',
+    });
+  }
+});
+
+export const fiscalPeriodParamsSchema = z.object({
+  year: z.coerce.number().int().min(2000).max(9999),
+  month: z.coerce.number().int().min(1).max(12),
 });
 
 export const exchangeRateUpdateSchema = z.object({

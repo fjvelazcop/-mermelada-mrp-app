@@ -14,6 +14,8 @@ import {
   PayrollWeek,
   FiscalSettings,
   FiscalInvoice,
+  FiscalAdjustmentNote,
+  FiscalBooksReport,
   CostStructureAnalysis,
   UserRole,
   DailyExchangeRates,
@@ -547,6 +549,7 @@ export class ErpApiService {
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
   public fiscalInvoices = signal<FiscalInvoice[]>([]);
+  public fiscalAdjustmentNotes = signal<FiscalAdjustmentNote[]>([]);
   public dashboardData = signal<any | null>(null);
   public exchangeRates = signal<DailyExchangeRates | null>(null);
   public auditLogs = signal<AuditLogEntry[]>([]);
@@ -836,6 +839,7 @@ export class ErpApiService {
         costing,
         fiscal,
         invoices,
+        adjustmentNotes,
         dash,
         rates,
         audit,
@@ -857,6 +861,7 @@ export class ErpApiService {
         firstValueFrom(this.http.get<CostStructureAnalysis>('/api/costing/summary')),
         firstValueFrom(this.http.get<FiscalSettings>('/api/fiscal-settings')),
         firstValueFrom(this.http.get<FiscalInvoice[]>('/api/fiscal-invoices')).catch(() => []),
+        firstValueFrom(this.http.get<FiscalAdjustmentNote[]>('/api/fiscal-adjustment-notes')).catch(() => []),
         firstValueFrom(this.http.get<any>('/api/reports/dashboard')),
         firstValueFrom(this.http.get<DailyExchangeRates>('/api/exchange-rates')).catch(() => null),
         firstValueFrom(this.http.get<AuditLogEntry[]>('/api/audit-logs')).catch(() => []),
@@ -879,6 +884,7 @@ export class ErpApiService {
       this.costStructure.set(costing);
       this.fiscalSettings.set(fiscal);
       this.fiscalInvoices.set(invoices || []);
+      this.fiscalAdjustmentNotes.set(adjustmentNotes || []);
       this.dashboardData.set(dash);
       if (rates) {
         this.exchangeRates.set(rates);
@@ -1630,6 +1636,19 @@ export class ErpApiService {
     );
   }
 
+  public async refreshFiscalAdjustmentNotes(): Promise<FiscalAdjustmentNote[]> {
+    try {
+      const notes = await firstValueFrom(
+        this.http.get<FiscalAdjustmentNote[]>('/api/fiscal-adjustment-notes')
+      );
+      this.fiscalAdjustmentNotes.set(notes);
+      return notes;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
   /** Reloads the fiscal invoice list into the shared signal. */
   public async refreshFiscalInvoices() {
     try {
@@ -1681,6 +1700,76 @@ export class ErpApiService {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al anular la factura';
       this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async createFiscalAdjustmentNote(payload: {
+    type: FiscalAdjustmentNote['type'];
+    fiscalInvoiceId: string;
+    reason: FiscalAdjustmentNote['reason'];
+    reasonDetails?: string;
+    items: {
+      description: string;
+      subtotal: number;
+      taxCategory: FiscalAdjustmentNote['items'][number]['taxCategory'];
+      taxRatePercent: number;
+    }[];
+  }): Promise<FiscalAdjustmentNote> {
+    try {
+      const note = await firstValueFrom(
+        this.http.post<FiscalAdjustmentNote>('/api/fiscal-adjustment-notes', payload)
+      );
+      this.fiscalAdjustmentNotes.update((notes) => [note, ...notes]);
+      this.showToast(`${note.type === 'nota_credito' ? 'Nota de crédito' : 'Nota de débito'} ${note.serie}-${note.noteNumber} emitida.`);
+      return note;
+    } catch (err: unknown) {
+      const message = this.apiErrorMessage(err);
+      this.showToast(message, 'error');
+      throw err;
+    }
+  }
+
+  public async recordFiscalAdjustmentNotePrint(
+    id: string
+  ): Promise<{note: FiscalAdjustmentNote; isDuplicate: boolean}> {
+    try {
+      const result = await firstValueFrom(
+        this.http.post<{note: FiscalAdjustmentNote; isDuplicate: boolean}>(
+          `/api/fiscal-adjustment-notes/${id}/print`,
+          {}
+        )
+      );
+      this.fiscalAdjustmentNotes.update((notes) =>
+        notes.map((note) => note.id === result.note.id ? result.note : note)
+      );
+      return result;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async getFiscalBooks(year: number, month: number): Promise<FiscalBooksReport> {
+    try {
+      return await firstValueFrom(
+        this.http.get<FiscalBooksReport>(`/api/fiscal-books/${year}/${month}`)
+      );
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async closeFiscalBooks(year: number, month: number) {
+    try {
+      const closure = await firstValueFrom(
+        this.http.post(`/api/fiscal-books/${year}/${month}/close`, {})
+      );
+      this.showToast(`Período ${year}-${String(month).padStart(2, '0')} cerrado.`);
+      return closure;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
       throw err;
     }
   }

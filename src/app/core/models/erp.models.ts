@@ -202,6 +202,7 @@ export interface Customer {
   id: string;
   businessName: string; // Razón Social ej: Panadería El Trigal C.A.
   taxId: string; // RIF / NIT / RFC
+  nit?: string;
   contactPerson: string;
   phone: string;
   email: string;
@@ -254,6 +255,15 @@ export interface SupplierPrice {
 }
 
 export type SalesOrderStatus = 'pendiente' | 'en_produccion' | 'listo_despacho' | 'despachado' | 'cobrado';
+export type FiscalSaleCondition = 'contado' | 'credito';
+export type FiscalPaymentMethod =
+  | 'transferencia_bancaria'
+  | 'pago_movil'
+  | 'efectivo_usd'
+  | 'efectivo_bs'
+  | 'zelle'
+  | 'tarjeta'
+  | 'credito';
 
 export interface SalesOrderItem {
   finishedGoodId: string;
@@ -281,6 +291,9 @@ export interface SalesOrder {
   customerId: string;
   customerName: string;
   customerTaxId: string;
+  customerNit?: string;
+  saleCondition?: FiscalSaleCondition;
+  paymentMethod?: FiscalPaymentMethod;
   orderDate: string;
   deliveryDate: string;
   status: SalesOrderStatus;
@@ -369,6 +382,8 @@ export interface FiscalSettings {
   nextInvoiceNumber: number;
   controlPrefix: string; // prefijo del número de control
   nextControlNumber: number;
+  nextCreditNoteNumber: number;
+  nextDebitNoteNumber: number;
   authorizationCode: string;
   authorizationValidUntil: string; // yyyy-mm-dd
   branchName: string; // sucursal / establecimiento
@@ -413,6 +428,7 @@ export interface FiscalInvoiceCustomerSnapshot {
   customerId: string;
   businessName: string;
   taxId: string;
+  nit?: string;
   address?: string;
   phone?: string;
 }
@@ -433,6 +449,8 @@ export interface FiscalInvoice {
   serie: string;
   invoiceNumber: number;
   controlNumber: number;
+  saleCondition: FiscalSaleCondition;
+  paymentMethod: FiscalPaymentMethod;
   salesOrderId?: string;
   salesOrderNumber?: string;
   emitterSnapshot: FiscalInvoiceEmitterSnapshot;
@@ -453,6 +471,121 @@ export interface FiscalInvoice {
   annulmentReason?: string;
   periodYear: number;
   periodMonth: number;
+}
+
+export type FiscalAdjustmentType = 'nota_credito' | 'nota_debito';
+export type FiscalAdjustmentReason =
+  | 'devolucion'
+  | 'descuento'
+  | 'bonificacion'
+  | 'error_precio'
+  | 'anulacion_parcial'
+  | 'otro';
+
+export interface FiscalAdjustmentLine {
+  description: string;
+  subtotal: number;
+  taxCategory: SalesTaxCategory;
+  taxRatePercent: number;
+  taxAmount: number;
+  total: number;
+}
+
+export interface FiscalAdjustmentNote {
+  id: string;
+  type: FiscalAdjustmentType;
+  serie: string;
+  noteNumber: number;
+  controlNumber: number;
+  fiscalInvoiceId: string;
+  invoiceNumber: string;
+  invoiceControlNumber: number;
+  invoiceIssuedAt: string;
+  emitterSnapshot: FiscalInvoiceEmitterSnapshot;
+  customerSnapshot: FiscalInvoiceCustomerSnapshot;
+  reason: FiscalAdjustmentReason;
+  reasonDetails?: string;
+  items: FiscalAdjustmentLine[];
+  subtotal: number;
+  taxAmount: number;
+  total: number;
+  exchangeRateUsed: number;
+  issuedAt: string;
+  issuedBy: string;
+  printCount: number;
+  periodYear: number;
+  periodMonth: number;
+}
+
+export interface FiscalPeriodClosure {
+  year: number;
+  month: number;
+  closedAt: string;
+  closedBy: string;
+  snapshotHash: string;
+  salesTotal: number;
+  purchaseTotal: number;
+}
+
+export interface FiscalBooksSalesRow {
+  id: string;
+  date: string;
+  documentType: 'factura' | 'nota_credito' | 'nota_debito' | 'factura_anulada';
+  documentNumber: string;
+  controlNumber: string;
+  customerName: string;
+  customerTaxId: string;
+  saleCondition: FiscalSaleCondition;
+  taxableBases: { rate: number; base: number; tax: number }[];
+  exemptAmount: number;
+  nonSubjectAmount: number;
+  taxAmount: number;
+  total: number;
+}
+
+export interface FiscalBooksPurchaseRow {
+  id: string;
+  date: string;
+  documentType: Expense['documentType'];
+  documentNumber: string;
+  supplierName: string;
+  supplierTaxId: string;
+  exemptAmount: number;
+  nonSubjectAmount: number;
+  taxableBase: number;
+  taxRatePercent: number;
+  taxAmount: number;
+  total: number;
+  vatWithholding: number;
+  fiscalCreditEligible: boolean;
+}
+
+export interface FiscalBooksReport {
+  year: number;
+  month: number;
+  isClosed: boolean;
+  closure?: FiscalPeriodClosure;
+  salesRows: FiscalBooksSalesRow[];
+  purchaseRows: FiscalBooksPurchaseRow[];
+  salesTotals: {
+    taxableBases: { rate: number; base: number; tax: number }[];
+    exemptAmount: number;
+    nonSubjectAmount: number;
+    taxAmount: number;
+    total: number;
+  };
+  purchaseTotals: {
+    taxableBase: number;
+    exemptAmount: number;
+    nonSubjectAmount: number;
+    taxAmount: number;
+    vatWithholding: number;
+    total: number;
+  };
+  reconciliation: {
+    salesDifference: number;
+    purchaseDifference: number;
+  };
 }
 
 export interface Employee {
@@ -714,6 +847,7 @@ export interface AuditLogDetails {
   quantity?: number;
   unit?: string;
   costUsd?: number;
+  amount?: number;
   lotNumber?: string;
   brix?: number;
   wasteKg?: number;
@@ -721,6 +855,14 @@ export interface AuditLogDetails {
   newStock?: number;
   referenceDoc?: string;
   salesOrderId?: string;
+  invoiceId?: string;
+  documentType?: string;
+  adjustmentType?: FiscalAdjustmentType;
+  year?: number;
+  month?: number;
+  snapshotHash?: string;
+  salesTotal?: number;
+  purchaseTotal?: number;
   operatorNotes?: string;
   formulas?: string[];
   changes?: string[];
@@ -760,7 +902,10 @@ export interface AuditLogEntry {
     | 'factura_emitida'
     | 'factura_anulada'
     | 'factura_impresa'
-    | 'factura_reimpresa';
+      | 'factura_reimpresa'
+      | 'nota_fiscal_creada'
+      | 'nota_fiscal_impresa'
+      | 'libro_fiscal_cerrado';
   title: string;
   description: string;
   userId: string;

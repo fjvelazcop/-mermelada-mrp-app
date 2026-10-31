@@ -955,6 +955,34 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/fiscal-invoices': {
+    get: {
+      tags: ['Ventas'],
+      summary: 'Listar facturas fiscales, opcionalmente filtradas por período',
+      parameters: [
+        { name: 'year', in: 'query', schema: { type: 'integer' } },
+        { name: 'month', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 12 } },
+      ],
+      responses: {
+        200: jsonResponse('Facturas fiscales', arrayOf('FiscalInvoice')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
+  '/api/fiscal-invoices/{id}': {
+    get: {
+      tags: ['Ventas'],
+      summary: 'Consultar una factura fiscal',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Factura fiscal', ref('FiscalInvoice')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
   '/api/fiscal-invoices/{id}/print': {
     post: {
       tags: ['Ventas'],
@@ -974,6 +1002,99 @@ const paths: Record<string, JsonObject> = {
         401: errorResponses[401],
         403: errorResponses[403],
         404: errorResponses[404],
+      },
+    },
+  },
+  '/api/fiscal-invoices/{id}/annul': {
+    post: {
+      tags: ['Ventas'],
+      summary: 'Anular una factura fiscal (solo administrador)',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('FiscalInvoiceAnnulment')),
+      responses: {
+        200: jsonResponse('Factura anulada', ref('FiscalInvoice')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/fiscal-adjustment-notes': {
+    get: {
+      tags: ['Ventas'],
+      summary: 'Listar notas de crédito y débito',
+      parameters: [
+        { name: 'year', in: 'query', schema: { type: 'integer' } },
+        { name: 'month', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 12 } },
+      ],
+      responses: {
+        200: jsonResponse('Notas fiscales', arrayOf('FiscalAdjustmentNote')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Ventas'],
+      summary: 'Emitir una nota de crédito o débito (solo administrador)',
+      requestBody: requestBody(ref('FiscalAdjustmentNoteInput')),
+      responses: {
+        201: jsonResponse('Nota emitida', ref('FiscalAdjustmentNote')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/fiscal-adjustment-notes/{id}/print': {
+    post: {
+      tags: ['Ventas'],
+      summary: 'Registrar la impresión de una nota fiscal',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Impresión registrada', {
+          type: 'object',
+          required: ['note', 'isDuplicate'],
+          properties: { note: ref('FiscalAdjustmentNote'), isDuplicate: { type: 'boolean' } },
+        }),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
+  '/api/fiscal-books/{year}/{month}': {
+    get: {
+      tags: ['Reportes'],
+      summary: 'Consultar los libros fiscales y su conciliación mensual (solo administrador)',
+      parameters: [
+        { name: 'year', in: 'path', required: true, schema: { type: 'integer', minimum: 2000, maximum: 9999 } },
+        { name: 'month', in: 'path', required: true, schema: { type: 'integer', minimum: 1, maximum: 12 } },
+      ],
+      responses: {
+        200: jsonResponse('Libros fiscales del período', ref('FiscalBooksReport')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
+  '/api/fiscal-books/{year}/{month}/close': {
+    post: {
+      tags: ['Reportes'],
+      summary: 'Cerrar el período fiscal y fijar su conciliación (solo administrador)',
+      parameters: [
+        { name: 'year', in: 'path', required: true, schema: { type: 'integer', minimum: 2000, maximum: 9999 } },
+        { name: 'month', in: 'path', required: true, schema: { type: 'integer', minimum: 1, maximum: 12 } },
+      ],
+      responses: {
+        201: jsonResponse('Período cerrado', ref('FiscalPeriodClosure')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
       },
     },
   },
@@ -2072,6 +2193,8 @@ const schemas: Record<string, JsonObject> = {
       invoicePrefix: string,
       invoiceSerie: string,
       nextInvoiceNumber: integer,
+      nextCreditNoteNumber: integer,
+      nextDebitNoteNumber: integer,
       controlPrefix: string,
       nextControlNumber: integer,
       authorizationCode: string,
@@ -2097,6 +2220,137 @@ const schemas: Record<string, JsonObject> = {
   FiscalSettingsUpdate: {
     type: 'object',
     description: 'Cualquier subconjunto de los campos de FiscalSettings',
+  },
+  FiscalInvoice: {
+    type: 'object',
+    properties: {
+      id: string,
+      serie: string,
+      invoiceNumber: integer,
+      controlNumber: integer,
+      saleCondition: { type: 'string', enum: ['contado', 'credito'] },
+      paymentMethod: {
+        type: 'string',
+        enum: ['efectivo_bs', 'efectivo_usd', 'transferencia_bancaria', 'pago_movil', 'tarjeta', 'zelle', 'credito'],
+      },
+      salesOrderId: string,
+      salesOrderNumber: string,
+      emitterSnapshot: { type: 'object', additionalProperties: true },
+      customerSnapshot: { type: 'object', additionalProperties: true },
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            description: string,
+            quantity: number,
+            unitPrice: number,
+            subtotal: number,
+            taxCategory: { type: 'string', enum: ['gravado', 'exento', 'no_sujeto'] },
+            taxRatePercent: number,
+            taxAmount: number,
+            total: number,
+          },
+        },
+      },
+      subtotal: number,
+      taxAmount: number,
+      total: number,
+      exchangeRateUsed: number,
+      status: { type: 'string', enum: ['emitida', 'anulada'] },
+      issuedAt: dateTime,
+      printCount: integer,
+      annulledAt: dateTime,
+      annulledBy: string,
+      annulmentReason: string,
+      periodYear: integer,
+      periodMonth: integer,
+    },
+  },
+  FiscalInvoiceAnnulment: {
+    type: 'object',
+    required: ['reason'],
+    properties: { reason: { type: 'string', minLength: 3, maxLength: 500 } },
+  },
+  FiscalAdjustmentNoteInput: {
+    type: 'object',
+    required: ['type', 'fiscalInvoiceId', 'reason', 'items'],
+    properties: {
+      type: { type: 'string', enum: ['nota_credito', 'nota_debito'] },
+      fiscalInvoiceId: string,
+      reason: {
+        type: 'string',
+        enum: ['devolucion', 'descuento', 'bonificacion', 'error_precio', 'anulacion_parcial', 'otro'],
+      },
+      reasonDetails: string,
+      items: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          required: ['description', 'subtotal', 'taxCategory', 'taxRatePercent'],
+          properties: {
+            description: string,
+            subtotal: { type: 'number', exclusiveMinimum: 0 },
+            taxCategory: { type: 'string', enum: ['gravado', 'exento', 'no_sujeto'] },
+            taxRatePercent: number,
+          },
+        },
+      },
+    },
+  },
+  FiscalAdjustmentNote: {
+    type: 'object',
+    properties: {
+      id: string,
+      type: { type: 'string', enum: ['nota_credito', 'nota_debito'] },
+      serie: string,
+      noteNumber: integer,
+      controlNumber: integer,
+      fiscalInvoiceId: string,
+      invoiceNumber: string,
+      invoiceControlNumber: integer,
+      reason: string,
+      reasonDetails: string,
+      items: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      subtotal: number,
+      taxAmount: number,
+      total: number,
+      issuedAt: dateTime,
+      issuedBy: string,
+      printCount: integer,
+      periodYear: integer,
+      periodMonth: integer,
+    },
+  },
+  FiscalPeriodClosure: {
+    type: 'object',
+    properties: {
+      year: integer,
+      month: integer,
+      closedAt: dateTime,
+      closedBy: string,
+      snapshotHash: string,
+      salesTotal: number,
+      purchaseTotal: number,
+    },
+  },
+  FiscalBooksReport: {
+    type: 'object',
+    properties: {
+      year: integer,
+      month: integer,
+      isClosed: boolean,
+      closure: ref('FiscalPeriodClosure'),
+      salesRows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      purchaseRows: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      salesTotals: { type: 'object', additionalProperties: true },
+      purchaseTotals: { type: 'object', additionalProperties: true },
+      reconciliation: {
+        type: 'object',
+        properties: { salesDifference: number, purchaseDifference: number },
+      },
+    },
   },
   ExchangeRateInput: {
     type: 'object',

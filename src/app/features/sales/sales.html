@@ -559,11 +559,45 @@
           <!-- Cliente Mayorista -->
           <div>
             <label class="block text-xs font-semibold text-stone-700 mb-1">Cliente Mayorista</label>
-            <select formControlName="customerId" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400">
+            <select
+              formControlName="customerId"
+              (change)="onCustomerSelectionChange($any($event.target).value)"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+            >
               @for (c of customers(); track c.id) {
                 <option [value]="c.id">{{ c.businessName }} ({{ c.taxId }})</option>
               }
             </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block">
+              <span class="block text-xs font-semibold text-stone-700 mb-1">Condición de venta</span>
+              <select
+                formControlName="saleCondition"
+                (change)="onSaleConditionChange()"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
+              >
+                <option value="contado">Contado</option>
+                <option value="credito">Crédito</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="block text-xs font-semibold text-stone-700 mb-1">Forma de pago</span>
+              <select
+                formControlName="paymentMethod"
+                [disabled]="newOrderForm.controls.saleCondition.value === 'credito'"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 disabled:opacity-50"
+              >
+                <option value="credito">Crédito</option>
+                <option value="transferencia_bancaria">Transferencia bancaria</option>
+                <option value="pago_movil">Pago móvil</option>
+                <option value="efectivo_usd">Efectivo USD</option>
+                <option value="efectivo_bs">Efectivo Bs.</option>
+                <option value="zelle">Zelle</option>
+                <option value="tarjeta">Tarjeta</option>
+              </select>
+            </label>
           </div>
 
           <!-- Producto Terminado & Presentación con Autocomplete & Selector -->
@@ -906,6 +940,11 @@
                 <option value="otro">Otro</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">NIT (opcional)</label>
+            <input type="text" formControlName="nit" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
           </div>
 
           <div class="grid grid-cols-2 gap-3">

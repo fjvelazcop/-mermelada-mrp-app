@@ -1298,6 +1298,8 @@ export function requireRole(...roles: RoleId[]) {
 export const requireAdmin = requireRole('admin');
 
 function resolveModule(path: string): ModuleId | null {
+  if (path.startsWith('/api/fiscal-adjustment-notes')) return 'sales';
+  if (path.startsWith('/api/fiscal-books')) return 'settings';
   if (path.startsWith('/api/fiscal-invoices')) return 'sales';
   if (path.startsWith('/api/inventory')) return 'inventory';
   if (path.startsWith('/api/recipes')) return 'production';

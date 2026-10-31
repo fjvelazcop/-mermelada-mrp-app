@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   RawMaterial,
   InventoryMovement,
@@ -7,11 +8,19 @@ import {
   ProductionOrderFormula,
   Customer,
   SalesOrder,
+  SalesTaxCategory,
   DeliveryNote,
   Employee,
   PayrollWeek,
   FiscalSettings,
   FiscalInvoice,
+  FiscalAdjustmentNote,
+  FiscalAdjustmentReason,
+  FiscalAdjustmentType,
+  FiscalBooksReport,
+  FiscalBooksPurchaseRow,
+  FiscalBooksSalesRow,
+  FiscalPeriodClosure,
   CostStructureAnalysis,
   MonthlySalesStat,
   WeeklySalesStat,
@@ -48,6 +57,8 @@ export interface DatabaseState {
   expenseCategories: ExpenseCategoryConfig[];
   fiscalSettings: FiscalSettings;
   fiscalInvoices: FiscalInvoice[];
+  fiscalAdjustmentNotes: FiscalAdjustmentNote[];
+  fiscalPeriodClosures: FiscalPeriodClosure[];
   exchangeRates: DailyExchangeRates;
   auditLogs: AuditLogEntry[];
 }
@@ -996,6 +1007,8 @@ export function createInitialDatabase(): DatabaseState {
     nextInvoiceNumber: 402,
     controlPrefix: 'CTRL-',
     nextControlNumber: 402,
+    nextCreditNoteNumber: 1,
+    nextDebitNoteNumber: 1,
     authorizationCode: 'SENIAT-PROV-2026-00914',
     authorizationValidUntil: '',
     branchName: 'Sede principal',
@@ -1590,6 +1603,8 @@ export function createInitialDatabase(): DatabaseState {
     expenseCategories,
     fiscalSettings,
     fiscalInvoices: [],
+    fiscalAdjustmentNotes: [],
+    fiscalPeriodClosures: [],
     exchangeRates,
     auditLogs,
   };
@@ -1607,7 +1622,13 @@ export class ErpDatabase {
 
     // One-time migration of databases created before the relational schema.
     const legacy = loadState();
-    this.state = legacy ?? createInitialDatabase();
+    this.state = legacy
+      ? {
+          ...legacy,
+          fiscalAdjustmentNotes: legacy.fiscalAdjustmentNotes || [],
+          fiscalPeriodClosures: legacy.fiscalPeriodClosures || [],
+        }
+      : createInitialDatabase();
     this.persist();
   }
 
@@ -2835,6 +2856,18 @@ export class ErpDatabase {
     const actor = this.manualOrderActor(actorInput);
     const nextNum = 'PED-2026-0' + (this.state.salesOrders.length + 44);
     const rate = data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
+    const customer = this.state.customers.find((entry) => entry.id === data.customerId);
+    const saleCondition =
+      data.saleCondition ??
+      (customer?.paymentTerms.toLowerCase().includes('contado') ? 'contado' : 'credito');
+    const paymentMethod =
+      data.paymentMethod ?? (saleCondition === 'credito' ? 'credito' : 'efectivo_bs');
+    if (
+      (saleCondition === 'credito' && paymentMethod !== 'credito') ||
+      (saleCondition === 'contado' && paymentMethod === 'credito')
+    ) {
+      throw new Error('La condición de venta no coincide con la forma de pago.');
+    }
 
     const fiscalTaxRate = this.state.fiscalSettings?.taxRatePercent ?? 0;
     const items = data.items.map((item) => {
@@ -2871,6 +2904,9 @@ export class ErpDatabase {
       ...data,
       id: 'so-' + Date.now(),
       orderNumber: nextNum,
+      customerNit: data.customerNit || customer?.nit,
+      saleCondition,
+      paymentMethod,
       exchangeRateUsed: rate,
       items,
       subtotal,
@@ -3184,6 +3220,8 @@ export class ErpDatabase {
     const serie = fiscal.invoiceSerie || 'A';
     const invoiceNumber = fiscal.nextInvoiceNumber;
     const controlNumber = fiscal.nextControlNumber;
+    const issuedAt = new Date();
+    this.assertFiscalPeriodOpen(issuedAt.getFullYear(), issuedAt.getMonth() + 1);
     const invoices = this.state.fiscalInvoices || [];
 
     const duplicated = invoices.some(
@@ -3199,7 +3237,6 @@ export class ErpDatabase {
     }
 
     const customer = this.state.customers.find((c) => c.id === order.customerId);
-    const issuedAt = new Date();
     const items = order.items.map((item) => {
       const subtotal = Number(item.subtotal.toFixed(2));
       const taxCategory = item.taxCategory ?? 'gravado';
@@ -3233,6 +3270,8 @@ export class ErpDatabase {
       serie,
       invoiceNumber,
       controlNumber,
+      saleCondition: order.saleCondition ?? 'contado',
+      paymentMethod: order.paymentMethod ?? 'efectivo_bs',
       salesOrderId: order.id,
       salesOrderNumber: order.orderNumber,
       emitterSnapshot: {
@@ -3255,6 +3294,7 @@ export class ErpDatabase {
         customerId: order.customerId,
         businessName: order.customerName,
         taxId: order.customerTaxId,
+        nit: order.customerNit || customer?.nit,
         address: customer?.address,
         phone: customer?.phone,
       },
@@ -3314,6 +3354,7 @@ export class ErpDatabase {
     if (invoice.status === 'anulada') {
       throw new Error('La factura ya está anulada.');
     }
+    this.assertFiscalPeriodOpen(invoice.periodYear, invoice.periodMonth);
     const trimmedReason = reason.trim();
     if (!trimmedReason) {
       throw new Error('Debe indicar el motivo de la anulación.');
@@ -3375,6 +3416,474 @@ export class ErpDatabase {
     });
 
     return {invoice, isDuplicate};
+  }
+
+  public getFiscalAdjustmentNotes(year?: number, month?: number): FiscalAdjustmentNote[] {
+    return (this.state.fiscalAdjustmentNotes || []).filter(
+      (note) =>
+        (year === undefined || note.periodYear === year) &&
+        (month === undefined || note.periodMonth === month)
+    );
+  }
+
+  public getFiscalAdjustmentNoteById(id: string): FiscalAdjustmentNote | null {
+    return (this.state.fiscalAdjustmentNotes || []).find((note) => note.id === id) || null;
+  }
+
+  public createFiscalAdjustmentNote(
+    data: {
+      type: FiscalAdjustmentType;
+      fiscalInvoiceId: string;
+      reason: FiscalAdjustmentReason;
+      reasonDetails?: string;
+      items: {
+        description: string;
+        subtotal: number;
+        taxCategory: SalesTaxCategory;
+        taxRatePercent: number;
+      }[];
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): FiscalAdjustmentNote {
+    const actor = this.manualOrderActor(actorInput);
+    const invoice = this.getFiscalInvoiceById(data.fiscalInvoiceId);
+    if (!invoice) throw new Error('Factura fiscal no encontrada.');
+    if (invoice.status !== 'emitida') {
+      throw new Error('Solo se pueden ajustar facturas emitidas y vigentes.');
+    }
+    const issuedAt = new Date();
+    const periodYear = issuedAt.getFullYear();
+    const periodMonth = issuedAt.getMonth() + 1;
+    this.assertFiscalPeriodOpen(periodYear, periodMonth);
+    if (data.reason === 'otro' && !data.reasonDetails?.trim()) {
+      throw new Error('Debe describir el motivo cuando selecciona "Otro".');
+    }
+    if (data.items.length === 0) {
+      throw new Error('La nota debe incluir al menos un concepto.');
+    }
+
+    const items = data.items.map((item) => {
+      if (!Number.isFinite(item.subtotal) || item.subtotal <= 0) {
+        throw new Error('El monto de cada concepto debe ser mayor que cero.');
+      }
+      const taxRatePercent = item.taxCategory === 'gravado' ? item.taxRatePercent : 0;
+      if (item.taxCategory === 'gravado' && (!Number.isFinite(taxRatePercent) || taxRatePercent <= 0)) {
+        throw new Error('La alícuota debe ser mayor que cero para conceptos gravados.');
+      }
+      const subtotal = Number(item.subtotal.toFixed(2));
+      const taxAmount =
+        item.taxCategory === 'gravado'
+          ? Number(((subtotal * taxRatePercent) / 100).toFixed(2))
+          : 0;
+      return {
+        description: item.description.trim(),
+        subtotal,
+        taxCategory: item.taxCategory,
+        taxRatePercent,
+        taxAmount,
+        total: Number((subtotal + taxAmount).toFixed(2)),
+      };
+    });
+
+    const subtotal = Number(items.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2));
+    const taxAmount = Number(items.reduce((sum, item) => sum + item.taxAmount, 0).toFixed(2));
+    const total = Number((subtotal + taxAmount).toFixed(2));
+
+    if (data.type === 'nota_credito') {
+      const issuedByRate = this.sumInvoiceLinesByTaxGroup(invoice.items);
+      const previouslyCredited = new Map<string, number>();
+      for (const note of this.getFiscalAdjustmentNotes()) {
+        if (note.fiscalInvoiceId !== invoice.id || note.type !== 'nota_credito') continue;
+        for (const item of note.items) {
+          const key = this.taxGroupKey(item.taxCategory, item.taxRatePercent);
+          previouslyCredited.set(
+            key,
+            Number(((previouslyCredited.get(key) || 0) + item.subtotal + item.taxAmount).toFixed(2))
+          );
+        }
+      }
+      const requestedByRate = new Map<string, number>();
+      for (const item of items) {
+        const key = this.taxGroupKey(item.taxCategory, item.taxRatePercent);
+        requestedByRate.set(
+          key,
+          Number(((requestedByRate.get(key) || 0) + item.total).toFixed(2))
+        );
+      }
+      for (const [key, requested] of requestedByRate) {
+        const remaining = Number(
+          ((issuedByRate.get(key) || 0) - (previouslyCredited.get(key) || 0)).toFixed(2)
+        );
+        if (requested > remaining) {
+          throw new Error('La nota de crédito supera el saldo no acreditado de la factura para esa alícuota.');
+        }
+      }
+    }
+
+    const settings = this.state.fiscalSettings;
+    const isCredit = data.type === 'nota_credito';
+    const serie = isCredit ? 'NC' : 'ND';
+    const noteNumber = isCredit
+      ? settings.nextCreditNoteNumber
+      : settings.nextDebitNoteNumber;
+    const controlNumber = settings.nextControlNumber;
+    const notes = this.state.fiscalAdjustmentNotes || [];
+    if (
+      notes.some((note) => note.controlNumber === controlNumber) ||
+      this.state.fiscalInvoices.some((entry) => entry.controlNumber === controlNumber)
+    ) {
+      throw new Error('El número de control ya está utilizado. Ajuste el próximo consecutivo fiscal antes de continuar.');
+    }
+
+    const note: FiscalAdjustmentNote = {
+      id: `fan-${issuedAt.getTime().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      type: data.type,
+      serie,
+      noteNumber,
+      controlNumber,
+      fiscalInvoiceId: invoice.id,
+      invoiceNumber: `${invoice.serie}-${String(invoice.invoiceNumber).padStart(8, '0')}`,
+      invoiceControlNumber: invoice.controlNumber,
+      invoiceIssuedAt: invoice.issuedAt,
+      emitterSnapshot: {...invoice.emitterSnapshot},
+      customerSnapshot: {...invoice.customerSnapshot},
+      reason: data.reason,
+      reasonDetails: data.reasonDetails?.trim() || undefined,
+      items,
+      subtotal,
+      taxAmount,
+      total,
+      exchangeRateUsed: invoice.exchangeRateUsed,
+      issuedAt: issuedAt.toISOString(),
+      issuedBy: actor.userName,
+      printCount: 0,
+      periodYear,
+      periodMonth,
+    };
+
+    this.state.fiscalAdjustmentNotes = [note, ...notes];
+    this.state.fiscalSettings = {
+      ...settings,
+      nextCreditNoteNumber: settings.nextCreditNoteNumber + (isCredit ? 1 : 0),
+      nextDebitNoteNumber: settings.nextDebitNoteNumber + (isCredit ? 0 : 1),
+      nextControlNumber: controlNumber + 1,
+    };
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'nota_fiscal_creada',
+      title: `${isCredit ? 'Nota de crédito' : 'Nota de débito'} emitida: ${serie}-${noteNumber}`,
+      description: `Documento vinculado a la factura ${note.invoiceNumber}; motivo: ${note.reasonDetails || note.reason}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        targetId: note.id,
+        targetCode: `${serie}-${noteNumber}`,
+        invoiceId: invoice.id,
+        adjustmentType: note.type,
+        amount: total,
+      },
+    });
+    return note;
+  }
+
+  public recordFiscalAdjustmentNotePrint(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): { note: FiscalAdjustmentNote; isDuplicate: boolean } | null {
+    const note = this.getFiscalAdjustmentNoteById(id);
+    if (!note) return null;
+    const actor = this.manualOrderActor(actorInput);
+    const isDuplicate = note.printCount > 0;
+    note.printCount += 1;
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'nota_fiscal_impresa',
+      title: `${isDuplicate ? 'Reimpresión' : 'Impresión'} de nota fiscal: ${note.serie}-${note.noteNumber}`,
+      description: isDuplicate ? `Copia ${note.printCount} marcada como duplicado.` : 'Primera impresión de la nota fiscal.',
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: isDuplicate ? 'warning' : 'info',
+      details: {targetId: note.id, targetCode: `${note.serie}-${note.noteNumber}`, isDuplicate},
+    });
+    return {note, isDuplicate};
+  }
+
+  private taxGroupKey(category: SalesTaxCategory, rate: number): string {
+    return `${category}:${category === 'gravado' ? rate.toFixed(2) : '0'}`;
+  }
+
+  private sumInvoiceLinesByTaxGroup(lines: FiscalInvoice['items']): Map<string, number> {
+    const totals = new Map<string, number>();
+    for (const line of lines) {
+      const category = line.taxCategory ?? 'gravado';
+      const key = this.taxGroupKey(category, line.taxRatePercent);
+      totals.set(
+        key,
+        Number(((totals.get(key) || 0) + line.subtotal + line.taxAmount).toFixed(2))
+      );
+    }
+    return totals;
+  }
+
+  public getFiscalPeriodClosures(): FiscalPeriodClosure[] {
+    return this.state.fiscalPeriodClosures || [];
+  }
+
+  public getFiscalPeriodClosure(year: number, month: number): FiscalPeriodClosure | null {
+    return this.getFiscalPeriodClosures().find(
+      (closure) => closure.year === year && closure.month === month
+    ) || null;
+  }
+
+  public isFiscalPeriodClosed(year: number, month: number): boolean {
+    return this.getFiscalPeriodClosure(year, month) !== null;
+  }
+
+  private assertFiscalPeriodOpen(year: number, month: number): void {
+    if (this.isFiscalPeriodClosed(year, month)) {
+      throw new Error(`El período fiscal ${year}-${String(month).padStart(2, '0')} está cerrado.`);
+    }
+  }
+
+  public getFiscalBooks(year: number, month: number): FiscalBooksReport {
+    if (!Number.isInteger(year) || year < 2000 || !Number.isInteger(month) || month < 1 || month > 12) {
+      throw new Error('Debe indicar un año y mes fiscal válidos.');
+    }
+
+    const invoices = this.getFiscalInvoices(year, month);
+    const adjustmentNotes = this.getFiscalAdjustmentNotes(year, month);
+    const salesRows: FiscalBooksSalesRow[] = invoices.map((invoice) => {
+      const annulled = invoice.status === 'anulada';
+      const taxableBases = new Map<number, {rate: number; base: number; tax: number}>();
+      let exemptAmount = 0;
+      let nonSubjectAmount = 0;
+      if (!annulled) {
+        for (const item of invoice.items) {
+          const category = item.taxCategory ?? 'gravado';
+          if (category === 'exento') {
+            exemptAmount += item.subtotal;
+          } else if (category === 'no_sujeto') {
+            nonSubjectAmount += item.subtotal;
+          } else {
+            const rate = item.taxRatePercent;
+            const group = taxableBases.get(rate) ?? {rate, base: 0, tax: 0};
+            group.base += item.subtotal;
+            group.tax += item.taxAmount;
+            taxableBases.set(rate, group);
+          }
+        }
+      }
+      return {
+        id: invoice.id,
+        date: invoice.issuedAt,
+        documentType: annulled ? 'factura_anulada' : 'factura',
+        documentNumber: `${invoice.serie}-${String(invoice.invoiceNumber).padStart(8, '0')}`,
+        controlNumber: String(invoice.controlNumber).padStart(8, '0'),
+        customerName: invoice.customerSnapshot.businessName,
+        customerTaxId: invoice.customerSnapshot.taxId,
+        saleCondition: invoice.saleCondition,
+        taxableBases: [...taxableBases.values()].map((group) => ({
+          rate: group.rate,
+          base: Number(group.base.toFixed(2)),
+          tax: Number(group.tax.toFixed(2)),
+        })),
+        exemptAmount: Number(exemptAmount.toFixed(2)),
+        nonSubjectAmount: Number(nonSubjectAmount.toFixed(2)),
+        taxAmount: annulled ? 0 : invoice.taxAmount,
+        total: annulled ? 0 : invoice.total,
+      };
+    });
+
+    for (const note of adjustmentNotes) {
+      const sign = note.type === 'nota_credito' ? -1 : 1;
+      const grouped = new Map<number, {rate: number; base: number; tax: number}>();
+      let exemptAmount = 0;
+      let nonSubjectAmount = 0;
+      for (const item of note.items) {
+        if (item.taxCategory === 'exento') {
+          exemptAmount += item.subtotal;
+        } else if (item.taxCategory === 'no_sujeto') {
+          nonSubjectAmount += item.subtotal;
+        } else {
+          const group = grouped.get(item.taxRatePercent) ?? {
+            rate: item.taxRatePercent,
+            base: 0,
+            tax: 0,
+          };
+          group.base += item.subtotal;
+          group.tax += item.taxAmount;
+          grouped.set(item.taxRatePercent, group);
+        }
+      }
+      salesRows.push({
+        id: note.id,
+        date: note.issuedAt,
+        documentType: note.type,
+        documentNumber: `${note.serie}-${String(note.noteNumber).padStart(8, '0')}`,
+        controlNumber: String(note.controlNumber).padStart(8, '0'),
+        customerName: note.customerSnapshot.businessName,
+        customerTaxId: note.customerSnapshot.taxId,
+        saleCondition: 'contado',
+        taxableBases: [...grouped.values()].map((group) => ({
+          rate: group.rate,
+          base: Number((group.base * sign).toFixed(2)),
+          tax: Number((group.tax * sign).toFixed(2)),
+        })),
+        exemptAmount: Number((exemptAmount * sign).toFixed(2)),
+        nonSubjectAmount: Number((nonSubjectAmount * sign).toFixed(2)),
+        taxAmount: Number((note.taxAmount * sign).toFixed(2)),
+        total: Number((note.total * sign).toFixed(2)),
+      });
+    }
+    salesRows.sort((a, b) => a.date.localeCompare(b.date) || a.documentNumber.localeCompare(b.documentNumber));
+
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+    const purchaseRows: FiscalBooksPurchaseRow[] = this.getExpenses()
+      .filter((expense) => expense.date.startsWith(monthPrefix) && expense.fiscalBookEligible)
+      .map((expense) => {
+        const taxAmount = expense.taxAmountUsd || 0;
+        const hasVat = expense.taxCategory === 'con_factura_iva' || expense.taxCategory === 'retencion_aplicada';
+        const exemptAmount = expense.taxCategory === 'exento' ? expense.amountUsd : 0;
+        const nonSubjectAmount = expense.taxCategory === 'no_sujeto' ? expense.amountUsd : 0;
+        return {
+          id: expense.id,
+          date: expense.date,
+          documentType: expense.documentType,
+          documentNumber: expense.documentNumber || expense.expenseNumber,
+          supplierName: expense.supplierOrBeneficiary,
+          supplierTaxId: expense.taxId || '',
+          exemptAmount: Number(exemptAmount.toFixed(2)),
+          nonSubjectAmount: Number(nonSubjectAmount.toFixed(2)),
+          taxableBase: hasVat
+            ? Number((expense.amountUsd - taxAmount).toFixed(2))
+            : 0,
+          taxRatePercent: hasVat ? expense.taxRatePercent || 0 : 0,
+          taxAmount,
+          total: expense.amountUsd,
+          vatWithholding: 0,
+          fiscalCreditEligible: expense.fiscalBookEligible,
+        };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date) || a.documentNumber.localeCompare(b.documentNumber));
+
+    const salesRates = new Map<number, {rate: number; base: number; tax: number}>();
+    let salesExempt = 0;
+    let salesNonSubject = 0;
+    let salesTax = 0;
+    let salesTotal = 0;
+    for (const row of salesRows) {
+      salesExempt += row.exemptAmount;
+      salesNonSubject += row.nonSubjectAmount;
+      salesTax += row.taxAmount;
+      salesTotal += row.total;
+      for (const base of row.taxableBases) {
+        const group = salesRates.get(base.rate) ?? {rate: base.rate, base: 0, tax: 0};
+        group.base += base.base;
+        group.tax += base.tax;
+        salesRates.set(base.rate, group);
+      }
+    }
+
+    const purchaseTotals = purchaseRows.reduce(
+      (totals, row) => ({
+        taxableBase: totals.taxableBase + row.taxableBase,
+        exemptAmount: totals.exemptAmount + row.exemptAmount,
+        nonSubjectAmount: totals.nonSubjectAmount + row.nonSubjectAmount,
+        taxAmount: totals.taxAmount + row.taxAmount,
+        vatWithholding: totals.vatWithholding + row.vatWithholding,
+        total: totals.total + row.total,
+      }),
+      {taxableBase: 0, exemptAmount: 0, nonSubjectAmount: 0, taxAmount: 0, vatWithholding: 0, total: 0}
+    );
+    const activeInvoiceTotal = invoices
+      .filter((invoice) => invoice.status === 'emitida')
+      .reduce((sum, invoice) => sum + invoice.total, 0);
+    const noteEffect = adjustmentNotes.reduce(
+      (sum, note) => sum + (note.type === 'nota_credito' ? -note.total : note.total),
+      0
+    );
+    const expectedSalesTotal = activeInvoiceTotal + noteEffect;
+    const eligibleExpenseTotal = this.getExpenses()
+      .filter((expense) => expense.date.startsWith(monthPrefix) && expense.fiscalBookEligible)
+      .reduce((sum, expense) => sum + expense.amountUsd, 0);
+
+    return {
+      year,
+      month,
+      isClosed: this.isFiscalPeriodClosed(year, month),
+      closure: this.getFiscalPeriodClosure(year, month) || undefined,
+      salesRows,
+      purchaseRows,
+      salesTotals: {
+        taxableBases: [...salesRates.values()].map((group) => ({
+          rate: group.rate,
+          base: Number(group.base.toFixed(2)),
+          tax: Number(group.tax.toFixed(2)),
+        })),
+        exemptAmount: Number(salesExempt.toFixed(2)),
+        nonSubjectAmount: Number(salesNonSubject.toFixed(2)),
+        taxAmount: Number(salesTax.toFixed(2)),
+        total: Number(salesTotal.toFixed(2)),
+      },
+      purchaseTotals: {
+        taxableBase: Number(purchaseTotals.taxableBase.toFixed(2)),
+        exemptAmount: Number(purchaseTotals.exemptAmount.toFixed(2)),
+        nonSubjectAmount: Number(purchaseTotals.nonSubjectAmount.toFixed(2)),
+        taxAmount: Number(purchaseTotals.taxAmount.toFixed(2)),
+        vatWithholding: Number(purchaseTotals.vatWithholding.toFixed(2)),
+        total: Number(purchaseTotals.total.toFixed(2)),
+      },
+      reconciliation: {
+        salesDifference: Number((salesTotal - expectedSalesTotal).toFixed(2)),
+        purchaseDifference: Number((purchaseTotals.total - eligibleExpenseTotal).toFixed(2)),
+      },
+    };
+  }
+
+  public createFiscalPeriodClosure(
+    year: number,
+    month: number,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): FiscalPeriodClosure {
+    if (!Number.isInteger(year) || year < 2000 || !Number.isInteger(month) || month < 1 || month > 12) {
+      throw new Error('Debe indicar un año y mes fiscal válidos.');
+    }
+    const now = new Date();
+    if (year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth() + 1)) {
+      throw new Error('No se puede cerrar un período fiscal futuro.');
+    }
+    this.assertFiscalPeriodOpen(year, month);
+
+    const books = this.getFiscalBooks(year, month);
+    const snapshotHash = createHash('sha256')
+      .update(JSON.stringify({salesRows: books.salesRows, purchaseRows: books.purchaseRows}))
+      .digest('hex');
+    const actor = this.manualOrderActor(actorInput);
+    const closure: FiscalPeriodClosure = {
+      year,
+      month,
+      closedAt: now.toISOString(),
+      closedBy: actor.userName,
+      snapshotHash,
+      salesTotal: books.salesTotals.total,
+      purchaseTotal: books.purchaseTotals.total,
+    };
+    this.state.fiscalPeriodClosures = [closure, ...(this.state.fiscalPeriodClosures || [])];
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'libro_fiscal_cerrado',
+      title: `Período fiscal cerrado: ${year}-${String(month).padStart(2, '0')}`,
+      description: `Ventas $${closure.salesTotal.toFixed(2)}; compras $${closure.purchaseTotal.toFixed(2)}; hash ${snapshotHash}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {year, month, snapshotHash, salesTotal: closure.salesTotal, purchaseTotal: closure.purchaseTotal},
+    });
+    return closure;
   }
 
   // --- COSTING ANALYSIS & INTELLIGENCE ---
@@ -3861,6 +4370,8 @@ export class ErpDatabase {
     if (!this.state.expenses) {
       this.state.expenses = [];
     }
+    const [year, month] = data.date.split('-').map(Number);
+    this.assertFiscalPeriodOpen(year, month);
     const count = this.state.expenses.length + 1;
     const nextNum = 'GTO-2026-00' + (count < 10 ? '0' + count : count);
     const rate = data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
@@ -3884,6 +4395,8 @@ export class ErpDatabase {
     if (!this.state.expenses) return false;
     const idx = this.state.expenses.findIndex(e => e.id === id);
     if (idx === -1) return false;
+    const [year, month] = this.state.expenses[idx].date.split('-').map(Number);
+    this.assertFiscalPeriodOpen(year, month);
     this.state.expenses.splice(idx, 1);
     return true;
   }

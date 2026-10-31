@@ -8,7 +8,9 @@ import {
   Employee,
   Expense,
   ExpenseCategoryConfig,
+  FiscalAdjustmentNote,
   FiscalInvoice,
+  FiscalPeriodClosure,
   FiscalSettings,
   FinishedGood,
   InventoryMovement,
@@ -210,6 +212,7 @@ export function loadRelationalState(): DatabaseState | null {
       id: r['id'],
       businessName: r['business_name'],
       taxId: r['tax_id'],
+      nit: o(r['nit']),
       contactPerson: r['contact_person'],
       phone: r['phone'],
       email: r['email'],
@@ -232,6 +235,9 @@ export function loadRelationalState(): DatabaseState | null {
       customerId: r['customer_id'],
       customerName: r['customer_name'],
       customerTaxId: r['customer_tax_id'],
+      customerNit: o(r['customer_nit']),
+      saleCondition: o(r['sale_condition']),
+      paymentMethod: o(r['payment_method']),
       orderDate: r['order_date'],
       deliveryDate: r['delivery_date'],
       status: r['status'],
@@ -251,6 +257,9 @@ export function loadRelationalState(): DatabaseState | null {
           priceTier: o(item['price_tier']),
           profitMarginPercent: o(item['profit_margin_percent']),
           baseCost: o(item['base_cost']),
+          taxCategory: o(item['tax_category']),
+          taxRatePercent: o(item['tax_rate_percent']),
+          taxAmount: o(item['tax_amount']),
         })),
       subtotal: r['subtotal'],
       taxAmount: r['tax_amount'],
@@ -469,6 +478,8 @@ export function loadRelationalState(): DatabaseState | null {
         nextInvoiceNumber: fiscalRow['next_invoice_number'],
         controlPrefix: fiscalRow['control_prefix'] ?? '',
         nextControlNumber: fiscalRow['next_control_number'] ?? 1,
+        nextCreditNoteNumber: fiscalRow['next_credit_note_number'] ?? 1,
+        nextDebitNoteNumber: fiscalRow['next_debit_note_number'] ?? 1,
         authorizationCode: fiscalRow['authorization_code'],
         authorizationValidUntil: fiscalRow['authorization_valid_until'] ?? '',
         branchName: fiscalRow['branch_name'] ?? '',
@@ -495,6 +506,8 @@ export function loadRelationalState(): DatabaseState | null {
       serie: r['serie'],
       invoiceNumber: r['invoice_number'],
       controlNumber: r['control_number'],
+      saleCondition: r['sale_condition'] ?? 'contado',
+      paymentMethod: r['payment_method'] ?? 'efectivo_bs',
       salesOrderId: o(r['sales_order_id']),
       salesOrderNumber: o(r['sales_order_number']),
       emitterSnapshot: JSON.parse(r['emitter_snapshot']),
@@ -515,6 +528,50 @@ export function loadRelationalState(): DatabaseState | null {
       annulmentReason: o(r['annulment_reason']),
       periodYear: r['period_year'],
       periodMonth: r['period_month'],
+    })
+  );
+
+  const fiscalAdjustmentNotes = (
+    db.prepare('SELECT * FROM fiscal_adjustment_notes ORDER BY issued_at DESC').all() as Row[]
+  ).map(
+    (r): FiscalAdjustmentNote => ({
+      id: r['id'],
+      type: r['note_type'],
+      serie: r['serie'],
+      noteNumber: r['note_number'],
+      controlNumber: r['control_number'],
+      fiscalInvoiceId: r['fiscal_invoice_id'],
+      invoiceNumber: r['invoice_number'],
+      invoiceControlNumber: r['invoice_control_number'],
+      invoiceIssuedAt: r['invoice_issued_at'],
+      emitterSnapshot: JSON.parse(r['emitter_snapshot']),
+      customerSnapshot: JSON.parse(r['customer_snapshot']),
+      reason: r['reason'],
+      reasonDetails: o(r['reason_details']),
+      items: JSON.parse(r['items_json']),
+      subtotal: r['subtotal'],
+      taxAmount: r['tax_amount'],
+      total: r['total'],
+      exchangeRateUsed: r['exchange_rate_used'],
+      issuedAt: r['issued_at'],
+      issuedBy: r['issued_by'],
+      printCount: r['print_count'] ?? 0,
+      periodYear: r['period_year'],
+      periodMonth: r['period_month'],
+    })
+  );
+
+  const fiscalPeriodClosures = (
+    db.prepare('SELECT * FROM fiscal_period_closures ORDER BY year DESC, month DESC').all() as Row[]
+  ).map(
+    (r): FiscalPeriodClosure => ({
+      year: r['year'],
+      month: r['month'],
+      closedAt: r['closed_at'],
+      closedBy: r['closed_by'],
+      snapshotHash: r['snapshot_hash'],
+      salesTotal: r['sales_total'],
+      purchaseTotal: r['purchase_total'],
     })
   );
 
@@ -582,6 +639,8 @@ export function loadRelationalState(): DatabaseState | null {
     expenseCategories,
     fiscalSettings,
     fiscalInvoices,
+    fiscalAdjustmentNotes,
+    fiscalPeriodClosures,
     exchangeRates,
     auditLogs,
   };
@@ -602,6 +661,8 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM audit_logs;
       DELETE FROM exchange_rate_history;
       DELETE FROM exchange_rates;
+      DELETE FROM fiscal_adjustment_notes;
+      DELETE FROM fiscal_period_closures;
       DELETE FROM fiscal_invoices;
       DELETE FROM fiscal_settings;
       DELETE FROM expense_categories;
@@ -799,15 +860,16 @@ export function saveRelationalState(state: DatabaseState): void {
 
     const insertCustomer = db.prepare(`
       INSERT INTO customers (
-        id, business_name, tax_id, contact_person, phone, email,
+        id, business_name, tax_id, nit, contact_person, phone, email,
         address, client_type, credit_limit, payment_terms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const c of snapshot.customers) {
       insertCustomer.run(
         c.id,
         c.businessName,
         c.taxId,
+        v(c.nit),
         c.contactPerson,
         c.phone,
         c.email,
@@ -821,18 +883,20 @@ export function saveRelationalState(state: DatabaseState): void {
     const insertSalesOrder = db.prepare(`
       INSERT INTO sales_orders (
         id, order_number, customer_id, customer_name, customer_tax_id,
-        order_date, delivery_date, status, exchange_rate_used, subtotal,
+        customer_nit, sale_condition, payment_method, order_date, delivery_date,
+        status, exchange_rate_used, subtotal,
         tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
         has_delivery_note, delivery_note_number, production_order_id, notes,
         created_by, collection_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertSalesItem = db.prepare(`
       INSERT INTO sales_order_items (
         order_id, finished_good_id, flavor, presentation,
         presentation_label, quantity, unit_price, subtotal, unit_price_bs,
-        subtotal_bs, price_tier, profit_margin_percent, base_cost
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        subtotal_bs, price_tier, profit_margin_percent, base_cost,
+        tax_category, tax_rate_percent, tax_amount
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const order of snapshot.salesOrders) {
       insertSalesOrder.run(
@@ -841,6 +905,9 @@ export function saveRelationalState(state: DatabaseState): void {
         order.customerId,
         order.customerName,
         order.customerTaxId,
+        v(order.customerNit),
+        v(order.saleCondition),
+        v(order.paymentMethod),
         order.orderDate,
         order.deliveryDate,
         order.status,
@@ -872,7 +939,10 @@ export function saveRelationalState(state: DatabaseState): void {
           v(item.subtotalBs),
           v(item.priceTier),
           v(item.profitMarginPercent),
-          v(item.baseCost)
+          v(item.baseCost),
+          v(item.taxCategory),
+          v(item.taxRatePercent),
+          v(item.taxAmount)
         );
       }
     }
@@ -1061,11 +1131,12 @@ export function saveRelationalState(state: DatabaseState): void {
         company_phone, company_email, economic_activity, tax_regime,
         tax_rate_percent, invoice_prefix, invoice_serie, next_invoice_number,
         control_prefix, next_control_number, authorization_code,
+        next_credit_note_number, next_debit_note_number,
         authorization_valid_until, branch_name, branch_address,
         vat_withholding_agent, vat_withholding_percent,
         islr_withholding_agent, islr_withholding_percent, special_taxpayer,
         books_format, historical_orders_treatment, print_notes
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       b(snapshot.fiscalSettings.enabled),
       snapshot.fiscalSettings.companyName,
@@ -1082,6 +1153,8 @@ export function saveRelationalState(state: DatabaseState): void {
       snapshot.fiscalSettings.controlPrefix,
       snapshot.fiscalSettings.nextControlNumber,
       snapshot.fiscalSettings.authorizationCode,
+      snapshot.fiscalSettings.nextCreditNoteNumber ?? 1,
+      snapshot.fiscalSettings.nextDebitNoteNumber ?? 1,
       snapshot.fiscalSettings.authorizationValidUntil,
       snapshot.fiscalSettings.branchName,
       snapshot.fiscalSettings.branchAddress,
@@ -1098,11 +1171,12 @@ export function saveRelationalState(state: DatabaseState): void {
     const insertFiscalInvoice = db.prepare(`
       INSERT INTO fiscal_invoices (
         id, serie, invoice_number, control_number, sales_order_id,
+        sale_condition, payment_method,
         sales_order_number, emitter_snapshot, customer_snapshot, items_json,
         subtotal, tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
         exchange_rate_used, status, issued_at, annulled_at, annulled_by,
         annulment_reason, print_count, period_year, period_month
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const invoice of snapshot.fiscalInvoices || []) {
       insertFiscalInvoice.run(
@@ -1111,6 +1185,8 @@ export function saveRelationalState(state: DatabaseState): void {
         invoice.invoiceNumber,
         invoice.controlNumber,
         v(invoice.salesOrderId),
+        invoice.saleCondition,
+        invoice.paymentMethod,
         v(invoice.salesOrderNumber),
         JSON.stringify(invoice.emitterSnapshot),
         JSON.stringify(invoice.customerSnapshot),
@@ -1130,6 +1206,60 @@ export function saveRelationalState(state: DatabaseState): void {
         invoice.printCount ?? 0,
         invoice.periodYear,
         invoice.periodMonth
+      );
+    }
+
+    const insertFiscalNote = db.prepare(`
+      INSERT INTO fiscal_adjustment_notes (
+        id, note_type, serie, note_number, control_number, fiscal_invoice_id,
+        invoice_number, invoice_control_number, invoice_issued_at, emitter_snapshot,
+        customer_snapshot,
+        reason, reason_details, items_json, subtotal, tax_amount, total,
+        exchange_rate_used, issued_at, issued_by, print_count, period_year, period_month
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const note of snapshot.fiscalAdjustmentNotes || []) {
+      insertFiscalNote.run(
+        note.id,
+        note.type,
+        note.serie,
+        note.noteNumber,
+        note.controlNumber,
+        note.fiscalInvoiceId,
+        note.invoiceNumber,
+        note.invoiceControlNumber,
+        note.invoiceIssuedAt,
+        JSON.stringify(note.emitterSnapshot),
+        JSON.stringify(note.customerSnapshot),
+        note.reason,
+        v(note.reasonDetails),
+        JSON.stringify(note.items),
+        note.subtotal,
+        note.taxAmount,
+        note.total,
+        note.exchangeRateUsed,
+        note.issuedAt,
+        note.issuedBy,
+        note.printCount,
+        note.periodYear,
+        note.periodMonth
+      );
+    }
+
+    const insertFiscalClosure = db.prepare(`
+      INSERT INTO fiscal_period_closures (
+        year, month, closed_at, closed_by, snapshot_hash, sales_total, purchase_total
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const closure of snapshot.fiscalPeriodClosures || []) {
+      insertFiscalClosure.run(
+        closure.year,
+        closure.month,
+        closure.closedAt,
+        closure.closedBy,
+        closure.snapshotHash,
+        closure.salesTotal,
+        closure.purchaseTotal
       );
     }
 

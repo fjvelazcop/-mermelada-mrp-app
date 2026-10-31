@@ -1182,4 +1182,236 @@ describe('mutating endpoints', () => {
     expect(response.status).toBe(200);
     expect(typeof body['currentUsd']).toBe('number');
   });
+
+  it('issues adjustment notes, reports fiscal books and locks a closed period', async () => {
+    const fiscalResponse = await jsonRequest('/api/fiscal-settings', 'GET');
+    const fiscal = fiscalResponse.body as {
+      taxRatePercent: number;
+      nextCreditNoteNumber: number;
+      nextDebitNoteNumber: number;
+      nextControlNumber: number;
+    };
+    const customers = (await (
+      await fetch(`${baseUrl}/api/sales/customers`)
+    ).json()) as {
+      id: string;
+      businessName: string;
+      taxId: string;
+    }[];
+    const goods = (await (
+      await fetch(`${baseUrl}/api/inventory/finished-goods`)
+    ).json()) as {
+      id: string;
+      flavor: string;
+      presentation: string;
+      presentationLabel: string;
+    }[];
+    const customer = customers[0];
+    const good = goods[0];
+    const subtotal = 20.25;
+    const taxAmount = Number(
+      ((subtotal * fiscal.taxRatePercent) / 100).toFixed(2)
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    const orderPayload = {
+      customerId: customer.id,
+      customerName: customer.businessName,
+      customerTaxId: customer.taxId,
+      customerNit: '123456789',
+      saleCondition: 'contado',
+      paymentMethod: 'efectivo_bs',
+      orderDate: today,
+      deliveryDate: today,
+      status: 'pendiente',
+      items: [
+        {
+          finishedGoodId: good.id,
+          flavor: good.flavor,
+          presentation: good.presentation,
+          presentationLabel: good.presentationLabel,
+          quantity: 1,
+          unitPrice: subtotal,
+          subtotal,
+          taxRatePercent: fiscal.taxRatePercent,
+        },
+      ],
+      subtotal,
+      taxAmount,
+      total: Number((subtotal + taxAmount).toFixed(2)),
+    };
+    const order = await jsonRequest('/api/sales/orders', 'POST', orderPayload);
+    expect(order.response.status).toBe(201);
+
+    const invoices = (await (
+      await fetch(`${baseUrl}/api/fiscal-invoices`)
+    ).json()) as {
+      id: string;
+      salesOrderId: string;
+      issuedAt: string;
+      periodYear: number;
+      periodMonth: number;
+      saleCondition: string;
+      paymentMethod: string;
+      customerSnapshot: { nit?: string };
+      items: { subtotal: number; taxRatePercent: number }[];
+    }[];
+    const invoice = invoices.find(
+      (candidate) => candidate.salesOrderId === order.body['id']
+    );
+    expect(invoice).toMatchObject({
+      saleCondition: 'contado',
+      paymentMethod: 'efectivo_bs',
+      customerSnapshot: { nit: '123456789' },
+    });
+    expect(invoice?.items[0]).toMatchObject({
+      subtotal,
+      taxRatePercent: fiscal.taxRatePercent,
+    });
+
+    const adjustmentItem = (amount: number) => ({
+      description: 'Ajuste fiscal de prueba',
+      subtotal: amount,
+      taxCategory: 'gravado',
+      taxRatePercent: fiscal.taxRatePercent,
+    });
+    const credit = await jsonRequest('/api/fiscal-adjustment-notes', 'POST', {
+      type: 'nota_credito',
+      fiscalInvoiceId: invoice!.id,
+      reason: 'descuento',
+      items: [adjustmentItem(10)],
+    });
+    expect(credit.response.status).toBe(201);
+    expect(credit.body['serie']).toBe('NC');
+    expect(credit.body['noteNumber']).toBe(fiscal.nextCreditNoteNumber);
+
+    const debit = await jsonRequest('/api/fiscal-adjustment-notes', 'POST', {
+      type: 'nota_debito',
+      fiscalInvoiceId: invoice!.id,
+      reason: 'error_precio',
+      items: [adjustmentItem(1)],
+    });
+    expect(debit.response.status).toBe(201);
+    expect(debit.body['serie']).toBe('ND');
+    expect(debit.body['noteNumber']).toBe(fiscal.nextDebitNoteNumber);
+    expect(debit.body['controlNumber']).toBe(
+      (credit.body['controlNumber'] as number) + 1
+    );
+
+    const overCredit = await jsonRequest(
+      '/api/fiscal-adjustment-notes',
+      'POST',
+      {
+        type: 'nota_credito',
+        fiscalInvoiceId: invoice!.id,
+        reason: 'devolucion',
+        items: [adjustmentItem(10.26)],
+      }
+    );
+    expect(overCredit.response.status).toBe(400);
+
+    const printed = await jsonRequest(
+      `/api/fiscal-adjustment-notes/${credit.body['id']}/print`,
+      'POST'
+    );
+    expect(printed.response.status).toBe(200);
+    expect(printed.body['isDuplicate']).toBe(false);
+    const reprinted = await jsonRequest(
+      `/api/fiscal-adjustment-notes/${credit.body['id']}/print`,
+      'POST'
+    );
+    expect(reprinted.response.status).toBe(200);
+    expect(reprinted.body['isDuplicate']).toBe(true);
+    const persistedNote = getDb()
+      .prepare(
+        'SELECT note_number, print_count FROM fiscal_adjustment_notes WHERE id = ?'
+      )
+      .get(credit.body['id']) as {
+      note_number: number;
+      print_count: number;
+    };
+    expect(persistedNote).toMatchObject({
+      note_number: fiscal.nextCreditNoteNumber,
+      print_count: 2,
+    });
+
+    const noteList = await jsonRequest(
+      `/api/fiscal-adjustment-notes?year=${invoice!.periodYear}&month=${invoice!.periodMonth}`,
+      'GET'
+    );
+    expect(noteList.response.status).toBe(200);
+    expect((noteList.body as unknown[]).length).toBeGreaterThanOrEqual(2);
+
+    const expense = await jsonRequest('/api/expenses', 'POST', {
+      date: invoice!.issuedAt.slice(0, 10),
+      concept: 'Gasto incluido en el libro fiscal',
+      category: 'otros',
+      categoryLabel: 'Otros',
+      amountUsd: 12,
+      exchangeRateUsed: 50,
+      supplierOrBeneficiary: 'Proveedor de prueba',
+      documentType: 'recibo_pago',
+      paymentMethod: 'efectivo_usd',
+      registeredBy: 'Test',
+      taxCategory: 'no_sujeto',
+      fiscalBookEligible: true,
+    });
+    expect(expense.response.status).toBe(201);
+
+    const period = `${invoice!.periodYear}/${invoice!.periodMonth}`;
+    const books = await jsonRequest(`/api/fiscal-books/${period}`, 'GET');
+    expect(books.response.status).toBe(200);
+    const salesRows = books.body['salesRows'] as { id: string }[];
+    expect(salesRows.some((row) => row.id === invoice!.id)).toBe(true);
+    expect(salesRows.some((row) => row.id === credit.body['id'])).toBe(true);
+    expect(salesRows.some((row) => row.id === debit.body['id'])).toBe(true);
+    expect(books.body['purchaseRows']).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: expense.body['id'] })])
+    );
+    expect(books.body['reconciliation']).toMatchObject({
+      salesDifference: 0,
+      purchaseDifference: 0,
+    });
+
+    const close = await jsonRequest(`/api/fiscal-books/${period}/close`, 'POST');
+    expect(close.response.status).toBe(201);
+    expect(close.body['snapshotHash']).toMatch(/^[a-f0-9]{64}$/);
+    const persistedClosure = getDb()
+      .prepare(
+        'SELECT snapshot_hash FROM fiscal_period_closures WHERE year = ? AND month = ?'
+      )
+      .get(invoice!.periodYear, invoice!.periodMonth) as {
+      snapshot_hash: string;
+    };
+    expect(persistedClosure.snapshot_hash).toBe(close.body['snapshotHash']);
+
+    const closedBooks = await jsonRequest(`/api/fiscal-books/${period}`, 'GET');
+    expect(closedBooks.body['isClosed']).toBe(true);
+    expect(closedBooks.body['closure']).toMatchObject({
+      snapshotHash: close.body['snapshotHash'],
+    });
+
+    const rejectedExpenseDelete = await jsonRequest(
+      `/api/expenses/${expense.body['id']}`,
+      'DELETE'
+    );
+    expect(rejectedExpenseDelete.response.status).toBe(400);
+    const rejectedAdjustment = await jsonRequest(
+      '/api/fiscal-adjustment-notes',
+      'POST',
+      {
+        type: 'nota_debito',
+        fiscalInvoiceId: invoice!.id,
+        reason: 'otro',
+        reasonDetails: 'Prueba posterior al cierre',
+        items: [adjustmentItem(1)],
+      }
+    );
+    expect(rejectedAdjustment.response.status).toBe(400);
+    const rejectedInvoice = await jsonRequest(
+      '/api/sales/orders',
+      'POST',
+      orderPayload
+    );
+    expect(rejectedInvoice.response.status).toBe(400);
+  });
 });

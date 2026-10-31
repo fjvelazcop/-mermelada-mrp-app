@@ -211,6 +211,7 @@ function migrate(db: SqliteDatabase): void {
       id TEXT PRIMARY KEY,
       business_name TEXT NOT NULL,
       tax_id TEXT NOT NULL,
+      nit TEXT,
       contact_person TEXT NOT NULL,
       phone TEXT NOT NULL,
       email TEXT NOT NULL,
@@ -226,6 +227,9 @@ function migrate(db: SqliteDatabase): void {
       customer_id TEXT NOT NULL,
       customer_name TEXT NOT NULL,
       customer_tax_id TEXT NOT NULL,
+      customer_nit TEXT,
+      sale_condition TEXT,
+      payment_method TEXT,
       order_date TEXT NOT NULL,
       delivery_date TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -258,7 +262,10 @@ function migrate(db: SqliteDatabase): void {
       subtotal_bs REAL,
       price_tier TEXT,
       profit_margin_percent REAL,
-      base_cost REAL
+      base_cost REAL,
+      tax_category TEXT,
+      tax_rate_percent REAL,
+      tax_amount REAL
     );
 
     CREATE TABLE IF NOT EXISTS delivery_notes (
@@ -394,6 +401,8 @@ function migrate(db: SqliteDatabase): void {
       next_invoice_number INTEGER NOT NULL,
       control_prefix TEXT NOT NULL DEFAULT '',
       next_control_number INTEGER NOT NULL DEFAULT 1,
+      next_credit_note_number INTEGER NOT NULL DEFAULT 1,
+      next_debit_note_number INTEGER NOT NULL DEFAULT 1,
       authorization_code TEXT NOT NULL,
       authorization_valid_until TEXT NOT NULL DEFAULT '',
       branch_name TEXT NOT NULL DEFAULT '',
@@ -413,6 +422,8 @@ function migrate(db: SqliteDatabase): void {
       serie TEXT NOT NULL DEFAULT 'A',
       invoice_number INTEGER NOT NULL,
       control_number INTEGER NOT NULL DEFAULT 1,
+      sale_condition TEXT NOT NULL DEFAULT 'contado',
+      payment_method TEXT NOT NULL DEFAULT 'efectivo_bs',
       sales_order_id TEXT,
       sales_order_number TEXT,
       emitter_snapshot TEXT NOT NULL,
@@ -435,6 +446,45 @@ function migrate(db: SqliteDatabase): void {
       period_month INTEGER NOT NULL,
       UNIQUE (serie, invoice_number),
       UNIQUE (serie, control_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS fiscal_adjustment_notes (
+      id TEXT PRIMARY KEY,
+      note_type TEXT NOT NULL,
+      serie TEXT NOT NULL,
+      note_number INTEGER NOT NULL,
+      control_number INTEGER NOT NULL,
+      fiscal_invoice_id TEXT NOT NULL,
+      invoice_number TEXT NOT NULL,
+      invoice_control_number INTEGER NOT NULL,
+      invoice_issued_at TEXT NOT NULL,
+      emitter_snapshot TEXT NOT NULL,
+      customer_snapshot TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      reason_details TEXT,
+      items_json TEXT NOT NULL,
+      subtotal REAL NOT NULL,
+      tax_amount REAL NOT NULL,
+      total REAL NOT NULL,
+      exchange_rate_used REAL NOT NULL,
+      issued_at TEXT NOT NULL,
+      issued_by TEXT NOT NULL,
+      print_count INTEGER NOT NULL DEFAULT 0,
+      period_year INTEGER NOT NULL,
+      period_month INTEGER NOT NULL,
+      UNIQUE (note_type, serie, note_number),
+      UNIQUE (control_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS fiscal_period_closures (
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      closed_at TEXT NOT NULL,
+      closed_by TEXT NOT NULL,
+      snapshot_hash TEXT NOT NULL,
+      sales_total REAL NOT NULL,
+      purchase_total REAL NOT NULL,
+      PRIMARY KEY (year, month)
     );
 
     CREATE TABLE IF NOT EXISTS exchange_rates (
@@ -622,6 +672,13 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'expenses', 'issuing_bank_name', 'TEXT');
   ensureColumn(db, 'sales_orders', 'collection_json', 'TEXT');
   ensureColumn(db, 'sales_orders', 'created_by', 'TEXT');
+  ensureColumn(db, 'customers', 'nit', 'TEXT');
+  ensureColumn(db, 'sales_orders', 'customer_nit', 'TEXT');
+  ensureColumn(db, 'sales_orders', 'sale_condition', 'TEXT');
+  ensureColumn(db, 'sales_orders', 'payment_method', 'TEXT');
+  ensureColumn(db, 'sales_order_items', 'tax_category', 'TEXT');
+  ensureColumn(db, 'sales_order_items', 'tax_rate_percent', 'REAL');
+  ensureColumn(db, 'sales_order_items', 'tax_amount', 'REAL');
   ensureColumn(db, 'fiscal_settings', 'company_phone', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'fiscal_settings', 'company_email', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'fiscal_settings', 'economic_activity', "TEXT NOT NULL DEFAULT ''");
@@ -629,6 +686,8 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'fiscal_settings', 'invoice_serie', "TEXT NOT NULL DEFAULT 'A'");
   ensureColumn(db, 'fiscal_settings', 'control_prefix', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'fiscal_settings', 'next_control_number', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'fiscal_settings', 'next_credit_note_number', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'fiscal_settings', 'next_debit_note_number', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'fiscal_settings', 'authorization_valid_until', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'fiscal_settings', 'branch_name', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'fiscal_settings', 'branch_address', "TEXT NOT NULL DEFAULT ''");
@@ -640,6 +699,8 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'fiscal_settings', 'books_format', "TEXT NOT NULL DEFAULT 'xlsx'");
   ensureColumn(db, 'fiscal_settings', 'historical_orders_treatment', "TEXT NOT NULL DEFAULT 'revisar'");
   ensureColumn(db, 'fiscal_invoices', 'print_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_invoices', 'sale_condition', "TEXT NOT NULL DEFAULT 'contado'");
+  ensureColumn(db, 'fiscal_invoices', 'payment_method', "TEXT NOT NULL DEFAULT 'efectivo_bs'");
 
   const row = db
     .prepare('SELECT MAX(version) AS version FROM schema_migrations')

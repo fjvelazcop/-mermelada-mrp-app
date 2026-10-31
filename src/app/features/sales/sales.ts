@@ -2,7 +2,7 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {DeliveryNote, FinishedGood, PriceTierType, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
+import {DeliveryNote, FiscalPaymentMethod, FiscalSaleCondition, FinishedGood, PriceTierType, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {VENEZUELAN_BANKS, bankLabel, findBank} from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel, exportToPdf, downloadDeliveryNotePdf} from '../../core/utils/export.utils';
@@ -55,6 +55,7 @@ export class SalesComponent {
   public newCustomerForm = new FormGroup({
     businessName: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
     taxId: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
+    nit: new FormControl<string>('', {nonNullable: true}),
     contactPerson: new FormControl<string>('', {nonNullable: true}),
     phone: new FormControl<string>('', {nonNullable: true}),
     email: new FormControl<string>('', {nonNullable: true}),
@@ -71,6 +72,8 @@ export class SalesComponent {
     unitPrice: new FormControl<number>(1.65, {nonNullable: true, validators: [Validators.required, Validators.min(0.01)]}),
     taxCategory: new FormControl<SalesTaxCategory>('gravado', {nonNullable: true}),
     taxRatePercent: new FormControl<number>(16, {nonNullable: true, validators: [Validators.min(0), Validators.max(100)]}),
+    saleCondition: new FormControl<FiscalSaleCondition>('contado', {nonNullable: true}),
+    paymentMethod: new FormControl<FiscalPaymentMethod>('transferencia_bancaria', {nonNullable: true}),
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     deliveryDate: new FormControl<string>(new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10), {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
@@ -229,6 +232,9 @@ export class SalesComponent {
     this.currentUnitPrice.set(initialPrice);
     this.currentExchangeRate.set(rate);
 
+    const initialCustomer = custs[0];
+    const initialSaleCondition: FiscalSaleCondition =
+      initialCustomer?.paymentTerms.toLowerCase().includes('contado') ? 'contado' : 'credito';
     this.newOrderForm.patchValue({
       customerId: custs[0]?.id || '',
       finishedGoodId: initialFg?.id || '',
@@ -237,9 +243,33 @@ export class SalesComponent {
       exchangeRateUsed: rate,
       taxCategory: 'gravado',
       taxRatePercent: this.fiscalSettings()?.taxRatePercent ?? 16,
+      saleCondition: initialSaleCondition,
+      paymentMethod: initialSaleCondition === 'credito' ? 'credito' : 'transferencia_bancaria',
       notes: '',
     });
     this.isNewOrderModalOpen.set(true);
+  }
+
+  public onCustomerSelectionChange(customerId: string): void {
+    const customer = this.customers().find((entry) => entry.id === customerId);
+    const saleCondition: FiscalSaleCondition =
+      customer?.paymentTerms.toLowerCase().includes('contado') ? 'contado' : 'credito';
+    this.newOrderForm.patchValue({
+      saleCondition,
+      paymentMethod: saleCondition === 'credito' ? 'credito' : 'transferencia_bancaria',
+    });
+  }
+
+  public onSaleConditionChange(): void {
+    const saleCondition = this.newOrderForm.controls.saleCondition.value;
+    const currentMethod = this.newOrderForm.controls.paymentMethod.value;
+    this.newOrderForm.controls.paymentMethod.setValue(
+      saleCondition === 'credito'
+        ? 'credito'
+        : currentMethod === 'credito'
+          ? 'transferencia_bancaria'
+          : currentMethod
+    );
   }
 
   public selectProduct(fg: FinishedGood) {
@@ -358,6 +388,9 @@ export class SalesComponent {
       customerId: cust.id,
       customerName: cust.businessName,
       customerTaxId: cust.taxId,
+      customerNit: cust.nit,
+      saleCondition: v.saleCondition,
+      paymentMethod: v.paymentMethod,
       orderDate: new Date().toISOString().slice(0, 10),
       deliveryDate: v.deliveryDate,
       status: fg.availableUnits >= quantity ? 'listo_despacho' : 'pendiente',
@@ -466,6 +499,7 @@ export class SalesComponent {
     this.newCustomerForm.reset({
       businessName: '',
       taxId: 'J-',
+      nit: '',
       contactPerson: '',
       phone: '',
       email: '',
@@ -487,6 +521,7 @@ export class SalesComponent {
     await this.api.addCustomer({
       businessName: v.businessName,
       taxId: v.taxId,
+      nit: v.nit.trim() || undefined,
       contactPerson: v.contactPerson,
       phone: v.phone,
       email: v.email,

@@ -72,6 +72,8 @@ import {
   expenseSchema,
   finishedGoodUpdateSchema,
   fiscalSettingsSchema,
+  fiscalAdjustmentNoteSchema,
+  fiscalPeriodParamsSchema,
   fiscalInvoiceAnnulmentSchema,
   idParamsSchema,
   inventoryMovementSchema,
@@ -1099,6 +1101,63 @@ export function createApiApp(): express.Express {
         auditActor(req)
       );
       res.json(invoice);
+    })
+  );
+
+  app.get(
+    '/api/fiscal-adjustment-notes',
+    query((req, res) => {
+      const year = req.query['year'] ? Number(req.query['year']) : undefined;
+      const month = req.query['month'] ? Number(req.query['month']) : undefined;
+      res.json(dbInstance.getFiscalAdjustmentNotes(year, month));
+    })
+  );
+
+  app.post(
+    '/api/fiscal-adjustment-notes',
+    requireAdmin,
+    validateBody(fiscalAdjustmentNoteSchema),
+    mutation((req, res) => {
+      const note = dbInstance.createFiscalAdjustmentNote(req.body, auditActor(req));
+      res.status(201).json(note);
+    })
+  );
+
+  app.post(
+    '/api/fiscal-adjustment-notes/:id/print',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const result = dbInstance.recordFiscalAdjustmentNotePrint(
+        routeId(req),
+        auditActor(req)
+      );
+      if (!result) throw new ApiError(404, 'Nota fiscal no encontrada.');
+      res.json(result);
+    })
+  );
+
+  app.get(
+    '/api/fiscal-books/:year/:month',
+    requireAdmin,
+    validateParams(fiscalPeriodParamsSchema),
+    query((req, res) => {
+      res.json(
+        dbInstance.getFiscalBooks(Number(req.params['year']), Number(req.params['month']))
+      );
+    })
+  );
+
+  app.post(
+    '/api/fiscal-books/:year/:month/close',
+    requireAdmin,
+    validateParams(fiscalPeriodParamsSchema),
+    mutation((req, res) => {
+      const closure = dbInstance.createFiscalPeriodClosure(
+        Number(req.params['year']),
+        Number(req.params['month']),
+        auditActor(req)
+      );
+      res.status(201).json(closure);
     })
   );
 

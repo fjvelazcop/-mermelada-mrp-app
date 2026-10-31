@@ -205,6 +205,8 @@ export class DatabaseExpertAgent {
       nextInvoiceNumber: 104,
       controlPrefix: 'CTRL-',
       nextControlNumber: 104,
+      nextCreditNoteNumber: 1,
+      nextDebitNoteNumber: 1,
       authorizationCode: 'SENIAT-PROV-2026-00918',
       authorizationValidUntil: '',
       branchName: 'Sede principal',
