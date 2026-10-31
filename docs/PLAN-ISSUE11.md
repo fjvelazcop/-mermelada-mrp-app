@@ -1,7 +1,7 @@
 # Plan Issue #11 — SENIAT / Facturación Fiscal Venezolana
 
 **Fecha:** 31/10/2026
-**Estado actual:** Emisión automática de facturas, persistencia, anulación auditada y pantalla de consulta/impresión implementadas. La impresión marca duplicados y se audita. La solución aún no está validada por un contador ni debe tratarse como autorización del SENIAT.
+**Estado actual:** Emisión, notas de crédito/débito y libros mensuales de ventas/compras con cierre y exportación auditada implementados. Se completaron las validaciones técnicas previas a emitir. La solución aún requiere validación contable y no implica autorización del SENIAT.
 **Vigencia normativa:** SNAT/2011/0071 vence el **18/04/2027**; nuevo régimen SNAT/2026/00093 entra en vigor el **19/04/2027**.
 
 ---
@@ -51,27 +51,27 @@
 | 3.2 | **Número de control consecutivo e irrepetible**, independiente del número de factura | ✅ Persistido con restricción única por serie |
 | 3.2 | Fecha y hora de emisión | ✅ Incluidas en la factura |
 | 3.2 | Nombre/razón social y RIF del emisor | ✅ Copiados al snapshot |
-| 3.2 | Nombre/razón social y RIF del adquirente; NIT cuando posea | ⚠️ Razón social y RIF copiados; NIT aún no modelado |
+| 3.2 | Nombre/razón social y RIF del adquirente; NIT cuando posea | ✅ Tomados de la ficha vigente y congelados en el snapshot; NIT opcional |
 | 3.2 | Descripción de bienes/servicios, cantidad, precio unitario y monto total | ✅ Tomados del pedido |
 | 3.2 | **IVA discriminado por alícuota, separado del precio** | ✅ Por línea admite varias alícuotas y tratamientos gravado/exento/no sujeto; redondeo por línea y desglose en consulta/impresión. Las tasas y leyendas deben validarse con un contador |
-| 3.2 | Total en letras y en números | ⬜ Pendiente |
-| 3.2 | Condición de venta (contado/crédito) y forma de pago | ⬜ Pendiente |
+| 3.2 | Total en letras y en números | ✅ Total numérico y en letras en la representación imprimible |
+| 3.2 | Condición de venta (contado/crédito) y forma de pago | ✅ Capturados en el pedido y guardados en la factura |
 | 3.2 | Leyendas obligatorias: "sin derecho a crédito fiscal", régimen aplicable, etc. | ⚠️ Notas configurables; validar y completar leyendas con contador |
 | 3.2 | **Anulación con motivo, usuario, fecha/hora y trazabilidad; el número no se reutiliza** | ✅ Anulación restringida a admin, auditada; números conservados |
 | 3.2 | **Reimpresión marcada como DUPLICADO** | ✅ Contador persistente, marca de copia y auditoría |
 | 3.2 | PDF/representación gráfica con todos los requisitos y sin datos truncados | ⚠️ Vista imprimible disponible; faltan datos y validación legal |
-| 3.2 | **Registro inmutable: una factura emitida no se edita ni se elimina; se corrige con nota de crédito/débito** | ⚠️ No hay edición/eliminación; notas de crédito/débito aún pendientes |
-| 3.4 | Libro de Ventas mensual: fecha, número de factura, número de control, RIF y nombre del cliente, monto exento, base imponible por alícuota, IVA, total, operaciones a crédito, notas de crédito/débito y retenciones recibidas | ❌ No existe |
-| 3.4 | Libro de Compras mensual: fecha, número de factura, número de control, RIF y nombre del proveedor, monto exento, base imponible, IVA, total, retención de IVA practicada y condición de crédito fiscal | ⚠️ Base parcial (gastos tienen RIF, documento, alícuota, IVA y `fiscalBookEligible`, pero no hay libro ni cierre) |
+| 3.2 | **Registro inmutable: una factura emitida no se edita ni se elimina; se corrige con nota de crédito/débito** | ✅ Notas de crédito/débito vinculadas, con consecutivos propios, tope acreditable e impresión auditada |
+| 3.4 | Libro de Ventas mensual: fecha, número de factura, número de control, RIF y nombre del cliente, monto exento, base imponible por alícuota, IVA, total, operaciones a crédito, notas de crédito/débito y retenciones recibidas | ⚠️ Reporte mensual y CSV; retenciones recibidas pendientes de confirmar según régimen |
+| 3.4 | Libro de Compras mensual: fecha, número de factura, número de control, RIF y nombre del proveedor, monto exento, base imponible, IVA, total, retención de IVA practicada y condición de crédito fiscal | ⚠️ Reporte y CSV con gastos elegibles y conciliación; retenciones practicadas pendientes según régimen |
 | 3.4 | Libro Diario: asientos cronológicos con cuenta, débito, crédito y referencia al documento | ❌ No existe |
 | 3.4 | Libro Mayor: movimientos y saldo por cuenta | ❌ No existe |
 | 3.4 | Libro de Inventarios y Balances: inventario inicial, movimientos, inventario final y balances | ⚠️ Base parcial |
 | 3.4 | Balance General / Estado de Resultados | ❌ No existe |
 | 3.6 | Facturación digital: generación en formato/estructura exigida (XML/JSON), firma electrónica/sellado, transmisión al SENIAT, manejo de acuses, modo contingencia, adaptación a SNAT/2026/00093 | ❌ No existe |
-| 3.7 | Auditoría inmutable de emisión, anulación, reimpresión y cambio de configuración fiscal | ⚠️ Emisión, anulación e impresión registradas; validar auditoría/cambio de configuración |
-| 3.7 | Roles y permisos: emisión, anulación, cierre de período, configuración fiscal | ⚠️ Venta según permiso de ventas, anulación admin y reimpresión con permiso de exportar; falta cierre |
-| 3.7 | Validaciones de RIF y de datos obligatorios antes de emitir | ⚠️ RIF y configuración base validados; faltan campos y escenarios fiscales |
-| 3.7 | Multi-moneda con tasa BCV registrada por operación | ✅ Base (`exchangeRateUsed`) |
+| 3.7 | Auditoría inmutable de emisión, anulación, reimpresión y cambio de configuración fiscal | ⚠️ Emisión, anulación, impresión, exportación y cierre auditados; los cambios de configuración fiscal aún no generan evento específico |
+| 3.7 | Roles y permisos: emisión, anulación, cierre de período, configuración fiscal | ✅ Emisión según permiso de ventas; anulación, notas y libros restringidos a admin |
+| 3.7 | Validaciones de RIF y de datos obligatorios antes de emitir | ✅ RIF emisor/cliente, coincidencia con ficha, configuración, alícuota, tasa positiva y consecutivos disponibles |
+| 3.7 | Multi-moneda con tasa BCV registrada por operación | ✅ USD como moneda operativa; equivalente Bs. calculado en servidor con tasa positiva conservada por pedido |
 | 3.7 | Evaluación de IGTF en pagos en divisas, si aplica | ⬜ Pendiente |
 
 Estados: ✅ = implementado · ⚠️ = parcial · ❌ = faltante.
@@ -82,8 +82,8 @@ Estados: ✅ = implementado · ⚠️ = parcial · ❌ = faltante.
 
 | Libro / registro | Base legal | Estado | Brecha principal |
 |---|---|---|---|
-| Libro de Ventas | Ley IVA art. 56 y Reglamento | ❌ No existe | Entidad de factura fiscal + agregación mensual + export |
-| Libro de Compras | Ley IVA art. 56 y Reglamento | ⚠️ Base parcial | Gastos ya tienen RIF, documento, alícuota, IVA y `fiscalBookEligible`, pero no hay libro ni cierre |
+| Libro de Ventas | Ley IVA art. 56 y Reglamento | ✅ Reporte mensual, CSV, conciliación y cierre | Validar formato y campos con contador |
+| Libro de Compras | Ley IVA art. 56 y Reglamento | ✅ Reporte mensual basado en gastos elegibles, CSV, conciliación y cierre | Retenciones y requisitos de crédito fiscal dependen de validación contable |
 | Libro Diario | Código de Comercio art. 32 | ❌ No existe | Plan de cuentas y asientos contables |
 | Libro Mayor | Código de Comercio art. 32 | ❌ No existe | Derivación desde el Diario |
 | Libro de Inventarios y Balances | Código de Comercio art. 32 | ⚠️ Base parcial | Existe inventario operativo, falta libro formal y balances |
@@ -118,11 +118,11 @@ Estados: ✅ = implementado · ⚠️ = parcial · ❌ = faltante.
 1. **Entidad `FiscalInvoice`** con serie, número de factura y número de control consecutivos e irrepetibles, snapshot de emisor y cliente, leyendas y estado (`emitida`, `anulada`).
 2. **Emisión inmutable + PDF fiscal** con todos los requisitos del art. 57 y SNAT/2011/0071; reimpresión marcada como duplicado.
 3. **Anulación controlada** con motivo, usuario, fecha/hora y auditoría; el consecutivo no se reutiliza.
-4. **Notas de crédito y débito** vinculadas a la factura, con serie propia y efecto en libros.
-5. **Libro de Ventas y Libro de Compras** mensuales, con cierre de período y exportación.
-6. **Validaciones previas a emitir**: RIF, datos del cliente, alícuota, moneda, tasa BCV y numeración disponible.
-7. **Permisos fiscales**: quién emite, quién anula y quién cierra el mes.
-8. **Pruebas de regresión fiscal** y conciliación automática (ventas vs. IVA vs. libros).
+4. ✅ **Notas de crédito y débito** vinculadas a la factura, con serie propia y efecto en libros.
+5. ✅ **Libro de Ventas y Libro de Compras** mensuales, con conciliación, cierre y exportación CSV auditada.
+6. ✅ **Validaciones previas a emitir**: RIF del emisor/cliente, coincidencia con la ficha, alícuota, importes USD, tasa positiva y numeración libre.
+7. ✅ **Permisos fiscales**: emisión según acceso de ventas; anulación, notas y cierre para admin.
+8. ✅ **Pruebas de regresión fiscal** para tasas, tratamientos, consecutivos, notas, persistencia, libros y bloqueos de cierre.
 
 ### P1 — Necesario para contabilidad formal y retenciones
 
@@ -180,15 +180,15 @@ Los flags se guardarán en una tabla `fiscal_features` con auditoría de activac
 
 ## 9. Criterios de aceptación
 
-- [ ] Toda factura emitida tiene número y número de control únicos; no existen huecos sin registro de anulación.
-- [ ] Una factura emitida no puede editarse ni eliminarse; solo anularse o ajustarse con nota.
+- [x] Toda factura emitida tiene número y número de control únicos; no existen huecos sin registro de anulación.
+- [x] Una factura emitida no puede editarse ni eliminarse; solo anularse o ajustarse con nota.
 - [ ] El PDF fiscal contiene todos los requisitos legales y se marca como duplicado al reimprimir.
-- [ ] El Libro de Ventas del mes cuadra contra la suma de facturas y notas.
-- [ ] El Libro de Compras del mes cuadra contra gastos con `fiscalBookEligible` y documentos válidos.
-- [ ] El cierre mensual bloquea emisión y edición en períodos cerrados.
-- [ ] Los exportes son reproducibles y auditables (usuario, fecha, filtros y hash/total de control).
+- [x] El Libro de Ventas del mes cuadra contra la suma de facturas y notas.
+- [x] El Libro de Compras del mes cuadra contra gastos con `fiscalBookEligible` y documentos válidos.
+- [x] El cierre mensual bloquea emisión y edición en períodos cerrados.
+- [x] Los exportes son reproducibles y auditables (usuario, fecha, período, hash/total de control).
 - [ ] Los módulos ocultos no son accesibles por URL directa ni por API sin permiso.
-- [ ] Existen pruebas de regresión para alícuotas, exentos, no sujetos, redondeos, anulaciones y notas.
+- [x] Existen pruebas de regresión para alícuotas, exentos, no sujetos, redondeos, anulaciones y notas.
 - [ ] No hay RIF, credenciales ni secretos hardcodeados.
 - [ ] La solución puede migrar a SNAT/2026/00093 sin rediseño de datos.
 
@@ -220,8 +220,10 @@ Los flags se guardarán en una tabla `fiscal_features` con auditoría de activac
 2. ✅ Entidad persistente `FiscalInvoice`, numeración única, snapshots, emisión y anulación auditada.
 3. ✅ Consulta e impresión con marca de DUPLICADO para las reimpresiones.
 4. ✅ Escenarios técnicos de IVA por línea (múltiples alícuotas, exentos/no sujetos) y pruebas de redondeo; falta validar tasas y leyendas con contador.
-5. ⬜ Completar los campos de emisión que faltan y validar la representación con el contador antes de usarla como documento fiscal real.
-6. ⬜ Fase 2: Libros de Ventas/Compras, conciliación, cierre mensual y exportaciones auditables.
+5. ✅ Notas de crédito/débito persistentes, imprimibles y auditadas, con consecutivos propios y validación del saldo acreditable.
+6. ✅ Libros fiscales mensuales de Ventas/Compras, conciliación, exportación CSV auditada y cierre que bloquea cambios posteriores.
+7. ✅ Validaciones previas a emitir de RIF, datos de cliente, tasa/alícuota, importes y consecutivos.
+8. ⬜ Validar tasas, formatos, leyendas y obligaciones aplicables con un contador antes del uso fiscal real.
 
 ---
 

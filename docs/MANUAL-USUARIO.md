@@ -1,6 +1,6 @@
 # Manual de Usuario — Mermelada ERP
 
-**Versión:** 1.0 · **Última actualización:** 31/10/2026
+**Versión:** 1.1 · **Última actualización:** 31/10/2026
 **Aplicación:** PulpaCraft MRP / Mermelada ERP
 **Alcance:** personal administrativo, supervisores, operadores de planta, almacén y costos.
 
@@ -121,15 +121,24 @@ Buenas prácticas:
 
 ### 4.5. Ventas y despacho
 
-1. Seleccione el cliente (con RIF) y agregue productos.
-2. El sistema calcula subtotal, IVA (16 %) y total en USD y Bs. según la tasa.
-3. Guarde el pedido: queda registrado quién lo creó y se reserva inventario.
-4. Genere la **nota de entrega** cuando el pedido salga del almacén.
-5. Registre el **cobro** indicando banco, método de pago y referencia.
+1. Seleccione el cliente y confirme que su razón social y RIF estén correctos.
+2. Agregue productos y revise la categoría y alícuota de IVA de cada línea.
+3. Indique condición de venta (contado/crédito), forma de pago y la tasa BCV
+   vigente. Los importes se expresan en USD y el sistema calcula su equivalente
+   en Bs.; no introduzca conversiones manuales en los campos calculados.
+4. Guarde el pedido. Si la facturación fiscal está habilitada, se emite la
+   factura en ese momento; el pedido reserva inventario y registra quién lo
+   creó.
+5. Genere la **nota de entrega** cuando el pedido salga del almacén.
+6. Registre el **cobro** indicando banco, método de pago y referencia.
 
 Importante:
 
 - Una nota de entrega **no es una factura fiscal**.
+- La factura toma el nombre y RIF de la ficha vigente del cliente. El sistema
+  bloquea la emisión si el RIF no tiene formato válido, la tasa de cambio no es
+  positiva, la configuración fiscal está incompleta o los consecutivos ya se
+  utilizaron.
 - Si necesita anular un pedido, hágalo desde el flujo de anulación; no elimine
   registros manualmente.
 
@@ -168,6 +177,28 @@ Disponible para administradores:
 Referencia interna de arquitectura, módulos y flujos. Úsela para resolver dudas
 sobre el funcionamiento del sistema.
 
+### 4.11. Facturas, notas y libros fiscales
+
+1. En **Facturación Fiscal**, consulte las facturas emitidas y abra una para
+   revisar o imprimirla. La primera impresión es el original; las siguientes
+   quedan identificadas como **DUPLICADO**.
+2. La anulación de una factura requiere motivo y permisos de administrador. Los
+   números emitidos no se reutilizan.
+3. El administrador puede emitir una nota de crédito o débito desde una factura
+   vigente. La nota conserva su propio consecutivo y referencia a la factura;
+   una nota de crédito no puede exceder el saldo acreditable disponible.
+4. En **Libros fiscales mensuales**, seleccione año y mes y consulte los libros
+   de Ventas y Compras y sus diferencias de conciliación. **Exportar CSV**
+   genera ambos archivos y registra en auditoría el usuario, período, totales y
+   huella SHA-256 del reporte exportado.
+5. Cierre el período solo después de revisar los datos y guardar los archivos.
+   El cierre es definitivo: bloquea nuevas facturas, notas y cambios en los
+   gastos de ese mes.
+
+La creación de notas y la consulta, exportación y cierre de libros se reservan
+al administrador. Revise las diferencias antes del cierre; los formatos y
+criterios deben confirmarse con el contador.
+
 ---
 
 ## 5. Reglas importantes
@@ -200,18 +231,12 @@ usuario que las ejecuta; compartir cuentas rompe la trazabilidad.
 
 ## 6. Estado fiscal actual
 
-El sistema registra facturas preliminares con numeración y control, anulación y
-reimpresión auditables. La representación actual requiere validación de un
-contador público y **no implica autorización del SENIAT**. Hoy también produce:
-
-- Pedidos de venta.
-- Notas de entrega.
-- Registro de cobros.
-- Gastos con datos fiscales y crédito de IVA.
-
-Los libros de ventas/compras, notas de crédito/débito, retenciones y
-facturación digital siguen pendientes en el issue **#11**. Mientras tanto,
-**no use las notas de entrega como documento fiscal**.
+El sistema emite facturas numeradas, notas de crédito/débito y reportes mensuales
+de compras y ventas, con impresión, auditoría, exportación CSV y cierre
+bloqueante. La representación y los reportes requieren validación de un
+contador público y **no implican autorización del SENIAT**. Retenciones,
+contabilidad general y facturación digital siguen fuera del alcance actual del
+issue **#11**. **No use las notas de entrega como documento fiscal**.
 
 ---
 

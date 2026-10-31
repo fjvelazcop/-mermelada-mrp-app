@@ -65,6 +65,7 @@ export class FiscalInvoicesComponent implements OnInit {
   public bookMonth = signal<number>(new Date().getMonth() + 1);
   public booksReport = signal<FiscalBooksReport | null>(null);
   public booksLoading = signal<boolean>(false);
+  public booksExporting = signal<boolean>(false);
   public booksError = signal<string>('');
 
   public annulForm = new FormGroup({
@@ -479,49 +480,64 @@ export class FiscalInvoicesComponent implements OnInit {
     }
   }
 
-  public exportFiscalBooks(): void {
-    const report = this.booksReport();
-    if (!report) return;
-    const rates = report.salesTotals.taxableBases.map((group) => group.rate);
-    exportToCsv(`libro-ventas-${report.year}-${String(report.month).padStart(2, '0')}`, [
-      'Fecha', 'Tipo', 'Documento', 'Control', 'Cliente', 'RIF', 'Condición',
-      ...rates.flatMap((rate) => [`Base ${rate}%`, `IVA ${rate}%`]),
-      'Exento', 'No sujeto', 'IVA total', 'Total',
-    ], report.salesRows.map((row) => [
-      row.date,
-      row.documentType,
-      row.documentNumber,
-      row.controlNumber,
-      row.customerName,
-      row.customerTaxId,
-      row.saleCondition,
-      ...rates.flatMap((rate) => {
-        const group = row.taxableBases.find((item) => item.rate === rate);
-        return [group?.base || 0, group?.tax || 0];
-      }),
-      row.exemptAmount,
-      row.nonSubjectAmount,
-      row.taxAmount,
-      row.total,
-    ]));
-    exportToCsv(`libro-compras-${report.year}-${String(report.month).padStart(2, '0')}`, [
-      'Fecha', 'Tipo', 'Documento', 'Proveedor', 'RIF', 'Base gravada', 'Alícuota',
-      'IVA', 'Exento', 'No sujeto', 'Retención IVA', 'Total', 'Crédito fiscal',
-    ], report.purchaseRows.map((row) => [
-      row.date,
-      row.documentType,
-      row.documentNumber,
-      row.supplierName,
-      row.supplierTaxId,
-      row.taxableBase,
-      row.taxRatePercent,
-      row.taxAmount,
-      row.exemptAmount,
-      row.nonSubjectAmount,
-      row.vatWithholding,
-      row.total,
-      row.fiscalCreditEligible ? 'Sí' : 'No',
-    ]));
+  public async exportFiscalBooks(): Promise<void> {
+    const requestedReport = this.booksReport();
+    if (!requestedReport || this.booksExporting()) return;
+    this.booksExporting.set(true);
+    this.booksError.set('');
+    try {
+      const report = await this.api.recordFiscalBooksExport(
+        requestedReport.year,
+        requestedReport.month
+      );
+      this.booksReport.set(report);
+      const rates = report.salesTotals.taxableBases.map((group) => group.rate);
+      exportToCsv(`libro-ventas-${report.year}-${String(report.month).padStart(2, '0')}`, [
+        'Fecha', 'Tipo', 'Documento', 'Control', 'Cliente', 'RIF', 'Condición',
+        ...rates.flatMap((rate) => [`Base ${rate}%`, `IVA ${rate}%`]),
+        'Exento', 'No sujeto', 'IVA total', 'Total',
+      ], report.salesRows.map((row) => [
+        row.date,
+        row.documentType,
+        row.documentNumber,
+        row.controlNumber,
+        row.customerName,
+        row.customerTaxId,
+        row.saleCondition,
+        ...rates.flatMap((rate) => {
+          const group = row.taxableBases.find((item) => item.rate === rate);
+          return [group?.base || 0, group?.tax || 0];
+        }),
+        row.exemptAmount,
+        row.nonSubjectAmount,
+        row.taxAmount,
+        row.total,
+      ]));
+      exportToCsv(`libro-compras-${report.year}-${String(report.month).padStart(2, '0')}`, [
+        'Fecha', 'Tipo', 'Documento', 'Proveedor', 'RIF', 'Base gravada', 'Alícuota',
+        'IVA', 'Exento', 'No sujeto', 'Retención IVA', 'Total', 'Crédito fiscal',
+      ], report.purchaseRows.map((row) => [
+        row.date,
+        row.documentType,
+        row.documentNumber,
+        row.supplierName,
+        row.supplierTaxId,
+        row.taxableBase,
+        row.taxRatePercent,
+        row.taxAmount,
+        row.exemptAmount,
+        row.nonSubjectAmount,
+        row.vatWithholding,
+        row.total,
+        row.fiscalCreditEligible ? 'Sí' : 'No',
+      ]));
+    } catch (error) {
+      this.booksError.set(
+        error instanceof Error ? error.message : 'No se pudieron exportar los libros.'
+      );
+    } finally {
+      this.booksExporting.set(false);
+    }
   }
 
   public closeAnnul() {

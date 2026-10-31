@@ -825,6 +825,138 @@ describe('mutating endpoints', () => {
     expect(persisted['annulment_reason']).toBe('Error en los datos del cliente');
   });
 
+  it('validates fiscal identity, BCV conversion and both consecutive numbers before creating an order', async () => {
+    const { dbInstance } = await import('./erp-database.js');
+    const originalSettings = { ...dbInstance.getFiscalSettings() };
+    const originalUsdRate = dbInstance.getExchangeRates().currentUsd;
+    const customer = dbInstance.getCustomers()[0];
+    const originalTaxId = customer.taxId;
+    const good = dbInstance.getFinishedGoods()[0];
+    const existingInvoice = dbInstance.getFiscalInvoices()[0];
+    expect(existingInvoice).toBeTruthy();
+
+    const subtotal = 20;
+    const orderPayload = (customerTaxId = customer.taxId) => ({
+      customerId: customer.id,
+      customerName: customer.businessName,
+      customerTaxId,
+      orderDate: new Date().toISOString().slice(0, 10),
+      deliveryDate: new Date().toISOString().slice(0, 10),
+      status: 'pendiente',
+      exchangeRateUsed: 50,
+      items: [
+        {
+          finishedGoodId: good.id,
+          flavor: good.flavor,
+          presentation: good.presentation,
+          presentationLabel: good.presentationLabel,
+          quantity: 1,
+          unitPrice: subtotal,
+          subtotal,
+          unitPriceBs: 1,
+          subtotalBs: 1,
+        },
+      ],
+      subtotal,
+      taxAmount: Number(
+        ((subtotal * originalSettings.taxRatePercent) / 100).toFixed(2)
+      ),
+      total: Number(
+        (
+          subtotal +
+          (subtotal * originalSettings.taxRatePercent) / 100
+        ).toFixed(2)
+      ),
+    });
+
+    try {
+      const startingOrderCount = dbInstance.getSalesOrders().length;
+      const mismatchedRif = await jsonRequest(
+        '/api/sales/orders',
+        'POST',
+        orderPayload('J-11111111-1')
+      );
+      expect(mismatchedRif.response.status).toBe(400);
+      expect(mismatchedRif.body['error']).toContain('no coincide');
+
+      customer.taxId = 'identificacion-invalida';
+      const invalidRif = await jsonRequest(
+        '/api/sales/orders',
+        'POST',
+        orderPayload(customer.taxId)
+      );
+      expect(invalidRif.response.status).toBe(400);
+      expect(invalidRif.body['error']).toContain('RIF venezolano válido');
+      customer.taxId = originalTaxId;
+
+      const invalidRate = await jsonRequest('/api/sales/orders', 'POST', {
+        ...orderPayload(),
+        exchangeRateUsed: 0,
+      });
+      expect(invalidRate.response.status).toBe(422);
+
+      dbInstance.getExchangeRates().currentUsd = 0;
+      const missingBcvRate = await jsonRequest('/api/sales/orders', 'POST', {
+        ...orderPayload(),
+        exchangeRateUsed: undefined,
+      });
+      expect(missingBcvRate.response.status).toBe(400);
+      expect(missingBcvRate.body['error']).toContain('tasa BCV');
+      dbInstance.getExchangeRates().currentUsd = originalUsdRate;
+
+      dbInstance.updateFiscalSettings({
+        invoiceSerie: existingInvoice.serie,
+        nextInvoiceNumber: existingInvoice.invoiceNumber,
+        nextControlNumber: originalSettings.nextControlNumber + 100,
+      });
+      const duplicateInvoiceNumber = await jsonRequest(
+        '/api/sales/orders',
+        'POST',
+        orderPayload()
+      );
+      expect(duplicateInvoiceNumber.response.status).toBe(400);
+      expect(duplicateInvoiceNumber.body['error']).toContain(
+        'ya fue emitido'
+      );
+
+      dbInstance.updateFiscalSettings({
+        invoiceSerie: 'VALIDATION',
+        nextInvoiceNumber: 1,
+        nextControlNumber: existingInvoice.controlNumber,
+      });
+      const duplicateControlNumber = await jsonRequest(
+        '/api/sales/orders',
+        'POST',
+        orderPayload()
+      );
+      expect(duplicateControlNumber.response.status).toBe(400);
+      expect(duplicateControlNumber.body['error']).toContain(
+        'número de control'
+      );
+
+      expect(dbInstance.getSalesOrders()).toHaveLength(startingOrderCount);
+      expect(
+        dbInstance.getFiscalInvoices().some(
+          (invoice) => invoice.salesOrderId === duplicateInvoiceNumber.body['id']
+        )
+      ).toBe(false);
+    } finally {
+      customer.taxId = originalTaxId;
+      dbInstance.getExchangeRates().currentUsd = originalUsdRate;
+      dbInstance.updateFiscalSettings(originalSettings);
+    }
+
+    const accepted = await jsonRequest(
+      '/api/sales/orders',
+      'POST',
+      orderPayload()
+    );
+    expect(accepted.response.status).toBe(201);
+    expect(
+      (accepted.body['items'] as { unitPriceBs: number }[])[0].unitPriceBs
+    ).toBe(1000);
+  });
+
   it('calculates invoice VAT by line and preserves exempt and non-subject treatments', async () => {
     const customers = (await (
       await fetch(`${baseUrl}/api/sales/customers`)
@@ -1371,6 +1503,26 @@ describe('mutating endpoints', () => {
       salesDifference: 0,
       purchaseDifference: 0,
     });
+
+    const exportedBooks = await jsonRequest(
+      `/api/fiscal-books/${period}/export`,
+      'POST'
+    );
+    expect(exportedBooks.response.status).toBe(200);
+    expect(
+      (exportedBooks.body['report'] as Record<string, unknown>)['salesRows']
+    ).toEqual(salesRows);
+    const exportAudit = exportedBooks.body['audit'] as Record<string, unknown>;
+    expect(exportAudit['actionType']).toBe('libro_fiscal_exportado');
+    expect(
+      (exportAudit['details'] as Record<string, unknown>)['snapshotHash']
+    ).toMatch(/^[a-f0-9]{64}$/);
+    const persistedExport = getDb()
+      .prepare(
+        "SELECT COUNT(*) AS count FROM audit_logs WHERE action_type = 'libro_fiscal_exportado' AND details_json LIKE ?"
+      )
+      .get(`%${period.replace('/', '-')}%`) as {count: number};
+    expect(persistedExport.count).toBeGreaterThan(0);
 
     const close = await jsonRequest(`/api/fiscal-books/${period}/close`, 'POST');
     expect(close.response.status).toBe(201);

@@ -905,7 +905,8 @@ export interface AuditLogEntry {
       | 'factura_reimpresa'
       | 'nota_fiscal_creada'
       | 'nota_fiscal_impresa'
-      | 'libro_fiscal_cerrado';
+      | 'libro_fiscal_cerrado'
+      | 'libro_fiscal_exportado';
   title: string;
   description: string;
   userId: string;

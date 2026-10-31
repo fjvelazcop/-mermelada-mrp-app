@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isValidVenezuelanRif } from '../app/core/utils/venezuela-rif.js';
 import {
   RawMaterial,
   InventoryMovement,
@@ -2855,8 +2856,12 @@ export class ErpDatabase {
   ): SalesOrder {
     const actor = this.manualOrderActor(actorInput);
     const nextNum = 'PED-2026-0' + (this.state.salesOrders.length + 44);
-    const rate = data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
     const customer = this.state.customers.find((entry) => entry.id === data.customerId);
+    if (!customer) throw new Error('Cliente no encontrado.');
+    const rate = data.exchangeRateUsed ?? this.state.exchangeRates.currentUsd;
+    if (!Number.isFinite(rate) || rate <= 0) {
+      throw new Error('Debe registrar una tasa de cambio positiva y válida.');
+    }
     const saleCondition =
       data.saleCondition ??
       (customer?.paymentTerms.toLowerCase().includes('contado') ? 'contado' : 'credito');
@@ -2888,8 +2893,8 @@ export class ErpDatabase {
         taxCategory,
         taxRatePercent,
         taxAmount,
-        unitPriceBs: item.unitPriceBs || Number((item.unitPrice * rate).toFixed(2)),
-        subtotalBs: item.subtotalBs || Number((item.subtotal * rate).toFixed(2)),
+        unitPriceBs: Number((item.unitPrice * rate).toFixed(2)),
+        subtotalBs: Number((item.subtotal * rate).toFixed(2)),
       };
     });
 
@@ -2904,7 +2909,9 @@ export class ErpDatabase {
       ...data,
       id: 'so-' + Date.now(),
       orderNumber: nextNum,
-      customerNit: data.customerNit || customer?.nit,
+      customerName: customer.businessName,
+      customerTaxId: customer.taxId,
+      customerNit: data.customerNit || customer.nit,
       saleCondition,
       paymentMethod,
       exchangeRateUsed: rate,
@@ -3213,8 +3220,17 @@ export class ErpDatabase {
     if (!fiscal || !fiscal.enabled) {
       throw new Error('La facturación fiscal está deshabilitada en la configuración.');
     }
-    if (!fiscal.companyName || !fiscal.companyTaxId) {
+    if (
+      !fiscal.companyName.trim() ||
+      !isValidVenezuelanRif(fiscal.companyTaxId)
+    ) {
       throw new Error('La configuración fiscal del emisor está incompleta.');
+    }
+    if (
+      !Number.isFinite(order.exchangeRateUsed) ||
+      order.exchangeRateUsed <= 0
+    ) {
+      throw new Error('La factura requiere una tasa BCV positiva y válida.');
     }
 
     const serie = fiscal.invoiceSerie || 'A';
@@ -3223,20 +3239,16 @@ export class ErpDatabase {
     const issuedAt = new Date();
     this.assertFiscalPeriodOpen(issuedAt.getFullYear(), issuedAt.getMonth() + 1);
     const invoices = this.state.fiscalInvoices || [];
-
-    const duplicated = invoices.some(
-      (invoice) =>
-        invoice.serie === serie &&
-        (invoice.invoiceNumber === invoiceNumber ||
-          invoice.controlNumber === controlNumber)
-    );
-    if (duplicated) {
-      throw new Error(
-        `El consecutivo ${serie}-${invoiceNumber} ya fue emitido. Ajuste los contadores fiscales antes de continuar.`
-      );
-    }
-
     const customer = this.state.customers.find((c) => c.id === order.customerId);
+    if (!customer) throw new Error('Cliente no encontrado.');
+    if (!isValidVenezuelanRif(customer.taxId)) {
+      throw new Error('El cliente debe tener un RIF venezolano válido.');
+    }
+    this.assertFiscalInvoiceSequenceAvailable(
+      serie,
+      invoiceNumber,
+      controlNumber
+    );
     const items = order.items.map((item) => {
       const subtotal = Number(item.subtotal.toFixed(2));
       const taxCategory = item.taxCategory ?? 'gravado';
@@ -3292,8 +3304,8 @@ export class ErpDatabase {
       },
       customerSnapshot: {
         customerId: order.customerId,
-        businessName: order.customerName,
-        taxId: order.customerTaxId,
+        businessName: customer.businessName,
+        taxId: customer.taxId,
         nit: order.customerNit || customer?.nit,
         address: customer?.address,
         phone: customer?.phone,
@@ -3338,6 +3350,43 @@ export class ErpDatabase {
     });
 
     return invoice;
+  }
+
+  public assertFiscalInvoiceSequenceAvailable(
+    serie: string,
+    invoiceNumber: number,
+    controlNumber: number
+  ): void {
+    if (
+      !Number.isInteger(invoiceNumber) ||
+      invoiceNumber < 1 ||
+      !Number.isInteger(controlNumber) ||
+      controlNumber < 1
+    ) {
+      throw new Error('Los consecutivos de factura y control deben ser enteros positivos.');
+    }
+    if (
+      this.getFiscalInvoices().some(
+        (invoice) =>
+          invoice.serie === serie && invoice.invoiceNumber === invoiceNumber
+      )
+    ) {
+      throw new Error(
+        `El consecutivo ${serie}-${invoiceNumber} ya fue emitido. Ajuste el próximo número antes de continuar.`
+      );
+    }
+    if (
+      this.getFiscalInvoices().some(
+        (invoice) => invoice.controlNumber === controlNumber
+      ) ||
+      this.getFiscalAdjustmentNotes().some(
+        (note) => note.controlNumber === controlNumber
+      )
+    ) {
+      throw new Error(
+        `El número de control ${controlNumber} ya fue utilizado. Ajuste el próximo consecutivo antes de continuar.`
+      );
+    }
   }
 
   /** Annul an issued invoice. The consecutive numbers are never reused. */
@@ -3843,6 +3892,39 @@ export class ErpDatabase {
     };
   }
 
+  public recordFiscalBooksExport(
+    year: number,
+    month: number,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): { report: FiscalBooksReport; audit: AuditLogEntry } {
+    const report = this.getFiscalBooks(year, month);
+    const snapshotHash = createHash('sha256')
+      .update(JSON.stringify(report))
+      .digest('hex');
+    const actor = this.manualOrderActor(actorInput);
+    const audit = this.addAuditLog({
+      module: 'ventas',
+      actionType: 'libro_fiscal_exportado',
+      title: `Libros fiscales exportados: ${year}-${String(month).padStart(2, '0')}`,
+      description: `Ventas $${report.salesTotals.total.toFixed(2)}; compras $${report.purchaseTotals.total.toFixed(2)}; ${report.salesRows.length} documentos de venta y ${report.purchaseRows.length} documentos de compra; SHA-256 ${snapshotHash}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: `fiscal-books-${year}-${String(month).padStart(2, '0')}`,
+        targetCode: `${year}-${String(month).padStart(2, '0')}`,
+        year,
+        month,
+        snapshotHash,
+        salesTotal: report.salesTotals.total,
+        purchaseTotal: report.purchaseTotals.total,
+        totalUnits: report.salesRows.length + report.purchaseRows.length,
+      },
+    });
+    return {report, audit};
+  }
+
   public createFiscalPeriodClosure(
     year: number,
     month: number,
@@ -3858,6 +3940,14 @@ export class ErpDatabase {
     this.assertFiscalPeriodOpen(year, month);
 
     const books = this.getFiscalBooks(year, month);
+    if (
+      books.reconciliation.salesDifference !== 0 ||
+      books.reconciliation.purchaseDifference !== 0
+    ) {
+      throw new Error(
+        'No se puede cerrar el período mientras existan diferencias de conciliación en los libros fiscales.'
+      );
+    }
     const snapshotHash = createHash('sha256')
       .update(JSON.stringify({salesRows: books.salesRows, purchaseRows: books.purchaseRows}))
       .digest('hex');

@@ -10,7 +10,8 @@
 
 ## Estado fiscal
 
-El ERP no emite facturas fiscales todavía. La hoja de ruta (factura fiscal,
-libros de ventas y compras, retenciones y facturación digital) se coordina en el
-issue **#11** del repositorio y debe validarse con un contador público antes de
-usarse en producción.
+El ERP incluye emisión de facturas, notas de crédito/débito, libros mensuales de
+Ventas/Compras, exportación CSV auditada y cierre de período. La implementación
+requiere validación de un contador público y no implica autorización del SENIAT.
+Retenciones, contabilidad general y facturación digital permanecen pendientes y
+se coordinan en el issue **#11** del repositorio.

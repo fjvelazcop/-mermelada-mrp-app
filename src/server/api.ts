@@ -104,6 +104,10 @@ import {
   validateParams,
 } from './validation.js';
 import { VENEZUELAN_BANKS, findBank } from '../app/core/data/venezuelan-banks.js';
+import {
+  isValidVenezuelanRif,
+  normalizeVenezuelanRif,
+} from '../app/core/utils/venezuela-rif.js';
 import { openApiDocument } from './openapi.js';
 
 type Handler = (req: Request, res: Response, next: NextFunction) => unknown;
@@ -724,43 +728,73 @@ export function createApiApp(): express.Express {
     '/api/sales/orders',
     validateBody(salesOrderSchema),
     mutation((req, res) => {
-      // Validación fiscal previa a la emisión
-      const fiscalSettings = dbInstance.getFiscalSettings();
-      if (!fiscalSettings.companyName || !fiscalSettings.companyTaxId) {
-        throw new ApiError(
-          400,
-          'La configuración fiscal no está completa. Configure los datos de la empresa en Configuración → Datos Fiscales primero.'
-        );
-      }
-      const hasTaxableItemsWithoutRate = req.body.items.some(
-        (item: { taxCategory?: string; taxRatePercent?: number }) =>
-          (item.taxCategory ?? 'gravado') === 'gravado' &&
-          item.taxRatePercent === undefined
-      );
-      if (hasTaxableItemsWithoutRate && !fiscalSettings.taxRatePercent) {
-        throw new ApiError(400, 'La alícuota de IVA no está configurada.');
-      }
-      if (!fiscalSettings.invoicePrefix) {
-        throw new ApiError(400, 'El prefijo de factura no está configurado.');
-      }
-      if (!fiscalSettings.nextInvoiceNumber) {
-        throw new ApiError(
-          400,
-          'El siguiente número de factura no está definido.'
-        );
-      }
-
-      // Validar que el cliente tenga RIF
       const customer = dbInstance
         .getCustomers()
-        .find(c => c.id === req.body.customerId);
+        .find((entry) => entry.id === req.body.customerId);
       if (!customer) {
         throw new ApiError(404, 'Cliente no encontrado');
       }
-      if (!customer.taxId) {
-        throw new ApiError(
-          400,
-          'El cliente debe tener RIF (campo obligatorio para facturación)'
+
+      const fiscalSettings = dbInstance.getFiscalSettings();
+      if (fiscalSettings.enabled) {
+        if (
+          !fiscalSettings.companyName.trim() ||
+          !isValidVenezuelanRif(fiscalSettings.companyTaxId)
+        ) {
+          throw new ApiError(
+            400,
+            'La configuración fiscal del emisor está incompleta o su RIF no es válido.'
+          );
+        }
+
+        if (!isValidVenezuelanRif(customer.taxId)) {
+          throw new ApiError(
+            400,
+            'El cliente debe tener un RIF venezolano válido antes de emitir la factura.'
+          );
+        }
+        if (
+          normalizeVenezuelanRif(req.body.customerTaxId) !==
+          normalizeVenezuelanRif(customer.taxId)
+        ) {
+          throw new ApiError(
+            400,
+            'El RIF del pedido no coincide con el registrado en la ficha del cliente.'
+          );
+        }
+
+        const hasTaxableItemsWithoutRate = req.body.items.some(
+          (item: { taxCategory?: string; taxRatePercent?: number }) =>
+            (item.taxCategory ?? 'gravado') === 'gravado' &&
+            item.taxRatePercent === undefined
+        );
+        if (
+          hasTaxableItemsWithoutRate &&
+          (!Number.isFinite(fiscalSettings.taxRatePercent) ||
+            fiscalSettings.taxRatePercent <= 0)
+        ) {
+          throw new ApiError(400, 'La alícuota de IVA no está configurada.');
+        }
+        if (!fiscalSettings.invoicePrefix.trim() || !fiscalSettings.invoiceSerie.trim()) {
+          throw new ApiError(
+            400,
+            'El prefijo y la serie de factura deben estar configurados.'
+          );
+        }
+
+        const exchangeRate =
+          req.body.exchangeRateUsed ?? dbInstance.getExchangeRates().currentUsd;
+        if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+          throw new ApiError(
+            400,
+            'No hay una tasa BCV válida para convertir los importes de la factura.'
+          );
+        }
+
+        dbInstance.assertFiscalInvoiceSequenceAvailable(
+          fiscalSettings.invoiceSerie,
+          fiscalSettings.nextInvoiceNumber,
+          fiscalSettings.nextControlNumber
         );
       }
 
@@ -1144,6 +1178,20 @@ export function createApiApp(): express.Express {
       res.json(
         dbInstance.getFiscalBooks(Number(req.params['year']), Number(req.params['month']))
       );
+    })
+  );
+
+  app.post(
+    '/api/fiscal-books/:year/:month/export',
+    requireAdmin,
+    validateParams(fiscalPeriodParamsSchema),
+    mutation((req, res) => {
+      const result = dbInstance.recordFiscalBooksExport(
+        Number(req.params['year']),
+        Number(req.params['month']),
+        auditActor(req)
+      );
+      res.json(result);
     })
   );
 

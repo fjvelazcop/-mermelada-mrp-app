@@ -1098,6 +1098,30 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/fiscal-books/{year}/{month}/export': {
+    post: {
+      tags: ['Reportes'],
+      summary: 'Registrar y exportar el snapshot de libros fiscales (solo administrador)',
+      description:
+        'Registra usuario, período, totales y hash SHA-256 del mismo reporte que devuelve para exportación CSV.',
+      parameters: [
+        { name: 'year', in: 'path', required: true, schema: { type: 'integer', minimum: 2000, maximum: 9999 } },
+        { name: 'month', in: 'path', required: true, schema: { type: 'integer', minimum: 1, maximum: 12 } },
+      ],
+      responses: {
+        200: jsonResponse('Snapshot registrado para exportación', {
+          type: 'object',
+          properties: {
+            report: ref('FiscalBooksReport'),
+            audit: { type: 'object', additionalProperties: true },
+          },
+        }),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
   '/api/exchange-rates': {
     get: {
       tags: ['Configuración'],

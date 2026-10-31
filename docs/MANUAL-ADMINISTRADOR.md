@@ -1,6 +1,6 @@
 # Manual de Administración — Mermelada ERP
 
-**Versión:** 1.0 · **Última actualización:** 28/10/2026
+**Versión:** 1.1 · **Última actualización:** 31/10/2026
 **Audiencia:** responsable técnico / administrador del sistema.
 **Documentos relacionados:** [`MANUAL-USUARIO.md`](./MANUAL-USUARIO.md), [`../DEPLOYMENT.md`](../DEPLOYMENT.md), [`../README.md`](../README.md).
 
@@ -332,9 +332,10 @@ Flujo recomendado: trabajar en `develop`, verificar los cuatro comandos y luego
 
 ## 9. Estado fiscal (issue #11)
 
-El ERP **no emite facturas fiscales todavía**. Implementado: RIF de clientes y
-proveedores, IVA 16 %, configuración fiscal administrable, gastos con crédito de
-IVA y notas de entrega.
+El sistema ya emite facturas fiscales vinculadas a pedidos, notas de crédito y
+débito, e informes mensuales de libros de Ventas y Compras. La representación
+imprimible, las reglas tributarias y los reportes requieren validación de un
+contador; esto **no equivale a homologación ni autorización del SENIAT**.
 
 ### 9.1. Configuración fiscal desde la interfaz (solo administrador)
 
@@ -349,22 +350,27 @@ Datos que se guardan en la tabla `fiscal_settings` de SQLite:
 |---|---|
 | Emisor | razón social, RIF, dirección fiscal, teléfono, correo, actividad económica y régimen tributario |
 | Sucursal | nombre y dirección del establecimiento |
-| IVA y numeración | alícuota, prefijo/serie, siguiente número de factura, prefijo y siguiente número de control, autorización SENIAT y vigencia |
+| IVA y numeración | alícuota, prefijo/serie, siguiente número de factura, consecutivos de notas de crédito/débito, prefijo y siguiente número de control, autorización SENIAT y vigencia |
 | Retenciones | condición de agente de IVA/ISLR y porcentajes aplicables |
 | SPE y libros | Sujeto Pasivo Especial, formato de libros (XLSX/CSV/PDF/TXT) y tratamiento de órdenes históricas |
 | Impresión | leyendas legales que se imprimen en los documentos |
 
 Cada guardado actualiza la base de datos de forma inmediata. Antes de emitir
-documentos fiscales reales, el administrador debe confirmar estos valores con el
-contador y verificar la numeración/autorización vigente.
+documentos fiscales, el administrador debe confirmar estos valores con el
+contador. Antes de habilitar emisión real, revise RIF del emisor/cliente,
+alícuotas, tasa BCV, prefijos y consecutivos disponibles. El servidor verifica
+el formato de RIF, que el documento coincida con la ficha del cliente, la tasa
+positiva y que no se reutilicen números de factura/control. Los importes se
+registran en USD y los equivalentes en Bs. se calculan con la tasa guardada en
+el pedido.
 
-Brechas principales y hoja de ruta:
+Estado de las fases:
 
 | Fase | Alcance | Estado |
 |---|---|---|
-| 0 | Datos fiscales validados, régimen de IVA, series y numeración | Base implementada; pendiente confirmar datos con el contador |
-| 1 | Factura fiscal inmutable, PDF, anulación y notas de crédito/débito | Pendiente |
-| 2 | Libro de ventas y compras, cierre mensual, exportación | Pendiente |
+| 0 | Datos fiscales validados, régimen de IVA, series y numeración | Implementado; falta confirmar datos reales con el contador |
+| 1 | Factura fiscal imprimible, anulación y notas de crédito/débito | Implementado técnicamente; pendiente validación normativa |
+| 2 | Libros mensuales de Ventas/Compras, conciliación, cierre y exportación | Implementado; CSV auditado con hash y cierre bloqueante |
 | 3 | Contabilidad y estados financieros | Pendiente |
 | 4 | Retenciones de IVA/ISLR y comprobantes | Condicionado a la condición de agente |
 | 5 | Facturación digital y migración al régimen del 19/04/2027 | Planificada |
@@ -372,6 +378,37 @@ Brechas principales y hoja de ruta:
 La normativa vigente aplica hasta el **18/04/2027**; el nuevo régimen
 (`SNAT/2026/00093`) entra en vigor el **19/04/2027**. Cualquier cambio fiscal
 debe validarse con un contador público antes de producción.
+
+### 9.2. Emisión y documentos relacionados
+
+- La factura se crea automáticamente al registrar un pedido cuando `enabled`
+  está activo. Mantenga el RIF del cliente en su ficha; el sistema usa la ficha
+  como fuente y bloquea si el RIF del pedido no coincide.
+- Las ventas se registran en USD. El backend calcula equivalentes en Bs. con la
+  tasa positiva guardada en el pedido y no acepta importes Bs. manipulados desde
+  el navegador.
+- La validación de alícuota exige una tasa positiva en líneas gravadas; exento y
+  no sujeto se identifican explícitamente.
+- El número de factura debe estar libre dentro de la serie. El número de control
+  no puede repetirse entre facturas ni notas. Los consecutivos no se reutilizan
+  al anular.
+- La anulación y la creación de notas están restringidas al administrador.
+  Las notas de crédito no pueden superar el saldo original pendiente de acreditar
+  por categoría/alícuota.
+
+### 9.3. Libros mensuales, exportación y cierre
+
+En **Facturación Fiscal → Libros fiscales mensuales**, seleccione el período y
+consulte ventas, compras y conciliación. **Exportar CSV** entrega dos archivos
+(Ventas y Compras); antes de generarlos, el sistema registra en auditoría el
+usuario, período, totales y SHA-256 del mismo snapshot devuelto para descarga.
+El cierre del período también queda auditado e incluye una huella SHA-256.
+
+El cierre es definitivo desde la interfaz: bloquea nuevas facturas, notas y
+altas/bajas de gastos cuya fecha pertenezca al mes cerrado. Revise las
+diferencias, los documentos incluidos y los archivos descargados antes de
+confirmar. Para corregir información tras el cierre debe seguirse el
+procedimiento contable aplicable; no modifique SQLite directamente.
 
 ---
 
@@ -409,3 +446,9 @@ debe validarse con un contador público antes de producción.
 - [ ] `GET /api/health` en verde desde la URL pública.
 - [ ] Datos fiscales completados en **Configuración → Datos Fiscales** y
       revisados con el contador.
+- [ ] RIF y datos de contacto de clientes/proveedores revisados; alícuotas y tasa
+      USD/BCV verificadas.
+- [ ] Serie, número de factura, números de notas y control revisados para evitar
+      reutilizar consecutivos.
+- [ ] Un período de libros exportado y conciliado en pruebas antes del primer
+      cierre operativo.

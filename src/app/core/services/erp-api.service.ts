@@ -1774,6 +1774,21 @@ export class ErpApiService {
     }
   }
 
+  public async recordFiscalBooksExport(year: number, month: number): Promise<FiscalBooksReport> {
+    try {
+      const result = await firstValueFrom(
+        this.http.post<{report: FiscalBooksReport}>(
+          `/api/fiscal-books/${year}/${month}/export`,
+          {}
+        )
+      );
+      return result.report;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
   // --- RESET DEMO ---
   public async resetDemo() {
     try {
