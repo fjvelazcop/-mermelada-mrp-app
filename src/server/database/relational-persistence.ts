@@ -8,6 +8,7 @@ import {
   Employee,
   Expense,
   ExpenseCategoryConfig,
+  FiscalInvoice,
   FiscalSettings,
   FinishedGood,
   InventoryMovement,
@@ -484,6 +485,38 @@ export function loadRelationalState(): DatabaseState | null {
       }
     : ({} as FiscalSettings);
 
+  const fiscalInvoices = (
+    db
+      .prepare('SELECT * FROM fiscal_invoices ORDER BY issued_at DESC')
+      .all() as Row[]
+  ).map(
+    (r): FiscalInvoice => ({
+      id: r['id'],
+      serie: r['serie'],
+      invoiceNumber: r['invoice_number'],
+      controlNumber: r['control_number'],
+      salesOrderId: o(r['sales_order_id']),
+      salesOrderNumber: o(r['sales_order_number']),
+      emitterSnapshot: JSON.parse(r['emitter_snapshot']),
+      customerSnapshot: JSON.parse(r['customer_snapshot']),
+      items: JSON.parse(r['items_json']),
+      subtotal: r['subtotal'],
+      taxAmount: r['tax_amount'],
+      total: r['total'],
+      subtotalBs: o(r['subtotal_bs']),
+      taxAmountBs: o(r['tax_amount_bs']),
+      totalBs: o(r['total_bs']),
+      exchangeRateUsed: r['exchange_rate_used'],
+      status: r['status'],
+      issuedAt: r['issued_at'],
+      annulledAt: o(r['annulled_at']),
+      annulledBy: o(r['annulled_by']),
+      annulmentReason: o(r['annulment_reason']),
+      periodYear: r['period_year'],
+      periodMonth: r['period_month'],
+    })
+  );
+
   const ratesRow = db
     .prepare('SELECT * FROM exchange_rates WHERE id = 1')
     .get() as Row | undefined;
@@ -547,6 +580,7 @@ export function loadRelationalState(): DatabaseState | null {
     expenses,
     expenseCategories,
     fiscalSettings,
+    fiscalInvoices,
     exchangeRates,
     auditLogs,
   };
@@ -567,6 +601,7 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM audit_logs;
       DELETE FROM exchange_rate_history;
       DELETE FROM exchange_rates;
+      DELETE FROM fiscal_invoices;
       DELETE FROM fiscal_settings;
       DELETE FROM expense_categories;
       DELETE FROM expenses;
@@ -1058,6 +1093,43 @@ export function saveRelationalState(state: DatabaseState): void {
       snapshot.fiscalSettings.historicalOrdersTreatment,
       snapshot.fiscalSettings.printNotes
     );
+
+    const insertFiscalInvoice = db.prepare(`
+      INSERT INTO fiscal_invoices (
+        id, serie, invoice_number, control_number, sales_order_id,
+        sales_order_number, emitter_snapshot, customer_snapshot, items_json,
+        subtotal, tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
+        exchange_rate_used, status, issued_at, annulled_at, annulled_by,
+        annulment_reason, period_year, period_month
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const invoice of snapshot.fiscalInvoices || []) {
+      insertFiscalInvoice.run(
+        invoice.id,
+        invoice.serie,
+        invoice.invoiceNumber,
+        invoice.controlNumber,
+        v(invoice.salesOrderId),
+        v(invoice.salesOrderNumber),
+        JSON.stringify(invoice.emitterSnapshot),
+        JSON.stringify(invoice.customerSnapshot),
+        JSON.stringify(invoice.items),
+        invoice.subtotal,
+        invoice.taxAmount,
+        invoice.total,
+        v(invoice.subtotalBs),
+        v(invoice.taxAmountBs),
+        v(invoice.totalBs),
+        invoice.exchangeRateUsed,
+        invoice.status,
+        invoice.issuedAt,
+        v(invoice.annulledAt),
+        v(invoice.annulledBy),
+        v(invoice.annulmentReason),
+        invoice.periodYear,
+        invoice.periodMonth
+      );
+    }
 
     db.prepare(`
       INSERT INTO exchange_rates (

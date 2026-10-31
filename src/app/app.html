@@ -224,6 +224,16 @@
               <span class="hidden md:inline">Salir</span>
             </button>
           </div>
+
+          <!-- Mobile logout: always reachable without opening the drawer -->
+          <button
+            (click)="logout()"
+            class="sm:hidden inline-flex items-center justify-center p-2 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 min-h-[44px] min-w-[44px]"
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+          >
+            <mat-icon class="text-sm">logout</mat-icon>
+          </button>
         }
 
         <!-- Mobile Drawer Hamburger Toggle Button -->

@@ -77,7 +77,10 @@ const auditActionSchema = z.enum([
   'proveedor_actualizado',
   'proveedor_eliminado',
   'precio_proveedor_registrado',
+  'pedido_venta_creado',
   'cobro_registrado',
+  'factura_emitida',
+  'factura_anulada',
 ]);
 const documentTypeSchema = z.enum([
   'factura_fiscal',
@@ -465,6 +468,10 @@ export const fiscalSettingsSchema = z
     printNotes: z.string().max(2000),
   })
   .partial();
+
+export const fiscalInvoiceAnnulmentSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+});
 
 export const exchangeRateUpdateSchema = z.object({
   usdRate: positive,

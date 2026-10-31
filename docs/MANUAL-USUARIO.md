@@ -219,6 +219,7 @@ Mientras tanto, **no use las notas de entrega como documento fiscal**.
 | Síntoma | Causa probable | Qué hacer |
 |---|---|---|
 | El navegador pide usuario y contraseña antes del login | Basic Auth de la interfaz activada (`UI_AUTH_ENABLED=true`) | Use las credenciales de UI y luego ingrese con su usuario personal. Si no debe pedirlas, el administrador puede desactivar esa barrera. |
+| No aparece el login y los módulos quedan bloqueados | El navegador no pudo verificar `/api/health` o el servidor no está disponible | Use **Reintentar conexión** en el login. Si continúa, solicite al administrador revisar el servicio y `/api/health`; el acceso se mantiene protegido mientras no se pueda verificar. |
 | “Usuario o contraseña inválidos” | Credenciales incorrectas o usuario inactivo | Verifique mayúsculas; pida al administrador restablecer la clave. |
 | “Demasiados intentos de inicio de sesión” | Límite de seguridad (429) | Espere unos minutos y reintente; no siga probando claves. |
 | Un módulo no aparece | Su rol no tiene permiso de lectura | Solicite permisos al administrador. |

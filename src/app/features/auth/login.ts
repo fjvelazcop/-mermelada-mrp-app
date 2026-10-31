@@ -13,7 +13,7 @@ type AuthMode = 'login' | 'request' | 'confirm';
   styleUrls: ['./login.css'],
 })
 export class LoginComponent {
-  private readonly auth = inject(AuthService);
+  public readonly auth = inject(AuthService);
 
   public mode = signal<AuthMode>('login');
   public username = '';
@@ -43,6 +43,10 @@ export class LoginComponent {
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  public async retryInitialization(): Promise<void> {
+    await this.auth.initialize();
   }
 
   public async onRequestReset(): Promise<void> {

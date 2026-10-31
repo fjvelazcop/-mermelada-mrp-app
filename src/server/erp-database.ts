@@ -11,6 +11,8 @@ import {
   Employee,
   PayrollWeek,
   FiscalSettings,
+  FiscalInvoice,
+  FiscalInvoiceStatus,
   CostStructureAnalysis,
   MonthlySalesStat,
   WeeklySalesStat,
@@ -46,6 +48,7 @@ export interface DatabaseState {
   expenses: Expense[];
   expenseCategories: ExpenseCategoryConfig[];
   fiscalSettings: FiscalSettings;
+  fiscalInvoices: FiscalInvoice[];
   exchangeRates: DailyExchangeRates;
   auditLogs: AuditLogEntry[];
 }
@@ -1587,6 +1590,7 @@ export function createInitialDatabase(): DatabaseState {
     expenses,
     expenseCategories,
     fiscalSettings,
+    fiscalInvoices: [],
     exchangeRates,
     auditLogs,
   };
@@ -2855,6 +2859,14 @@ export class ErpDatabase {
       hasDeliveryNote: false,
       createdBy: actor.userName,
     };
+
+    // Emit the fiscal invoice before committing the order to memory. If the
+    // fiscal settings are disabled the sale still proceeds as a non-fiscal
+    // dispatch; otherwise the invoice numbers are consumed atomically.
+    if (this.state.fiscalSettings?.enabled) {
+      this.addFiscalInvoiceForOrder(newOrder, actor);
+    }
+
     this.state.salesOrders.unshift(newOrder);
 
     // Reserve finished goods if available
@@ -3108,6 +3120,197 @@ export class ErpDatabase {
   public updateFiscalSettings(settings: Partial<FiscalSettings>): FiscalSettings {
     this.state.fiscalSettings = { ...this.state.fiscalSettings, ...settings };
     return this.state.fiscalSettings;
+  }
+
+  // --- FISCAL INVOICES ---
+  /** Invoices for a given period (or every invoice when no period is given). */
+  public getFiscalInvoices(year?: number, month?: number): FiscalInvoice[] {
+    const invoices = this.state.fiscalInvoices || [];
+    return invoices.filter(
+      (invoice) =>
+        (year === undefined || invoice.periodYear === year) &&
+        (month === undefined || invoice.periodMonth === month)
+    );
+  }
+
+  public getFiscalInvoiceById(id: string): FiscalInvoice | null {
+    return (this.state.fiscalInvoices || []).find((invoice) => invoice.id === id) || null;
+  }
+
+  /**
+   * Emit the fiscal invoice for a sales order.
+   *
+   * Invoice/control numbers come from the fiscal settings and are consumed
+   * atomically: they are incremented before returning and never reused, even
+   * if the invoice is later annulled.
+   */
+  public addFiscalInvoiceForOrder(
+    order: SalesOrder,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): FiscalInvoice {
+    const actor = this.manualOrderActor(actorInput);
+    const fiscal = this.state.fiscalSettings;
+
+    if (!fiscal || !fiscal.enabled) {
+      throw new Error('La facturación fiscal está deshabilitada en la configuración.');
+    }
+    if (!fiscal.companyName || !fiscal.companyTaxId) {
+      throw new Error('La configuración fiscal del emisor está incompleta.');
+    }
+
+    const serie = fiscal.invoiceSerie || 'A';
+    const invoiceNumber = fiscal.nextInvoiceNumber;
+    const controlNumber = fiscal.nextControlNumber;
+    const invoices = this.state.fiscalInvoices || [];
+
+    const duplicated = invoices.some(
+      (invoice) =>
+        invoice.status === 'emitida' &&
+        invoice.serie === serie &&
+        (invoice.invoiceNumber === invoiceNumber ||
+          invoice.controlNumber === controlNumber)
+    );
+    if (duplicated) {
+      throw new Error(
+        `El consecutivo ${serie}-${invoiceNumber} ya fue emitido. Ajuste los contadores fiscales antes de continuar.`
+      );
+    }
+
+    const customer = this.state.customers.find((c) => c.id === order.customerId);
+    const issuedAt = new Date();
+    const taxRatePercent =
+      order.subtotal > 0
+        ? Number(((order.taxAmount / order.subtotal) * 100).toFixed(2))
+        : fiscal.taxRatePercent;
+
+    const items = order.items.map((item) => {
+      const subtotal = Number(item.subtotal.toFixed(2));
+      const taxAmount = Number(((subtotal * taxRatePercent) / 100).toFixed(2));
+      return {
+        description: [item.flavor, item.presentationLabel]
+          .filter(Boolean)
+          .join(' · '),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        subtotal,
+        taxRatePercent,
+        taxAmount,
+        total: Number((subtotal + taxAmount).toFixed(2)),
+      };
+    });
+
+    const invoice: FiscalInvoice = {
+      id: 'fi-' + issuedAt.getTime().toString(36) + Math.random().toString(36).slice(2, 6),
+      serie,
+      invoiceNumber,
+      controlNumber,
+      salesOrderId: order.id,
+      salesOrderNumber: order.orderNumber,
+      emitterSnapshot: {
+        companyName: fiscal.companyName,
+        companyTaxId: fiscal.companyTaxId,
+        fiscalAddress: fiscal.fiscalAddress,
+        companyPhone: fiscal.companyPhone,
+        companyEmail: fiscal.companyEmail,
+        economicActivity: fiscal.economicActivity,
+        taxRegime: fiscal.taxRegime,
+        branchName: fiscal.branchName,
+        branchAddress: fiscal.branchAddress,
+        invoicePrefix: fiscal.invoicePrefix,
+        controlPrefix: fiscal.controlPrefix,
+        authorizationCode: fiscal.authorizationCode,
+        authorizationValidUntil: fiscal.authorizationValidUntil,
+        printNotes: fiscal.printNotes,
+      },
+      customerSnapshot: {
+        customerId: order.customerId,
+        businessName: order.customerName,
+        taxId: order.customerTaxId,
+        address: customer?.address,
+        phone: customer?.phone,
+      },
+      items,
+      subtotal: order.subtotal,
+      taxAmount: order.taxAmount,
+      total: order.total,
+      subtotalBs: order.subtotalBs,
+      taxAmountBs: order.taxAmountBs,
+      totalBs: order.totalBs,
+      exchangeRateUsed: order.exchangeRateUsed,
+      status: 'emitida',
+      issuedAt: issuedAt.toISOString(),
+      periodYear: issuedAt.getFullYear(),
+      periodMonth: issuedAt.getMonth() + 1,
+    };
+
+    this.state.fiscalInvoices = [invoice, ...invoices];
+    this.state.fiscalSettings = {
+      ...fiscal,
+      nextInvoiceNumber: invoiceNumber + 1,
+      nextControlNumber: controlNumber + 1,
+    };
+
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'factura_emitida',
+      title: `Factura fiscal emitida: ${serie}-${invoiceNumber}`,
+      description: `Factura ${fiscal.invoicePrefix}${invoiceNumber} (control ${controlNumber}) para ${order.customerName} por $${order.total.toFixed(2)}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: invoice.id,
+        targetCode: `${serie}-${invoiceNumber}`,
+        itemName: order.customerName,
+        salesOrderId: order.id,
+      },
+    });
+
+    return invoice;
+  }
+
+  /** Annul an issued invoice. The consecutive numbers are never reused. */
+  public annulFiscalInvoice(
+    id: string,
+    reason: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): FiscalInvoice {
+    const actor = this.manualOrderActor(actorInput);
+    const invoice = this.getFiscalInvoiceById(id);
+    if (!invoice) {
+      throw new Error('Factura fiscal no encontrada.');
+    }
+    if (invoice.status === 'anulada') {
+      throw new Error('La factura ya está anulada.');
+    }
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      throw new Error('Debe indicar el motivo de la anulación.');
+    }
+
+    invoice.status = 'anulada';
+    invoice.annulledAt = new Date().toISOString();
+    invoice.annulledBy = actor.userName;
+    invoice.annulmentReason = trimmedReason;
+
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'factura_anulada',
+      title: `Factura fiscal anulada: ${invoice.serie}-${invoice.invoiceNumber}`,
+      description: `Motivo: ${trimmedReason}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        targetId: invoice.id,
+        targetCode: `${invoice.serie}-${invoice.invoiceNumber}`,
+        itemName: invoice.customerSnapshot.businessName,
+      },
+    });
+
+    return invoice;
   }
 
   // --- COSTING ANALYSIS & INTELLIGENCE ---
@@ -3672,7 +3875,7 @@ const rawDbInstance = new ErpDatabase();
  * Methods that mutate the state. After any of these finish we automatically
  * persist the new state to SQLite. Read‑only `get*` methods are left untouched.
  */
-const MUTATING_METHOD = /^(add|update|delete|create|process|reset|fetch)/;
+const MUTATING_METHOD = /^(add|update|delete|create|process|reset|fetch|annul)/;
 
 export const dbInstance = new Proxy(rawDbInstance, {
   get(target, prop, receiver) {

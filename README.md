@@ -228,25 +228,56 @@ The backend suite (`src/server/**/*.spec.ts`, Vitest) uses a real temporary SQLi
 
 ## 🚀 Getting Started
 
+> **Local URLs (todo en un solo proceso):** `npm run dev` levanta Angular + SSR + API en
+> **http://localhost:3000**. No uses `http://localhost:3000/` si el proceso no está
+> corriendo: `ERR_CONNECTION_REFUSED` significa que el servidor de desarrollo está apagado.
+
 ```bash
-# 1️⃣ Install dependencies
-bun install      # or npm install
+# 1️⃣ Instalar dependencias
+npm install      # o bun install
 
-# 2️⃣ Start the development server (Angular + Express SSR)
-bun run dev      # runs on http://localhost:4000 (default) or PORT env var
+# 2️⃣ Levantar el front + backend local (Angular 21 + Express SSR + SQLite)
+npm run dev      # http://localhost:3000
 
-# 3️⃣ Run the test suites
-bun run test             # Angular unit tests
-npm run test:server      # backend integration tests (SQLite + API)
+# 3️⃣ Ejecutar las suites de pruebas
+npm run test             # pruebas unitarias de Angular
+npm run test:server      # pruebas de integración backend (SQLite + API)
 
-# 4️⃣ Build for production
-bun run build    # Angular SSR build → dist/
+# 4️⃣ Compilar para producción
+npm run build            # build SSR → dist/app
+npm run start:prod       # sirve el build en http://localhost:4000
 ```
+
+### Rutas locales
+
+Con `npm run dev` (puerto **3000**):
+
+| Recurso | URL local |
+|---------|-----------|
+| Aplicación / front | <http://localhost:3000> (redirige a `/dashboard`) |
+| Tablero | <http://localhost:3000/dashboard> |
+| Inventario | <http://localhost:3000/inventory> |
+| Producción & BOM | <http://localhost:3000/production> |
+| Costos & Precios | <http://localhost:3000/costing> |
+| Ventas & Despacho | <http://localhost:3000/sales> |
+| Nómina | <http://localhost:3000/payroll> |
+| Gastos | <http://localhost:3000/expenses> |
+| Proveedores | <http://localhost:3000/suppliers> |
+| Configuración fiscal y permisos | <http://localhost:3000/settings> |
+| Administración (requiere rol admin) | <http://localhost:3000/admin> |
+| Documentación de arquitectura | <http://localhost:3000/architecture> |
+| Health check API | <http://localhost:3000/api/health> |
+| Documentación Swagger | <http://localhost:3000/api/docs> |
+| OpenAPI JSON | <http://localhost:3000/api/openapi.json> |
+
+Con `npm run start:prod` los mismos paths están disponibles en el puerto **4000**
+(`http://localhost:4000/dashboard`, `http://localhost:4000/api/health`, etc.).
 
 ### Default ports
 
-- **Angular dev server**: `http://localhost:4200` (controlled by Angular CLI)
-- **Express SSR**: `http://localhost:4000` (or `PORT` env var)
+- **Desarrollo (`npm run dev`)**: `http://localhost:3000` — Angular CLI + SSR + API.
+- **Producción (`npm run start:prod`)**: `http://localhost:4000` (o `PORT`).
+- El dev server se puede exponer en la red con `--host=0.0.0.0` (ya incluido en el script).
 
 The Angular app bootstraps with `provideHttpClient(withFetch())` and the `AgentsService` is automatically available for injection.
 

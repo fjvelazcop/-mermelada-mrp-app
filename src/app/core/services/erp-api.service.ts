@@ -13,6 +13,7 @@ import {
   Employee,
   PayrollWeek,
   FiscalSettings,
+  FiscalInvoice,
   CostStructureAnalysis,
   UserRole,
   DailyExchangeRates,
@@ -1610,6 +1611,31 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al guardar configuración fiscal';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  // --- FISCAL INVOICES ---
+  public async getFiscalInvoices(year?: number, month?: number) {
+    const params: Record<string, string> = {};
+    if (year) params['year'] = String(year);
+    if (month) params['month'] = String(month);
+    return firstValueFrom<FiscalInvoice[]>(
+      this.http.get<FiscalInvoice[]>('/api/fiscal-invoices', { params })
+    );
+  }
+
+  public async annulFiscalInvoice(id: string, reason: string) {
+    try {
+      const res = await firstValueFrom<FiscalInvoice>(
+        this.http.post<FiscalInvoice>(`/api/fiscal-invoices/${id}/annul`, { reason })
+      );
+      this.showToast(`Factura ${res.serie}-${res.invoiceNumber} anulada.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al anular la factura';
       this.showToast(msg, 'error');
       throw err;
     }

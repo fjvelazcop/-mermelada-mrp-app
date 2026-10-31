@@ -676,6 +676,122 @@ describe('mutating endpoints', () => {
     expect(unknownCustomer.body['error']).toContain('Cliente no encontrado');
   });
 
+  it('emits a consecutive fiscal invoice and annuls it without reusing numbers', async () => {
+    const fiscalBefore = await jsonRequest('/api/fiscal-settings', 'GET');
+    expect(fiscalBefore.response.status).toBe(200);
+    const settings = fiscalBefore.body as {
+      invoiceSerie: string;
+      nextInvoiceNumber: number;
+      nextControlNumber: number;
+      invoicePrefix: string;
+    };
+
+    const customers = (await (
+      await fetch(`${baseUrl}/api/sales/customers`)
+    ).json()) as {
+      id: string;
+      businessName: string;
+      taxId: string;
+    }[];
+    const customer = customers[0];
+
+    const goods = (await (
+      await fetch(`${baseUrl}/api/inventory/finished-goods`)
+    ).json()) as {
+      id: string;
+      flavor: string;
+      presentation: string;
+      presentationLabel: string;
+      suggestedWholesalePrice: number;
+    }[];
+    const good = goods[0];
+    const subtotal = Number((good.suggestedWholesalePrice * 2).toFixed(2));
+    const taxAmount = Number((subtotal * 0.16).toFixed(2));
+
+    const order = await jsonRequest('/api/sales/orders', 'POST', {
+      customerId: customer.id,
+      customerName: customer.businessName,
+      customerTaxId: customer.taxId,
+      orderDate: '2026-10-31',
+      deliveryDate: '2026-11-05',
+      status: 'pendiente',
+      exchangeRateUsed: 50,
+      items: [
+        {
+          finishedGoodId: good.id,
+          flavor: good.flavor,
+          presentation: good.presentation,
+          presentationLabel: good.presentationLabel,
+          quantity: 2,
+          unitPrice: good.suggestedWholesalePrice,
+          subtotal,
+        },
+      ],
+      subtotal,
+      taxAmount,
+      total: Number((subtotal + taxAmount).toFixed(2)),
+    });
+    expect(order.response.status).toBe(201);
+
+    type Invoice = {
+      id: string;
+      serie: string;
+      invoiceNumber: number;
+      controlNumber: number;
+      salesOrderId: string;
+      status: string;
+      customerSnapshot: { taxId: string };
+      annulledBy?: string;
+      annulmentReason?: string;
+    };
+
+    const invoices = (await (
+      await fetch(`${baseUrl}/api/fiscal-invoices`)
+    ).json()) as Invoice[];
+    const invoice = invoices.find((i) => i.salesOrderId === order.body['id']);
+    expect(invoice).toBeTruthy();
+    expect(invoice!.serie).toBe(settings.invoiceSerie);
+    expect(invoice!.invoiceNumber).toBe(settings.nextInvoiceNumber);
+    expect(invoice!.controlNumber).toBe(settings.nextControlNumber);
+    expect(invoice!.status).toBe('emitida');
+    expect(invoice!.customerSnapshot.taxId).toBe(customer.taxId);
+
+    const fiscalAfter = await jsonRequest('/api/fiscal-settings', 'GET');
+    expect(fiscalAfter.body['nextInvoiceNumber']).toBe(
+      settings.nextInvoiceNumber + 1
+    );
+    expect(fiscalAfter.body['nextControlNumber']).toBe(
+      settings.nextControlNumber + 1
+    );
+
+    const annulled = await jsonRequest(
+      `/api/fiscal-invoices/${invoice!.id}/annul`,
+      'POST',
+      { reason: 'Error en los datos del cliente' }
+    );
+    expect(annulled.response.status).toBe(200);
+    expect(annulled.body['status']).toBe('anulada');
+    expect(annulled.body['annulmentReason']).toBe(
+      'Error en los datos del cliente'
+    );
+
+    const again = await jsonRequest(
+      `/api/fiscal-invoices/${invoice!.id}/annul`,
+      'POST',
+      { reason: 'Segundo intento' }
+    );
+    expect(again.response.status).toBe(400);
+
+    const persisted = getDb()
+      .prepare(
+        'SELECT status, annulled_by, annulment_reason FROM fiscal_invoices WHERE id = ?'
+      )
+      .get(invoice!.id) as Record<string, unknown>;
+    expect(persisted['status']).toBe('anulada');
+    expect(persisted['annulled_by']).toBeTruthy();
+    expect(persisted['annulment_reason']).toBe('Error en los datos del cliente');
+  });
+
   it('returns 404/400 for unknown sales resources', async () => {
     const missingStatus = await jsonRequest(
       '/api/sales/orders/missing/status',

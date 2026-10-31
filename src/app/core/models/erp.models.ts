@@ -378,6 +378,76 @@ export interface FiscalSettings {
   printNotes: string;
 }
 
+/**
+ * Fiscal invoice emitted for a sale.
+ *
+ * The emitter and customer data are copied (snapshotted) at emission time so
+ * later edits to the masters never alter an already issued document. Invoice
+ * and control numbers are consecutive and never reused, even when annulled.
+ */
+export type FiscalInvoiceStatus = 'emitida' | 'anulada';
+
+export interface FiscalInvoiceEmitterSnapshot {
+  companyName: string;
+  companyTaxId: string;
+  fiscalAddress: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  economicActivity?: string;
+  taxRegime?: FiscalRegime;
+  branchName?: string;
+  branchAddress?: string;
+  invoicePrefix?: string;
+  controlPrefix?: string;
+  authorizationCode?: string;
+  authorizationValidUntil?: string;
+  printNotes?: string;
+}
+
+export interface FiscalInvoiceCustomerSnapshot {
+  customerId: string;
+  businessName: string;
+  taxId: string;
+  address?: string;
+  phone?: string;
+}
+
+export interface FiscalInvoiceLine {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  taxRatePercent: number;
+  taxAmount: number;
+  total: number;
+}
+
+export interface FiscalInvoice {
+  id: string;
+  serie: string;
+  invoiceNumber: number;
+  controlNumber: number;
+  salesOrderId?: string;
+  salesOrderNumber?: string;
+  emitterSnapshot: FiscalInvoiceEmitterSnapshot;
+  customerSnapshot: FiscalInvoiceCustomerSnapshot;
+  items: FiscalInvoiceLine[];
+  subtotal: number;
+  taxAmount: number;
+  total: number;
+  subtotalBs?: number;
+  taxAmountBs?: number;
+  totalBs?: number;
+  exchangeRateUsed: number;
+  status: FiscalInvoiceStatus;
+  issuedAt: string;
+  annulledAt?: string;
+  annulledBy?: string;
+  annulmentReason?: string;
+  periodYear: number;
+  periodMonth: number;
+}
+
 export interface Employee {
   id: string;
   fullName: string;
@@ -677,7 +747,9 @@ export interface AuditLogEntry {
     | 'proveedor_eliminado'
     | 'precio_proveedor_registrado'
     | 'pedido_venta_creado'
-    | 'cobro_registrado';
+    | 'cobro_registrado'
+    | 'factura_emitida'
+    | 'factura_anulada';
   title: string;
   description: string;
   userId: string;

@@ -31,6 +31,10 @@ export const routes: Routes = [
     children: [],
   },
   {
+    path: 'suppliers',
+    children: [],
+  },
+  {
     path: 'settings',
     children: [],
   },

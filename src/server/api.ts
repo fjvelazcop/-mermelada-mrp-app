@@ -4,7 +4,16 @@ import express, {
   type RequestHandler,
   type Response,
 } from 'express';
-import swaggerUi from 'swagger-ui-express';
+import { createRequire } from 'node:module';
+import type swaggerUiType from 'swagger-ui-express';
+
+// `swagger-ui-express` is CommonJS and relies on `__dirname`. The Angular dev
+// server (Vite) bundles SSR dependencies as ESM, where `__dirname` is not
+// defined, which crashes every request. Loading it through `createRequire`
+// executes the real CommonJS module instead, and also keeps the production
+// build's external dependency working.
+const require = createRequire(import.meta.url);
+const swaggerUi = require('swagger-ui-express') as typeof swaggerUiType;
 import { dbInstance } from './erp-database.js';
 import { getDb, getDbPath } from './database/persistence.js';
 import {
@@ -63,6 +72,7 @@ import {
   expenseSchema,
   finishedGoodUpdateSchema,
   fiscalSettingsSchema,
+  fiscalInvoiceAnnulmentSchema,
   idParamsSchema,
   inventoryMovementSchema,
   loginSchema,
@@ -1032,6 +1042,43 @@ export function createApiApp(): express.Express {
     mutation((req, res) => {
       const updated = dbInstance.updateFiscalSettings(req.body);
       res.json(updated);
+    })
+  );
+
+  // --- FISCAL INVOICES (SENIAT) ---
+  app.get(
+    '/api/fiscal-invoices',
+    query((req, res) => {
+      const year = req.query['year'] ? Number(req.query['year']) : undefined;
+      const month = req.query['month'] ? Number(req.query['month']) : undefined;
+      res.json(dbInstance.getFiscalInvoices(year, month));
+    })
+  );
+
+  app.get(
+    '/api/fiscal-invoices/:id',
+    validateParams(idParamsSchema),
+    query((req, res) => {
+      const invoice = dbInstance.getFiscalInvoiceById(routeId(req));
+      if (!invoice) {
+        throw new ApiError(404, 'Factura fiscal no encontrada');
+      }
+      res.json(invoice);
+    })
+  );
+
+  app.post(
+    '/api/fiscal-invoices/:id/annul',
+    requireAdmin,
+    validateParams(idParamsSchema),
+    validateBody(fiscalInvoiceAnnulmentSchema),
+    mutation((req, res) => {
+      const invoice = dbInstance.annulFiscalInvoice(
+        routeId(req),
+        req.body.reason,
+        auditActor(req)
+      );
+      res.json(invoice);
     })
   );
 

@@ -1,7 +1,16 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type BetterSqlite3 from 'better-sqlite3';
 import type { DatabaseState } from '../erp-database.js';
+
+// `better-sqlite3` is a native CommonJS addon that resolves its binding with
+// `__dirname`. The Angular dev server (Vite) bundles SSR dependencies as ESM,
+// where `__dirname` is undefined, so requiring it through `createRequire`
+// keeps the real CommonJS module working in development as well.
+const require = createRequire(import.meta.url);
+const Database = require('better-sqlite3') as typeof BetterSqlite3;
+type SqliteDatabase = BetterSqlite3.Database;
 
 /**
  * Persistence layer for the ERP.
@@ -25,10 +34,10 @@ import type { DatabaseState } from '../erp-database.js';
 const DEFAULT_DB_PATH = join(process.cwd(), 'data', 'mermelada.db');
 let dbPath = process.env['DB_PATH'] || DEFAULT_DB_PATH;
 
-let connection: Database.Database | null = null;
+let connection: SqliteDatabase | null = null;
 
 /** Get (and lazily initialise) the SQLite connection. */
-export function getDb(): Database.Database {
+export function getDb(): SqliteDatabase {
   if (!connection) {
     mkdirSync(dirname(dbPath), { recursive: true });
     connection = new Database(dbPath);
@@ -50,7 +59,7 @@ export function setDbPath(path: string): void {
 
 /** Add a column only when the table does not already have it. */
 function ensureColumn(
-  db: Database.Database,
+  db: SqliteDatabase,
   table: string,
   column: string,
   definition: string
@@ -64,7 +73,7 @@ function ensureColumn(
 }
 
 /** Run schema migrations. */
-function migrate(db: Database.Database): void {
+function migrate(db: SqliteDatabase): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
@@ -397,6 +406,34 @@ function migrate(db: Database.Database): void {
       books_format TEXT NOT NULL DEFAULT 'xlsx',
       historical_orders_treatment TEXT NOT NULL DEFAULT 'revisar',
       print_notes TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS fiscal_invoices (
+      id TEXT PRIMARY KEY,
+      serie TEXT NOT NULL DEFAULT 'A',
+      invoice_number INTEGER NOT NULL,
+      control_number INTEGER NOT NULL DEFAULT 1,
+      sales_order_id TEXT,
+      sales_order_number TEXT,
+      emitter_snapshot TEXT NOT NULL,
+      customer_snapshot TEXT NOT NULL,
+      items_json TEXT NOT NULL,
+      subtotal REAL NOT NULL DEFAULT 0,
+      tax_amount REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      subtotal_bs REAL,
+      tax_amount_bs REAL,
+      total_bs REAL,
+      exchange_rate_used REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'emitida',
+      issued_at TEXT NOT NULL,
+      annulled_at TEXT,
+      annulled_by TEXT,
+      annulment_reason TEXT,
+      period_year INTEGER NOT NULL,
+      period_month INTEGER NOT NULL,
+      UNIQUE (serie, invoice_number),
+      UNIQUE (serie, control_number)
     );
 
     CREATE TABLE IF NOT EXISTS exchange_rates (

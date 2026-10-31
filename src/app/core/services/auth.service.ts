@@ -1,6 +1,6 @@
 import {computed, inject, Injectable, signal} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
-import {firstValueFrom} from 'rxjs';
+import {firstValueFrom, timeout} from 'rxjs';
 import {ErpApiService} from './erp-api.service';
 
 export interface AuthUser {
@@ -40,6 +40,7 @@ export class AuthService {
 
   public authEnabled = signal<boolean>(false);
   public ready = signal<boolean>(false);
+  public initializationError = signal<string | null>(null);
   public currentUser = signal<AuthUser | null>(null);
   public token = signal<string | null>(null);
 
@@ -54,6 +55,9 @@ export class AuthService {
 
   /** Resolve whether authentication is enabled and restore the session. */
   public async initialize(): Promise<void> {
+    this.ready.set(false);
+    this.initializationError.set(null);
+
     if (typeof window === 'undefined') {
       this.ready.set(true);
       return;
@@ -61,11 +65,20 @@ export class AuthService {
 
     try {
       const health = await firstValueFrom(
-        this.http.get<{authEnabled?: boolean}>('/api/health')
+        this.http
+          .get<{authEnabled?: boolean}>('/api/health')
+          .pipe(timeout({first: 8000}))
       );
-      this.authEnabled.set(Boolean(health?.authEnabled));
+      if (typeof health?.authEnabled !== 'boolean') {
+        throw new Error('La respuesta de salud no contiene authEnabled');
+      }
+      this.authEnabled.set(health.authEnabled);
     } catch {
-      this.authEnabled.set(false);
+      // Unknown auth state must not expose the demo UI against a protected API.
+      this.authEnabled.set(true);
+      this.initializationError.set(
+        'No se pudo verificar el servidor. El acceso sigue protegido; revisa la conexión e inténtalo de nuevo.'
+      );
     }
 
     const stored = localStorage.getItem(TOKEN_KEY);
@@ -73,12 +86,20 @@ export class AuthService {
       this.token.set(stored);
       try {
         const user = await firstValueFrom(
-          this.http.get<AuthUser>('/api/auth/me')
+          this.http
+            .get<AuthUser>('/api/auth/me')
+            .pipe(timeout({first: 8000}))
         );
         await this.erp.refreshSecurityData();
         this.applyUser(user);
+        this.initializationError.set(null);
       } catch {
         this.clearSession();
+        if (!this.initializationError()) {
+          this.initializationError.set(
+            'La sesión expiró o no es válida. Inicia sesión nuevamente.'
+          );
+        }
       }
     } else if (!this.authEnabled()) {
       // Demo mode: make sure the API sends a role header for admin-only rules.
