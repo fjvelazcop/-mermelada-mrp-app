@@ -1,5 +1,6 @@
 import {computed, inject, Injectable, signal} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
+import {Router} from '@angular/router';
 import {firstValueFrom, timeout} from 'rxjs';
 import {ErpApiService} from './erp-api.service';
 
@@ -29,14 +30,15 @@ const TOKEN_KEY = 'mermelada-token';
 /**
  * Session state for the ERP.
  *
- * When the API reports `authEnabled=false` (demo/local mode) no login is
- * required and the existing role simulator keeps working. In production the
- * app requires a valid JWT before rendering any module.
+ * The UI always requires a user session. In demo/local mode the API can still
+ * accept unauthenticated requests for development role simulation.
  */
 @Injectable({providedIn: 'root'})
 export class AuthService {
   private http = inject(HttpClient);
   private erp = inject(ErpApiService);
+  private router = inject(Router);
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
   public authEnabled = signal<boolean>(false);
   public ready = signal<boolean>(false);
@@ -45,7 +47,7 @@ export class AuthService {
   public token = signal<string | null>(null);
 
   public requiresLogin = computed(
-    () => this.ready() && this.authEnabled() && !this.currentUser()
+    () => this.ready() && !this.currentUser()
   );
 
   public getToken(): string | null {
@@ -82,7 +84,7 @@ export class AuthService {
     }
 
     const stored = localStorage.getItem(TOKEN_KEY);
-    if (this.authEnabled() && stored) {
+    if (stored) {
       this.token.set(stored);
       try {
         const user = await firstValueFrom(
@@ -92,6 +94,7 @@ export class AuthService {
         );
         await this.erp.refreshSecurityData();
         this.applyUser(user);
+        this.scheduleExpiry(stored);
         this.initializationError.set(null);
       } catch {
         this.clearSession();
@@ -118,6 +121,7 @@ export class AuthService {
       localStorage.setItem(TOKEN_KEY, res.token);
     }
     this.token.set(res.token);
+    this.scheduleExpiry(res.token);
     await this.erp.refreshSecurityData();
     this.applyUser(res.user);
     await this.erp.refreshAllData();
@@ -130,6 +134,7 @@ export class AuthService {
       // Stateless tokens: ignoring the call is safe.
     }
     this.clearSession();
+    await this.router.navigateByUrl('/login', {replaceUrl: true});
   }
 
   public async requestPasswordReset(identifier: string): Promise<{
@@ -171,6 +176,7 @@ export class AuthService {
       )
     );
     this.clearSession();
+    await this.router.navigateByUrl('/login', {replaceUrl: true});
     return response;
   }
 
@@ -180,11 +186,63 @@ export class AuthService {
   }
 
   private clearSession(): void {
+    if (this.expiryTimer) {
+      clearTimeout(this.expiryTimer);
+      this.expiryTimer = null;
+    }
     if (typeof window !== 'undefined') {
       localStorage.removeItem(TOKEN_KEY);
     }
     this.token.set(null);
     this.currentUser.set(null);
     this.erp.clearAuthenticatedUser();
+  }
+
+  private scheduleExpiry(token: string): void {
+    if (this.expiryTimer) {
+      clearTimeout(this.expiryTimer);
+    }
+
+    try {
+      const encodedPayload = token.split('.')[0];
+      if (!encodedPayload) {
+        throw new Error('El token no contiene un payload');
+      }
+      const normalizedPayload = encodedPayload
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+      const paddedPayload =
+        normalizedPayload + '='.repeat((4 - (normalizedPayload.length % 4)) % 4);
+      const decodedPayload = atob(paddedPayload);
+      const payloadText = new TextDecoder().decode(
+        Uint8Array.from(decodedPayload, character => character.charCodeAt(0))
+      );
+      const payload = JSON.parse(payloadText) as {exp?: unknown};
+      if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) {
+        throw new Error('El token no contiene una fecha de expiración válida');
+      }
+
+      const expiresAt = payload.exp * 1000;
+      const expire = () => {
+        const remaining = expiresAt - Date.now();
+        if (remaining > 0) {
+          this.expiryTimer = setTimeout(expire, Math.min(remaining, 2_147_483_647));
+          return;
+        }
+        this.clearSession();
+        this.initializationError.set(
+          'La sesión expiró. Inicia sesión nuevamente.'
+        );
+        void this.router.navigateByUrl('/login', {replaceUrl: true});
+      };
+      expire();
+    } catch (error) {
+      this.clearSession();
+      this.initializationError.set(
+        'No se pudo validar la expiración de la sesión. Inicia sesión nuevamente.'
+      );
+      void this.router.navigateByUrl('/login', {replaceUrl: true});
+      throw error;
+    }
   }
 }

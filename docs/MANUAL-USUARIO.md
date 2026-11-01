@@ -56,7 +56,8 @@ descuenta inventario y deja rastro en la auditoría.
 ### 2.3. Cerrar sesión
 
 Use **Cerrar sesión** en el menú de la cuenta, especialmente en equipos
-compartidos. La sesión expira a las 8 horas.
+compartidos. La sesión expira a las 8 horas; al vencer, el sistema vuelve
+automáticamente a la pantalla de login. Cerrar sesión también regresa al login.
 
 ---
 

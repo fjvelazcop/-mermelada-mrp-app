@@ -2,6 +2,7 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { CybersecurityAgent } from './agents/cybersecurity-agent';
 import { MemoryAgent } from './agents/memory-agent';
+import {AuthService} from './services/auth.service';
 import { ErpApiService } from './services/erp-api.service';
 
 export const authGuard: CanActivateFn = (route) => {
@@ -9,12 +10,21 @@ export const authGuard: CanActivateFn = (route) => {
   const memory = inject(MemoryAgent);
   const router = inject(Router);
   const api = inject(ErpApiService);
+  const auth = inject(AuthService);
 
-  // Read allowed roles from route data; default to ['admin']
-  const allowedRoles: string[] = (route.data?.['allowedRoles'] as string[]) || ['admin'];
+  if (!auth.ready()) {
+    return true;
+  }
+  if (!auth.currentUser()) {
+    return router.createUrlTree(['/login']);
+  }
 
-  // Retrieve the current user role from memory or fallback to ERP active user role
-  let userRole = memory.get<string>('userRole');
+  const allowedRoles = route.data?.['allowedRoles'] as string[] | undefined;
+  if (!allowedRoles?.length) {
+    return true;
+  }
+
+  let userRole = auth.currentUser()?.roleId || memory.get<string>('userRole');
   if (!userRole) {
     userRole = api.currentRole();
     memory.set('userRole', userRole);
@@ -24,8 +34,6 @@ export const authGuard: CanActivateFn = (route) => {
     return true;
   }
 
-  // Unauthorized – notify and navigate to dashboard
   api.showToast(`Acceso restringido: El rol ${userRole} no tiene permisos para esta ruta.`, 'error');
-  router.navigate(['/dashboard']);
-  return false;
+  return router.createUrlTree(['/dashboard']);
 };

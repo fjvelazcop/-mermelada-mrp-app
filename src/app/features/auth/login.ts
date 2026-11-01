@@ -1,6 +1,7 @@
 import {ChangeDetectionStrategy, Component, inject, signal} from '@angular/core';
 import {FormsModule} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {Router} from '@angular/router';
 import {AuthService} from '../../core/services/auth.service';
 
 type AuthMode = 'login' | 'request' | 'confirm';
@@ -14,6 +15,7 @@ type AuthMode = 'login' | 'request' | 'confirm';
 })
 export class LoginComponent {
   public readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
 
   public mode = signal<AuthMode>('login');
   public username = '';
@@ -38,6 +40,7 @@ export class LoginComponent {
     try {
       await this.auth.login(this.username.trim(), this.password);
       this.password = '';
+      await this.router.navigateByUrl('/dashboard', {replaceUrl: true});
     } catch (err: unknown) {
       this.error.set(this.extractError(err, 'Usuario o contraseña incorrectos'));
     } finally {

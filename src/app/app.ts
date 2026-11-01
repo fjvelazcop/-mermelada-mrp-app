@@ -124,9 +124,11 @@ export class App implements OnInit {
 
   public async ngOnInit() {
     await this.auth.initialize();
-    if (!this.auth.requiresLogin()) {
-      await this.api.refreshAllData();
+    if (this.auth.requiresLogin()) {
+      await this.router.navigateByUrl('/login', {replaceUrl: true});
+      return;
     }
+    await this.api.refreshAllData();
     const initialSeg = this.router.url.replace(/^\//, '').split('?')[0].split('/')[0];
     const targetTab = initialSeg === 'admin' ? 'settings' : initialSeg;
     if (this.validTabs.has(targetTab) && targetTab !== this.currentTab()) {

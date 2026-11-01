@@ -168,8 +168,8 @@
           </button>
         }
 
-        @if (!auth.authEnabled()) {
-          <!-- Active User Simulator Selector (Allows testing all roles without login barriers) -->
+        @if (!auth.authEnabled() && !auth.currentUser()) {
+          <!-- Demo role simulation remains available after entering the login screen. -->
           <div class="hidden sm:flex items-center gap-1.5 bg-stone-100 border border-stone-200 rounded-lg px-2 py-1 text-xs">
             <mat-icon class="text-xs text-amber-600">account_circle</mat-icon>
             <select
@@ -207,14 +207,16 @@
               <span class="block font-semibold text-stone-900">{{ auth.currentUser()?.fullName }}</span>
               <span class="block text-[10px] text-stone-500">{{ auth.currentUser()?.roleId }}</span>
             </div>
-            <button
-              (click)="openPasswordModal()"
-              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100 font-semibold min-h-[36px]"
-              title="Cambiar mi contraseña"
-            >
-              <mat-icon class="text-sm">key</mat-icon>
-              <span class="hidden lg:inline">Clave</span>
-            </button>
+            @if (auth.authEnabled()) {
+              <button
+                (click)="openPasswordModal()"
+                class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100 font-semibold min-h-[36px]"
+                title="Cambiar mi contraseña"
+              >
+                <mat-icon class="text-sm">key</mat-icon>
+                <span class="hidden lg:inline">Clave</span>
+              </button>
+            }
             <button
               (click)="logout()"
               class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100 font-semibold min-h-[36px]"
@@ -524,15 +526,16 @@
           <span>Restaurar Datos Demostración</span>
         </button>
 
-        @if (auth.authEnabled()) {
-          <button
-            (click)="openPasswordModal()"
-            class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold min-h-[44px]"
-          >
-            <mat-icon class="text-xs">key</mat-icon>
-            <span>Cambiar Contraseña</span>
-          </button>
-
+        @if (auth.currentUser()) {
+          @if (auth.authEnabled()) {
+            <button
+              (click)="openPasswordModal()"
+              class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold min-h-[44px]"
+            >
+              <mat-icon class="text-xs">key</mat-icon>
+              <span>Cambiar Contraseña</span>
+            </button>
+          }
           <button
             (click)="logout()"
             class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold min-h-[44px]"

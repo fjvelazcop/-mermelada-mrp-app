@@ -12,8 +12,8 @@ import { getDb } from './database/persistence.js';
  * Basic authentication and role-based authorization.
  *
  * Enabled with `AUTH_ENABLED=true`. When disabled (default for local/demo use)
- * the API keeps working without credentials, but the login endpoints are still
- * available so clients can obtain a token.
+ * API requests without a token remain available for role simulation, while
+ * requests carrying a token still validate it so browser sessions can persist.
  */
 
 export type BuiltInRoleId =
@@ -1210,17 +1210,12 @@ function isPublicPath(req: Request): boolean {
   return PUBLIC_PATHS.some((pattern) => pattern.test(path));
 }
 
-/** Express middleware: validates the bearer token when auth is enabled. */
+/** Express middleware: validates tokens when required or when one is supplied. */
 export function authenticate(
   req: Request,
   res: Response,
   next: NextFunction
 ): void {
-  if (!isAuthEnabled()) {
-    next();
-    return;
-  }
-
   // Health, login and API documentation stay public.
   if (!apiPath(req).startsWith('/api/') || isPublicPath(req)) {
     next();
@@ -1229,7 +1224,11 @@ export function authenticate(
 
   const header = req.header('authorization') ?? '';
   if (!header.startsWith('Bearer ')) {
-    unauthorized(res, 'Token de autenticación requerido');
+    if (isAuthEnabled()) {
+      unauthorized(res, 'Token de autenticación requerido');
+      return;
+    }
+    next();
     return;
   }
 
