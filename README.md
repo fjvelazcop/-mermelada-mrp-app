@@ -162,7 +162,9 @@ each session in `tunnel_sessions` and sends the notification email.
 - **Email:** SMTP credentials and `SMTP_BCC` come from the environment. Destinations
   live in `notification_recipients`; `SMTP_TO` only seeds that table on the first
   startup, so later changes from the API survive restarts. Every attempt is
-  recorded in `notification_log` with retries (3 attempts).
+  recorded in `notification_log` with retries (3 attempts). A message is marked
+  sent only when SMTP confirms every recipient; partial acceptance and rejected
+  recipients are surfaced instead of being reported as success.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|

@@ -415,13 +415,30 @@ export function listTunnelSessions(limit = 20): TunnelSession[] {
   return rows.map(rowToSession);
 }
 
+export type NotificationStatus =
+  | 'pendiente'
+  | 'reintentando'
+  | 'enviado'
+  | 'parcial'
+  | 'fallido'
+  | 'omitido';
+
+const NOTIFICATION_STATUSES = new Set<NotificationStatus>([
+  'pendiente',
+  'reintentando',
+  'enviado',
+  'parcial',
+  'fallido',
+  'omitido',
+]);
+
 export interface NotificationLogEntry {
   id: string;
   kind: string;
   recipients: string[];
   bcc: string[];
   subject: string;
-  status: string;
+  status: NotificationStatus;
   attempts: number;
   error?: string;
   createdAt: string;
@@ -429,6 +446,10 @@ export interface NotificationLogEntry {
 }
 
 function rowToLog(row: Record<string, unknown>): NotificationLogEntry {
+  const status = String(row['status']);
+  if (!NOTIFICATION_STATUSES.has(status as NotificationStatus)) {
+    throw new Error(`Estado de notificación almacenado inválido: ${status}`);
+  }
   return {
     id: String(row['id']),
     kind: String(row['kind']),
@@ -439,7 +460,7 @@ function rowToLog(row: Record<string, unknown>): NotificationLogEntry {
       .split(',')
       .filter(Boolean),
     subject: String(row['subject']),
-    status: String(row['status']),
+    status: status as NotificationStatus,
     attempts: Number(row['attempts']),
     error: row['error'] ? String(row['error']) : undefined,
     createdAt: String(row['created_at']),
@@ -462,7 +483,7 @@ function createLog(
   recipients: string[],
   bcc: string[],
   subject: string,
-  status: string,
+  status: NotificationStatus,
   error?: string
 ): string {
   const id = `log-${randomBytes(8).toString('hex')}`;
@@ -487,7 +508,7 @@ function createLog(
 
 function updateLog(
   id: string,
-  status: string,
+  status: NotificationStatus,
   attempts: number,
   error?: string
 ): void {
@@ -501,19 +522,41 @@ function updateLog(
       status,
       attempts,
       error ?? null,
-      status === 'enviado' ? new Date().toISOString() : null,
+      status === 'enviado' || status === 'parcial'
+        ? new Date().toISOString()
+        : null,
       id
     );
 }
 
 export interface NotificationResult {
-  status: 'sent' | 'skipped' | 'failed';
+  status: 'sent' | 'partial' | 'skipped' | 'failed';
   reason?: string;
   recipients: string[];
   bcc: string[];
+  accepted?: string[];
+  rejected?: string[];
   attempts: number;
   logId?: string;
   error?: string;
+}
+
+function acceptedEmailAddresses(info: unknown): string[] {
+  if (!info || typeof info !== 'object') return [];
+  const accepted = (info as {accepted?: unknown}).accepted;
+  if (!Array.isArray(accepted)) return [];
+  return accepted.flatMap((entry): string[] => {
+    if (typeof entry === 'string') return [entry.toLowerCase()];
+    if (
+      entry &&
+      typeof entry === 'object' &&
+      'address' in entry &&
+      typeof entry.address === 'string'
+    ) {
+      return [entry.address.toLowerCase()];
+    }
+    return [];
+  });
 }
 
 function escapeHtml(value: string): string {
@@ -678,12 +721,37 @@ export async function sendTunnelNotification(
 
   for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt += 1) {
     try {
-      await transport.sendMail(message);
+      const info = await transport.sendMail(message);
+      const accepted = acceptedEmailAddresses(info);
+      if (accepted.length === 0) {
+        throw new Error('El servidor SMTP no confirmó ningún destinatario');
+      }
+      const expected = [...recipients, ...bcc];
+      const acceptedSet = new Set(accepted);
+      const rejected = expected.filter((email) => !acceptedSet.has(email));
+      if (rejected.length > 0) {
+        const errorMessage =
+          `El servidor SMTP aceptó ${expected.length - rejected.length} de ` +
+          `${expected.length} destinatarios; no aceptó: ${rejected.join(', ')}`;
+        updateLog(logId, 'parcial', attempt, errorMessage);
+        return {
+          status: 'partial',
+          recipients,
+          bcc,
+          accepted: expected.filter((email) => acceptedSet.has(email)),
+          rejected,
+          attempts: attempt,
+          logId,
+          error: errorMessage,
+        };
+      }
       updateLog(logId, 'enviado', attempt);
       return {
         status: 'sent',
         recipients,
         bcc,
+        accepted: expected,
+        rejected: [],
         attempts: attempt,
         logId,
       };
@@ -788,7 +856,11 @@ export async function resendTunnelNotificationHandler(
   res: Response
 ): Promise<void> {
   const result = await resendTunnelNotification();
-  res.status(result.status === 'failed' ? 502 : 200).json(result);
+  res
+    .status(
+      result.status === 'failed' || result.status === 'partial' ? 502 : 200
+    )
+    .json(result);
 }
 
 export function listNotificationLogHandler(req: Request, res: Response): void {

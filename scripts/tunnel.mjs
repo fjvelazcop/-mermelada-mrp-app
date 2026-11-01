@@ -168,7 +168,11 @@ async function registerSession(publicUrl) {
       } else if (result.notification?.status) {
         log(
           `notification ${result.notification.status}${
-            result.notification.reason ? ` (${result.notification.reason})` : ''
+            result.notification.reason
+              ? ` (${result.notification.reason})`
+              : result.notification.error
+                ? `: ${result.notification.error}`
+                : ''
           }`
         );
       }

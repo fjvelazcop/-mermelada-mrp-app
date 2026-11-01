@@ -262,8 +262,12 @@ curl -s -X POST http://127.0.0.1:4000/api/notifications/tunnel/resend \
 ```
 
 Destinatarios: `GET/POST /api/notifications/recipients`. Historial y estado de
-cada intento: `GET /api/notifications/log`. Si SMTP no está configurado el envío
-queda como `omitido` y el túnel se registra igual.
+cada intento: `GET /api/notifications/log`. El estado `enviado` significa que
+SMTP confirmó todos los destinatarios; `parcial` identifica los aceptados y
+rechazados, y `fallido` indica que no se confirmó ninguno después de tres
+intentos. Si SMTP no está configurado o no hay destinatarios activos, el envío
+queda como `omitido` con su causa y el túnel se registra igual. Para un envío
+fallido, corrija SMTP/destinatarios y use el endpoint de reenvío indicado arriba.
 
 ### 6.3. Si el túnel no arranca
 

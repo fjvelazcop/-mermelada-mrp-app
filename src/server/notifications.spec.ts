@@ -44,6 +44,7 @@ let baseUrl: string;
 class FakeTransport implements MailTransport {
   messages: MailMessage[] = [];
   failures = 0;
+  accepted: string[] | null = null;
 
   async sendMail(message: MailMessage): Promise<unknown> {
     if (this.failures > 0) {
@@ -51,7 +52,12 @@ class FakeTransport implements MailTransport {
       throw new Error('SMTP temporalmente no disponible');
     }
     this.messages.push(message);
-    return { accepted: [message.to] };
+    return {
+      accepted:
+        this.accepted ??
+        [...message.to.split(', '), ...(message.bcc?.split(', ') ?? [])],
+      rejected: [],
+    };
   }
 }
 
@@ -341,6 +347,47 @@ describe('sendTunnelNotification', () => {
     expect(listNotificationLog(1)[0].status).toBe('fallido');
   });
 
+  it('does not report success when SMTP accepts no recipients', async () => {
+    configureSmtp();
+    const transport = new FakeTransport();
+    transport.accepted = [];
+
+    const result = await sendTunnelNotification({
+      publicUrl: 'https://rejected.trycloudflare.com',
+      transport,
+      retryDelayMs: 0,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.attempts).toBe(3);
+    expect(result.error).toContain('no confirmó ningún destinatario');
+    expect(listNotificationLog(1)[0].status).toBe('fallido');
+  });
+
+  it('reports partial SMTP acceptance with the rejected recipients', async () => {
+    configureSmtp();
+    getDb().prepare('DELETE FROM notification_recipients').run();
+    createNotificationRecipient({ email: 'accepted@example.com' });
+    createNotificationRecipient({ email: 'rejected@example.com' });
+    const transport = new FakeTransport();
+    transport.accepted = ['accepted@example.com', 'auditoria@example.com'];
+
+    const result = await sendTunnelNotification({
+      publicUrl: 'https://partial.trycloudflare.com',
+      transport,
+      retryDelayMs: 0,
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.accepted).toEqual([
+      'accepted@example.com',
+      'auditoria@example.com',
+    ]);
+    expect(result.rejected).toEqual(['rejected@example.com']);
+    expect(result.attempts).toBe(1);
+    expect(listNotificationLog(1)[0].status).toBe('parcial');
+  });
+
   it('re-sends the latest stored tunnel session', async () => {
     configureSmtp();
     const transport = new FakeTransport();
@@ -510,5 +557,18 @@ describe('internal tunnel callback and notification API', () => {
     const resend = await jsonRequest('/api/notifications/tunnel/resend', 'POST');
     expect(resend.status).toBe(200);
     expect(['sent', 'skipped']).toContain(resend.body['status']);
+  });
+
+  it('returns an error response when SMTP rejects a resend', async () => {
+    configureSmtp();
+    const transport = new FakeTransport();
+    transport.accepted = [];
+    setMailTransportFactory(() => transport);
+
+    const resend = await jsonRequest('/api/notifications/tunnel/resend', 'POST');
+
+    expect(resend.status).toBe(502);
+    expect(resend.body['status']).toBe('failed');
+    expect(resend.body['error']).toContain('no confirmó ningún destinatario');
   });
 });
