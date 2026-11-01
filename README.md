@@ -356,6 +356,11 @@ Las notificaciones por correo utilizan SMTP y están configuradas a través de v
 - Para incluir **CC oculta**: establece una dirección de correo en `SMTP_BCC`.
 
 El correo de notificación se envía cada vez que se inicia un túnel Cloudflare exitoso, incluyendo la URL pública del túnel para compartir acceso al sistema.
+
+**Gestión desde el front:** con rol administrador abre **Configuración → Correos & Túnel**.
+Ahí puedes ver la URL pública vigente, **escribir solo el correo del destinatario** (sin
+campos de CC ni copia oculta) y **reenviar el correo** con la URL actual cuando quieras.
+
 ## 🔌 API Endpoints (Express)
 
 The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `/api/*`. The most frequently used groups are:

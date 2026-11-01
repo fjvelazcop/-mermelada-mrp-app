@@ -90,6 +90,19 @@
           <mat-icon class="text-sm">receipt_long</mat-icon>
           <span>Datos Fiscales (Solo Admin)</span>
         </button>
+
+        <button
+          (click)="setSection('notifications')"
+          class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+          [class.bg-stone-900]="activeSection() === 'notifications'"
+          [class.text-white]="activeSection() === 'notifications'"
+          [class.shadow-xs]="activeSection() === 'notifications'"
+          [class.bg-stone-100]="activeSection() !== 'notifications'"
+          [class.text-stone-700]="activeSection() !== 'notifications'"
+        >
+          <mat-icon class="text-sm">mark_email_read</mat-icon>
+          <span>Correos & Túnel</span>
+        </button>
       }
     </div>
   </div>
@@ -1380,5 +1393,181 @@
         </div>
       </div>
     }
+  }
+
+  <!-- SECTION: CORREOS & TÚNEL (Solo Admin) -->
+  @if (activeSection() === 'notifications' && isAdmin()) {
+    <div class="space-y-5">
+      <div class="bg-stone-50 border border-stone-200 rounded-2xl p-4 sm:p-5 flex items-start gap-3">
+        <mat-icon class="text-stone-700 mt-0.5">mark_email_read</mat-icon>
+        <div class="text-xs sm:text-sm text-stone-700">
+          <div class="font-bold text-stone-900">Notificación de la URL del túnel</div>
+          <p class="mt-1">
+            Cada vez que arranca el túnel de Cloudflare se envía un correo con la URL pública.
+            Aquí puedes <strong>agregar destinatarios</strong> escribiendo solo su correo (sin CC
+            ni copia oculta) y <strong>reenviar el correo</strong> al instante con la URL vigente.
+          </p>
+        </div>
+      </div>
+
+      <!-- Latest tunnel URL -->
+      <div class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-sm font-bold text-stone-900 flex items-center gap-2">
+            <mat-icon class="text-base">link</mat-icon>
+            URL pública vigente
+          </h2>
+          <span
+            class="text-[11px] font-bold rounded-full px-2.5 py-1"
+            [class.bg-emerald-100]="api.tunnelStatus()?.latest?.status === 'activo'"
+            [class.text-emerald-800]="api.tunnelStatus()?.latest?.status === 'activo'"
+            [class.bg-stone-100]="api.tunnelStatus()?.latest?.status !== 'activo'"
+            [class.text-stone-700]="api.tunnelStatus()?.latest?.status !== 'activo'"
+          >
+            {{ api.tunnelStatus()?.latest?.status || 'sin sesión' }}
+          </span>
+        </div>
+
+        @if (api.tunnelStatus()?.latest?.publicUrl; as publicUrl) {
+          <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+            <a
+              [href]="publicUrl"
+              target="_blank"
+              rel="noopener"
+              class="flex-1 break-all rounded-xl bg-stone-900 text-white text-xs sm:text-sm font-mono px-3 py-2.5"
+            >{{ publicUrl }}</a>
+            <button
+              type="button"
+              (click)="copyTunnelUrl(publicUrl)"
+              class="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 px-3 py-2.5 text-xs font-semibold text-stone-700 min-h-[44px]"
+            >
+              <mat-icon class="text-sm">content_copy</mat-icon>
+              Copiar
+            </button>
+          </div>
+          <p class="text-[11px] text-stone-500">
+            Iniciada: {{ api.tunnelStatus()?.latest?.startedAt }}
+          </p>
+        } @else {
+          <p class="text-sm text-stone-600">
+            No hay una sesión de túnel registrada todavía. Inicia el proyecto con el túnel activo.
+          </p>
+        }
+
+        <div class="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            (click)="sendTunnelEmailNow()"
+            [disabled]="notificationResending()"
+            class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs sm:text-sm font-bold text-white min-h-[44px] disabled:opacity-60"
+          >
+            <mat-icon class="text-sm">send</mat-icon>
+            {{ notificationResending() ? 'Enviando…' : 'Reenviar correo con la URL' }}
+          </button>
+          <span
+            class="text-[11px] font-semibold rounded-full px-2.5 py-1"
+            [class.bg-emerald-100]="api.tunnelStatus()?.emailConfigured"
+            [class.text-emerald-800]="api.tunnelStatus()?.emailConfigured"
+            [class.bg-amber-100]="!api.tunnelStatus()?.emailConfigured"
+            [class.text-amber-800]="!api.tunnelStatus()?.emailConfigured"
+          >
+            {{ api.tunnelStatus()?.emailConfigured ? 'SMTP configurado' : 'SMTP sin configurar' }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Add recipient (only email needed, no CC/BCC) -->
+      <form
+        (ngSubmit)="addNotificationRecipient()"
+        class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5 space-y-3"
+      >
+        <h2 class="text-sm font-bold text-stone-900 flex items-center gap-2">
+          <mat-icon class="text-base">person_add</mat-icon>
+          Agregar destinatario
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+              Correo del destinatario *
+            </label>
+            <input
+              type="email"
+              [formControl]="notificationEmail"
+              placeholder="persona@empresa.com"
+              class="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm min-h-[44px]"
+            />
+            @if (notificationEmail.invalid && notificationEmail.touched) {
+              <p class="mt-1 text-[11px] font-semibold text-rose-600">
+                Escribe un correo válido.
+              </p>
+            }
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+              Nombre (opcional)
+            </label>
+            <input
+              type="text"
+              [formControl]="notificationName"
+              placeholder="Ej. Operaciones"
+              class="w-full rounded-xl border border-stone-300 px-3 py-2.5 text-sm min-h-[44px]"
+            />
+          </div>
+        </div>
+        <button
+          type="submit"
+          [disabled]="notificationSending()"
+          class="inline-flex items-center justify-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-xs sm:text-sm font-bold text-white min-h-[44px] disabled:opacity-60"
+        >
+          <mat-icon class="text-sm">add</mat-icon>
+          {{ notificationSending() ? 'Agregando…' : 'Agregar destinatario' }}
+        </button>
+      </form>
+
+      <!-- Recipient list -->
+      <div class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5">
+        <h2 class="text-sm font-bold text-stone-900 flex items-center gap-2 mb-3">
+          <mat-icon class="text-base">group</mat-icon>
+          Destinatarios ({{ api.notificationRecipients().length }})
+        </h2>
+        @if (api.notificationsLoading()) {
+          <p class="text-sm text-stone-500">Cargando…</p>
+        } @else if (api.notificationRecipients().length === 0) {
+          <p class="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">
+            Aún no hay destinatarios. Agrega el primero con el formulario de arriba.
+          </p>
+        } @else {
+          <ul class="divide-y divide-stone-100">
+            @for (recipient of api.notificationRecipients(); track recipient.id) {
+              <li class="flex items-center justify-between gap-3 py-2.5">
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-stone-900 truncate">{{ recipient.email }}</p>
+                  @if (recipient.name) {
+                    <p class="text-[11px] text-stone-500">{{ recipient.name }}</p>
+                  }
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span
+                    class="text-[10px] font-bold rounded-full px-2 py-0.5"
+                    [class.bg-emerald-100]="recipient.active"
+                    [class.text-emerald-800]="recipient.active"
+                    [class.bg-stone-100]="!recipient.active"
+                    [class.text-stone-600]="!recipient.active"
+                  >{{ recipient.active ? 'activo' : 'inactivo' }}</span>
+                  <button
+                    type="button"
+                    (click)="removeNotificationRecipient(recipient.id)"
+                    class="inline-flex items-center justify-center rounded-lg border border-stone-200 p-2 text-stone-600 min-h-[40px] min-w-[40px]"
+                    [attr.aria-label]="'Eliminar ' + recipient.email"
+                  >
+                    <mat-icon class="text-sm">delete</mat-icon>
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </div>
   }
 </div>

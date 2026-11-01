@@ -37,6 +37,9 @@ import {
   ExpenseCategoryConfig,
   Supplier,
   SupplierPrice,
+  NotificationRecipient,
+  TunnelSessionsResponse,
+  NotificationDispatchResult,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 import {computed} from '@angular/core';
@@ -529,6 +532,96 @@ export class ErpApiService {
       await firstValueFrom(this.http.delete(`/api/auth/roles/${roleId}`));
       this.systemRoles.update((roles) => roles.filter((r) => r.id !== roleId));
       this.showToast('Rol eliminado con éxito.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+    }
+  }
+
+  // --- Email notification recipients (admin) ---
+  public notificationRecipients = signal<NotificationRecipient[]>([]);
+  public tunnelStatus = signal<TunnelSessionsResponse | null>(null);
+  public notificationsLoading = signal<boolean>(false);
+
+  /** Load the recipient directory and the latest tunnel URL from the API. */
+  public async refreshNotificationData(): Promise<void> {
+    this.notificationsLoading.set(true);
+    const [recipientsResult, tunnelResult] = await Promise.allSettled([
+      firstValueFrom(
+        this.http.get<NotificationRecipient[]>('/api/notifications/recipients')
+      ),
+      firstValueFrom(
+        this.http.get<TunnelSessionsResponse>('/api/system/tunnel')
+      ),
+    ]);
+
+    if (recipientsResult.status === 'fulfilled') {
+      this.notificationRecipients.set(recipientsResult.value || []);
+    }
+    if (tunnelResult.status === 'fulfilled') {
+      this.tunnelStatus.set(tunnelResult.value);
+    }
+    this.notificationsLoading.set(false);
+  }
+
+  /**
+   * Add a recipient for the tunnel notification email. Only the address is
+   * required: there is no CC/BCC field in the form, so the operator simply
+   * types who should receive the message and submits.
+   */
+  public async addNotificationRecipient(
+    email: string,
+    name?: string
+  ): Promise<NotificationRecipient | null> {
+    try {
+      const created = await firstValueFrom(
+        this.http.post<NotificationRecipient>('/api/notifications/recipients', {
+          email: email.trim(),
+          name: name?.trim() || undefined,
+          active: true,
+        })
+      );
+      this.notificationRecipients.update((list) => [...list, created]);
+      this.showToast(`Destinatario "${created.email}" agregado.`);
+      return created;
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      return null;
+    }
+  }
+
+  public async deleteNotificationRecipient(id: string): Promise<void> {
+    try {
+      await firstValueFrom(
+        this.http.delete(`/api/notifications/recipients/${id}`)
+      );
+      this.notificationRecipients.update((list) =>
+        list.filter((recipient) => recipient.id !== id)
+      );
+      this.showToast('Destinatario eliminado.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+    }
+  }
+
+  /** Re-send the latest tunnel URL to the active recipients. */
+  public async resendTunnelNotification(): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.http.post<NotificationDispatchResult>(
+          '/api/notifications/tunnel/resend',
+          {}
+        )
+      );
+      if (result.status === 'sent') {
+        this.showToast(
+          `Correo enviado a ${result.recipients.length} destinatario(s).`
+        );
+      } else {
+        this.showToast(
+          `Correo no enviado: ${result.reason || result.error || result.status}`,
+          'error'
+        );
+      }
     } catch (err) {
       this.showToast(this.apiErrorMessage(err), 'error');
     }

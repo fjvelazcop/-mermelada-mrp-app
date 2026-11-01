@@ -12,7 +12,43 @@ export type AppModuleId =
   | 'settings'
   | 'architecture';
 
-export type SettingsSection = 'users' | 'roles' | 'simulator' | 'fiscal';
+export type SettingsSection = 'users' | 'roles' | 'simulator' | 'fiscal' | 'notifications';
+
+export interface NotificationRecipient {
+  id: string;
+  email: string;
+  name?: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TunnelSessionInfo {
+  id: string;
+  provider: string;
+  mode: string;
+  publicUrl: string;
+  apiUrl: string;
+  status: string;
+  pid?: number;
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface TunnelSessionsResponse {
+  latest: TunnelSessionInfo | null;
+  history: TunnelSessionInfo[];
+  emailConfigured: boolean;
+}
+
+export interface NotificationDispatchResult {
+  status: string;
+  reason?: string;
+  error?: string;
+  recipients: string[];
+  bcc: string[];
+  attempts: number;
+}
 
 export interface ModulePermissions {
   canView: boolean;

@@ -41,6 +41,20 @@ export class Settings {
   public fiscalSaving = signal<boolean>(false);
   public fiscalSaved = signal<boolean>(false);
   public fiscalSubsection = signal<'settings' | 'obligations'>('settings');
+
+  // Email notifications (admin) — no CC/BCC field: the operator only picks the
+  // recipient address and sends the tunnel URL email.
+  public notificationEmail = new FormControl<string>('', {
+    nonNullable: true,
+    validators: [
+      Validators.required,
+      Validators.pattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
+    ],
+  });
+  public notificationName = new FormControl<string>('', {nonNullable: true});
+  public notificationSending = signal<boolean>(false);
+  public notificationResending = signal<boolean>(false);
+  private notificationsLoaded = false;
   public fiscalObligationSaving = signal<boolean>(false);
   public selectedFiscalObligationKey = signal<FiscalObligationKey>('tax_regime');
   public fiscalObligationDefinitions = FISCAL_OBLIGATION_DEFINITIONS;
@@ -235,6 +249,12 @@ export class Settings {
         void this.loadFiscalObligations().catch(() => undefined);
       }
     });
+
+    effect(() => {
+      if (this.activeSection() === 'notifications' && this.isAdmin()) {
+        void this.loadNotifications();
+      }
+    });
   }
 
   public selectedRoleForMatrix = computed<SystemRole | undefined>(() => {
@@ -272,6 +292,53 @@ export class Settings {
 
   public setFiscalSubsection(subsection: 'settings' | 'obligations') {
     this.fiscalSubsection.set(subsection);
+  }
+
+  private async loadNotifications() {
+    if (!this.isAdmin()) return;
+    this.notificationsLoaded = true;
+    await this.api.refreshNotificationData();
+  }
+
+  /** Add the email typed in the form as a recipient (no CC/BCC involved). */
+  public async addNotificationRecipient(): Promise<void> {
+    if (this.notificationEmail.invalid) {
+      this.notificationEmail.markAsTouched();
+      return;
+    }
+    this.notificationSending.set(true);
+    try {
+      const created = await this.api.addNotificationRecipient(
+        this.notificationEmail.value,
+        this.notificationName.value
+      );
+      if (created) {
+        this.notificationEmail.reset('');
+        this.notificationName.reset('');
+      }
+    } finally {
+      this.notificationSending.set(false);
+    }
+  }
+
+  public async removeNotificationRecipient(id: string): Promise<void> {
+    await this.api.deleteNotificationRecipient(id);
+  }
+
+  /** Send the latest tunnel URL to all active recipients. */
+  public async sendTunnelEmailNow(): Promise<void> {
+    this.notificationResending.set(true);
+    try {
+      await this.api.resendTunnelNotification();
+      await this.loadNotifications();
+    } finally {
+      this.notificationResending.set(false);
+    }
+  }
+
+  public copyTunnelUrl(url: string | undefined): void {
+    if (!url) return;
+    void navigator.clipboard?.writeText(url);
   }
 
   private async loadFiscalObligations() {
