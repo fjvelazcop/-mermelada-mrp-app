@@ -902,11 +902,12 @@ export interface AuditLogEntry {
     | 'factura_emitida'
     | 'factura_anulada'
     | 'factura_impresa'
-      | 'factura_reimpresa'
-      | 'nota_fiscal_creada'
-      | 'nota_fiscal_impresa'
-      | 'libro_fiscal_cerrado'
-      | 'libro_fiscal_exportado';
+    | 'factura_reimpresa'
+    | 'configuracion_fiscal_actualizada'
+    | 'nota_fiscal_creada'
+    | 'nota_fiscal_impresa'
+    | 'libro_fiscal_cerrado'
+    | 'libro_fiscal_exportado';
   title: string;
   description: string;
   userId: string;

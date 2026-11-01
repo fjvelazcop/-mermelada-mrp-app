@@ -1,20 +1,21 @@
 # Plan Issue #11 — SENIAT / Facturación Fiscal Venezolana
 
 **Fecha:** 31/10/2026
-**Estado actual:** Emisión, notas de crédito/débito y libros mensuales de ventas/compras con cierre y exportación auditada implementados. Se completaron las validaciones técnicas previas a emitir. La solución aún requiere validación contable y no implica autorización del SENIAT.
+**Estado actual:** El P0 técnico de emisión, notas, libros, cierre, exportación auditada y validaciones está implementado. Se añadió auditoría de cambios a la configuración fiscal. Pendientes: validación externa contable/normativa, definición del alcance P1/P2 y evidencia de aceptación. No implica autorización del SENIAT.
 **Vigencia normativa:** SNAT/2011/0071 vence el **18/04/2027**; nuevo régimen SNAT/2026/00093 entra en vigor el **19/04/2027**.
+**Definición de obligaciones:** issue [#13 — obligaciones tributarias y alcance contable con contador](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13).
 
 ---
 
 ## 1. Supuestos de operación (del issue)
 
-- ✅ Empresa **contribuyente ordinario de IVA** (no sujeto pasivo especial).
-- ✅ **No** es agente de retención de IVA ni de ISLR.
-- ✅ **No** está obligada aún a emitir factura digital (hay tiempo hasta el cronograma SENIAT).
-- ✅ Opera en una sola sede y con una sola serie de facturación.
-- ✅ Maneja precios en USD con cobro/referencia en Bs. a tasa BCV.
+- ⚠️ Se supone contribuyente ordinario de IVA, no sujeto pasivo especial; falta confirmación del contador.
+- ⚠️ Se supone que no es agente de retención de IVA ni de ISLR; falta confirmación.
+- ⚠️ Se supone que aún no está obligada a emitir factura digital; confirmar cronograma aplicable.
+- ⚠️ Se supone que opera en una sola sede y con una sola serie de facturación.
+- ⚠️ Se supone que maneja precios en USD con cobro/referencia en Bs. a tasa BCV.
 
-> Si cualquiera de estos supuestos cambia, se activan los módulos ocultos de la sección 7.
+> Estos supuestos son de planificación, no hechos verificados. Confirmarlos en el issue [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13); no hay módulos de retención/digital/SPE habilitables hasta que se definan e implementen.
 
 ---
 
@@ -61,14 +62,14 @@
 | 3.2 | **Reimpresión marcada como DUPLICADO** | ✅ Contador persistente, marca de copia y auditoría |
 | 3.2 | PDF/representación gráfica con todos los requisitos y sin datos truncados | ⚠️ Vista imprimible disponible; faltan datos y validación legal |
 | 3.2 | **Registro inmutable: una factura emitida no se edita ni se elimina; se corrige con nota de crédito/débito** | ✅ Notas de crédito/débito vinculadas, con consecutivos propios, tope acreditable e impresión auditada |
-| 3.4 | Libro de Ventas mensual: fecha, número de factura, número de control, RIF y nombre del cliente, monto exento, base imponible por alícuota, IVA, total, operaciones a crédito, notas de crédito/débito y retenciones recibidas | ⚠️ Reporte mensual y CSV; retenciones recibidas pendientes de confirmar según régimen |
-| 3.4 | Libro de Compras mensual: fecha, número de factura, número de control, RIF y nombre del proveedor, monto exento, base imponible, IVA, total, retención de IVA practicada y condición de crédito fiscal | ⚠️ Reporte y CSV con gastos elegibles y conciliación; retenciones practicadas pendientes según régimen |
+| 3.4 | Libro de Ventas mensual: fecha, número de factura, número de control, RIF y nombre del cliente, monto exento, base imponible por alícuota, IVA, total, operaciones a crédito, notas de crédito/débito y retenciones recibidas | ⚠️ Reporte mensual, CSV, conciliación y cierre; campos/registros de retenciones recibidas dependen de la decisión contable |
+| 3.4 | Libro de Compras mensual: fecha, número de factura, número de control, RIF y nombre del proveedor, monto exento, base imponible, IVA, total, retención de IVA practicada y condición de crédito fiscal | ⚠️ Reporte, CSV, conciliación y cierre; retenciones practicadas y crédito fiscal sujetos a validación contable |
 | 3.4 | Libro Diario: asientos cronológicos con cuenta, débito, crédito y referencia al documento | ❌ No existe |
 | 3.4 | Libro Mayor: movimientos y saldo por cuenta | ❌ No existe |
 | 3.4 | Libro de Inventarios y Balances: inventario inicial, movimientos, inventario final y balances | ⚠️ Base parcial |
 | 3.4 | Balance General / Estado de Resultados | ❌ No existe |
 | 3.6 | Facturación digital: generación en formato/estructura exigida (XML/JSON), firma electrónica/sellado, transmisión al SENIAT, manejo de acuses, modo contingencia, adaptación a SNAT/2026/00093 | ❌ No existe |
-| 3.7 | Auditoría inmutable de emisión, anulación, reimpresión y cambio de configuración fiscal | ⚠️ Emisión, anulación, impresión, exportación y cierre auditados; los cambios de configuración fiscal aún no generan evento específico |
+| 3.7 | Auditoría de emisión, anulación, reimpresión y cambio de configuración fiscal | ✅ Eventos técnicos para emisión, anulación, impresión, exportación, cierre y cambios de configuración; el código de autorización no se guarda en el detalle del evento. Revisar retención/controles de acceso del log antes de producción |
 | 3.7 | Roles y permisos: emisión, anulación, cierre de período, configuración fiscal | ✅ Emisión según permiso de ventas; anulación, notas y libros restringidos a admin |
 | 3.7 | Validaciones de RIF y de datos obligatorios antes de emitir | ✅ RIF emisor/cliente, coincidencia con ficha, configuración, alícuota, tasa positiva y consecutivos disponibles |
 | 3.7 | Multi-moneda con tasa BCV registrada por operación | ✅ USD como moneda operativa; equivalente Bs. calculado en servidor con tasa positiva conservada por pedido |
@@ -113,18 +114,18 @@ Estados: ✅ = implementado · ⚠️ = parcial · ❌ = faltante.
 
 ## 6. Brechas priorizadas
 
-### P0 — Imprescindible para arrancar a facturar (antes de la primera emisión real)
+### P0 — Base técnica implementada; validación externa pendiente antes de uso fiscal real
 
-1. **Entidad `FiscalInvoice`** con serie, número de factura y número de control consecutivos e irrepetibles, snapshot de emisor y cliente, leyendas y estado (`emitida`, `anulada`).
-2. **Emisión inmutable + PDF fiscal** con todos los requisitos del art. 57 y SNAT/2011/0071; reimpresión marcada como duplicado.
-3. **Anulación controlada** con motivo, usuario, fecha/hora y auditoría; el consecutivo no se reutiliza.
+1. ✅ **Entidad `FiscalInvoice`** con serie, número de factura y número de control, snapshots de emisor/cliente y estado (`emitida`, `anulada`).
+2. ⚠️ **Emisión e impresión:** snapshot, numeración, impuestos, representación imprimible y marca DUPLICADO implementados técnicamente; validar requisitos legales, leyendas y formato con contador antes de uso fiscal real.
+3. ✅ **Anulación controlada** con motivo, usuario, fecha/hora y auditoría; el consecutivo no se reutiliza.
 4. ✅ **Notas de crédito y débito** vinculadas a la factura, con serie propia y efecto en libros.
 5. ✅ **Libro de Ventas y Libro de Compras** mensuales, con conciliación, cierre y exportación CSV auditada.
 6. ✅ **Validaciones previas a emitir**: RIF del emisor/cliente, coincidencia con la ficha, alícuota, importes USD, tasa positiva y numeración libre.
 7. ✅ **Permisos fiscales**: emisión según acceso de ventas; anulación, notas y cierre para admin.
 8. ✅ **Pruebas de regresión fiscal** para tasas, tratamientos, consecutivos, notas, persistencia, libros y bloqueos de cierre.
 
-### P1 — Necesario para contabilidad formal y retenciones
+### P1 — Definir con contador (#13); implementar solo obligaciones confirmadas
 
 9. **Plan de cuentas y asientos contables automáticos**.
 10. **Libro Diario y Libro Mayor**.
@@ -133,7 +134,7 @@ Estados: ✅ = implementado · ⚠️ = parcial · ❌ = faltante.
 13. **Retención de ISLR** + comprobante (si la empresa es agente de retención).
 14. **Registro de retenciones recibidas** de clientes.
 
-### P2 — Antes del 19/04/2027
+### P2 — Evaluación y preparación antes del 19/04/2027
 
 15. **Facturación digital**: formato, firma, transmisión, acuses y contingencia.
 16. **Migración a SNAT/2026/00093** (nuevos campos y reglas).
@@ -143,23 +144,23 @@ Estados: ✅ = implementado · ⚠️ = parcial · ❌ = faltante.
 
 ---
 
-## 7. Módulos que pueden quedar ocultos hasta autorización
+## 7. Módulos potencialmente condicionados a autorización
 
-> **Regla de UX:** si un módulo está oculto, no debe aparecer en el menú ni en rutas directas; si se muestra una vista previa, debe indicar claramente "En habilitación" y no permitir emitir documentos.
+> **Estado actual:** estos módulos especializados aún no están implementados. No presentar esta tabla como evidencia de que existe un sistema general de feature flags; los flags son una opción de diseño a evaluar al crear cada módulo. La autorización del backend y el rol deben proteger cualquier acción incluso si se oculta del menú.
 
 | Módulo | ¿Ocultar al inicio? | Motivo | Cómo habilitarlo |
 |---|---|---|---|
-| Facturación digital / transmisión SENIAT | Sí | Requiere autorización, firma y ambiente de pruebas | Flag `fiscal.digital_invoicing` + credenciales + pruebas certificadas |
-| Retención de IVA y comprobantes | Sí | Solo si la empresa es agente de retención | Flag `fiscal.vat_withholding` + designación del SENIAT |
-| Retención de ISLR y comprobantes | Sí | Solo si la empresa es agente de retención | Flag `fiscal.islr_withholding` + designación |
-| Sujetos pasivos especiales | Sí | Solo si la empresa es calificada como SPE | Flag `fiscal.special_taxpayer` + calificación |
-| Libro Diario / Mayor / Balances avanzados | Sí | Útil, pero no bloquea la facturación inicial | Flag `accounting.full_ledger` cuando exista plan de cuentas |
-| Multi-serie / multi-sucursal | Sí | Complejiza numeración y libros | Flag `fiscal.multi_series` + configuración de series |
-| Portal de clientes / autofacturación | Sí | No es obligatorio para arrancar | Flag `fiscal.customer_portal` |
-| Nómina fiscal / ISLR de empleados | Sí | Depende de obligaciones laborales específicas | Flag `payroll.fiscal` |
-| Activos fijos y depreciación | Sí | Requerido para ISLR, no para facturar | Flag `accounting.fixed_assets` |
+| Facturación digital / transmisión SENIAT | Sí | Requiere autorización, firma y ambiente de pruebas | Diseñar y habilitar solo tras confirmar requisitos y autorización; flag propuesto, no implementado |
+| Retención de IVA y comprobantes | Sí | Solo si la empresa es agente de retención | Confirmar designación; flag propuesto, no implementado |
+| Retención de ISLR y comprobantes | Sí | Solo si la empresa es agente de retención | Confirmar designación; flag propuesto, no implementado |
+| Sujetos pasivos especiales | Sí | Solo si la empresa es calificada como SPE | Confirmar calificación y obligaciones; flag propuesto, no implementado |
+| Libro Diario / Mayor / Balances avanzados | Sí | Parte del módulo contable P1, no bloquea la base técnica actual | Evaluar control de acceso al aprobar alcance; flag propuesto, no implementado |
+| Multi-serie / multi-sucursal | Sí | Complejiza numeración y libros | Evaluar si aplica; no implementado |
+| Portal de clientes / autofacturación | Sí | No es obligatorio para arrancar | Evaluar en una iniciativa separada; no implementado |
+| Nómina fiscal / ISLR de empleados | Sí | Depende de obligaciones laborales específicas | Confirmar obligaciones antes de definir alcance; no implementado |
+| Activos fijos y depreciación | Sí | Depende del alcance contable/ISLR | Definir con contador; no implementado |
 
-Los flags se guardarán en una tabla `fiscal_features` con auditoría de activación (quién, cuándo, bajo qué rol).
+No existe actualmente una tabla `fiscal_features` ni un sistema general de flags. Si se requiere habilitación gradual, definirla por módulo con auditoría y autorización del backend antes de exponer la función.
 
 ---
 
@@ -182,14 +183,14 @@ Los flags se guardarán en una tabla `fiscal_features` con auditoría de activac
 
 - [x] Toda factura emitida tiene número y número de control únicos; no existen huecos sin registro de anulación.
 - [x] Una factura emitida no puede editarse ni eliminarse; solo anularse o ajustarse con nota.
-- [ ] El PDF fiscal contiene todos los requisitos legales y se marca como duplicado al reimprimir.
+- [ ] La representación imprimible contiene todos los requisitos legales; técnicamente se marca DUPLICADO, pero falta validación contable/normativa.
 - [x] El Libro de Ventas del mes cuadra contra la suma de facturas y notas.
 - [x] El Libro de Compras del mes cuadra contra gastos con `fiscalBookEligible` y documentos válidos.
 - [x] El cierre mensual bloquea emisión y edición en períodos cerrados.
 - [x] Los exportes son reproducibles y auditables (usuario, fecha, período, hash/total de control).
-- [ ] Los módulos ocultos no son accesibles por URL directa ni por API sin permiso.
+- [ ] Los módulos especializados no están implementados; al desarrollarlos se deben proteger rutas y API por rol, no solo ocultar menús.
 - [x] Existen pruebas de regresión para alícuotas, exentos, no sujetos, redondeos, anulaciones y notas.
-- [ ] No hay RIF, credenciales ni secretos hardcodeados.
+- [ ] Completar revisión dedicada de RIF/datos fiscales, credenciales y secretos hardcodeados antes de certificar este criterio.
 - [ ] La solución puede migrar a SNAT/2026/00093 sin rediseño de datos.
 
 ---
@@ -223,7 +224,8 @@ Los flags se guardarán en una tabla `fiscal_features` con auditoría de activac
 5. ✅ Notas de crédito/débito persistentes, imprimibles y auditadas, con consecutivos propios y validación del saldo acreditable.
 6. ✅ Libros fiscales mensuales de Ventas/Compras, conciliación, exportación CSV auditada y cierre que bloquea cambios posteriores.
 7. ✅ Validaciones previas a emitir de RIF, datos de cliente, tasa/alícuota, importes y consecutivos.
-8. ⬜ Validar tasas, formatos, leyendas y obligaciones aplicables con un contador antes del uso fiscal real.
+8. ⬜ Validar tasas, formatos, leyendas y obligaciones aplicables con un contador antes del uso fiscal real (issue #13).
+9. ✅ Registrar en auditoría los cambios de configuración fiscal, identificando actor, rol, campos y valores modificados; el código de autorización se redacta.
 
 ---
 
@@ -233,3 +235,25 @@ Los flags se guardarán en una tabla `fiscal_features` con auditoría de activac
 - **Cambios esperados:** nuevos campos en la factura, posible cambio de formato de PDF, actualización de validaciones, nueva estructura para la facturación digital.
 - **Acción:** tener la entidad `FiscalInvoice` diseñada con fields opcionales/extensibles y un script de migración que mapee los datos de SNAT/2011/0071 al nuevo formato.
 - **Validación:** el sistema debe poder operar bajo ambos regímenes durante un periodo de superposición (ener-feb 2027) sin romper la emisión.
+
+---
+
+## 14. Plan de ejecución de pendientes
+
+Actualizar este plan y marcar solo las tareas con evidencia técnica o validación documentada. La aprobación del contador no se sustituye con pruebas de software.
+
+| Etapa | Trabajo y responsable | Salida / checklist |
+|---|---|---|
+| **A. Cierre técnico inmediato** | Desarrollo + administrador: auditoría de cambios fiscales, pruebas, documentación por rol y sincronización del checklist. | ✅ Auditoría de configuración y pruebas; ✅ manuales/plan alineados; ⬜ completar revisión de datos sensibles/secretos |
+| **B. Decisiones tributarias (#13)** | Administrador coordina y entrega datos; contador/especialista confirma régimen/SPE, retenciones, IGTF, facturación digital, leyes/leyendas y formato de libros. | ⬜ Matriz de obligaciones fechada, con fundamento, evidencia y responsable; ⬜ validación de representación y libros |
+| **C. Alcance P1** | Dirección + contador definen; desarrollo estima y ejecuta en issues derivados. **P1: contabilidad formal y retenciones, si corresponden.** | ⬜ Aprobación del alcance; ⬜ plan de cuentas/asientos; ⬜ Diario/Mayor; ⬜ Inventarios y Balances/estados financieros; ⬜ retenciones aplicables |
+| **D. Preparación P2** | Administrador y especialista verifican normativa vigente; desarrollo implementa requisitos confirmados, pruebas, credenciales seguras y contingencia. | ⬜ requisitos oficiales trazados; ⬜ adaptación SNAT/2026/00093; ⬜ facturación digital y verificación antes del 19/04/2027 |
+| **E. Liberación** | Administrador ejecuta pruebas operativas; contador revisa documentos/libros; dirección autoriza uso. | ⬜ pruebas UAT; ⬜ permisos por rol verificados; ⬜ respaldo/restauración probados; ⬜ aprobación externa y decisión de producción |
+
+### Acciones por rol
+
+- **Administrador del ERP:** coordina la revisión externa; no infiere ni cambia el régimen por su cuenta; configura datos fiscales solo después de validarlos, revisa el log de auditoría, corrige datos maestros, concilia exportes, no cierra un período con diferencias y mantiene backups.
+- **Personal con permiso de ventas:** verifica RIF, datos del cliente, precios, condición de venta y tasa antes de guardar el pedido que emite la factura; comunica cualquier bloqueo al administrador. No altera documentos emitidos.
+- **Administrador que opera facturación fiscal:** tramita anulaciones con motivo, emite notas justificadas, revisa y exporta libros, concilia diferencias y cierra únicamente el período aprobado.
+- **Contador/especialista externo:** valida obligaciones, tasas, leyendas, formatos y tratamiento contable; entrega decisiones documentadas. No se le atribuye un rol de aplicación salvo que la organización lo cree y autorice explícitamente.
+- **Desarrollo / responsable técnico:** implementa solo decisiones aprobadas, agrega pruebas y controles de autorización en API, actualiza el checklist con evidencia y prepara los entregables P1/P2 como issues separados.

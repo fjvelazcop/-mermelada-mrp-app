@@ -3183,8 +3183,41 @@ export class ErpDatabase {
     return this.state.fiscalSettings;
   }
 
-  public updateFiscalSettings(settings: Partial<FiscalSettings>): FiscalSettings {
+  public updateFiscalSettings(
+    settings: Partial<FiscalSettings>,
+    actor?: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
+  ): FiscalSettings {
+    const previousSettings = this.state.fiscalSettings;
+    const changes = Object.entries(settings)
+      .filter(([key, value]) => !Object.is(previousSettings[key as keyof FiscalSettings], value))
+      .map(([key, value]) => {
+        const previousValue = previousSettings[key as keyof FiscalSettings];
+        const isAuthorizationCode = key === 'authorizationCode';
+        const formatValue = (current: unknown) =>
+          isAuthorizationCode
+            ? '[oculto]'
+            : current === ''
+              ? '(vacío)'
+              : JSON.stringify(current);
+        return `${key}: ${formatValue(previousValue)} → ${formatValue(value)}`;
+      });
+
     this.state.fiscalSettings = { ...this.state.fiscalSettings, ...settings };
+
+    if (actor && changes.length > 0) {
+      this.addAuditLog({
+        module: 'ventas',
+        actionType: 'configuracion_fiscal_actualizada',
+        title: 'Configuración fiscal actualizada',
+        description: `Se modificaron ${changes.length} campo(s) de la configuración fiscal.`,
+        userId: actor.userId,
+        userName: actor.userName,
+        userRole: actor.userRole,
+        severity: 'warning',
+        details: { changes },
+      });
+    }
+
     return this.state.fiscalSettings;
   }
 

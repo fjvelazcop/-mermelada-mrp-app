@@ -83,6 +83,7 @@ const auditActionSchema = z.enum([
   'factura_anulada',
   'factura_impresa',
   'factura_reimpresa',
+  'configuracion_fiscal_actualizada',
   'nota_fiscal_creada',
   'nota_fiscal_impresa',
   'libro_fiscal_cerrado',

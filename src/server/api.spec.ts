@@ -1242,6 +1242,7 @@ describe('mutating endpoints', () => {
       specialTaxpayer: true,
       booksFormat: 'pdf',
       historicalOrdersTreatment: 'no_emitir',
+      authorizationCode: 'AUTH-SECRET-DO-NOT-LOG',
     };
 
     const updated = await jsonRequest(
@@ -1271,6 +1272,48 @@ describe('mutating endpoints', () => {
       special_taxpayer: 1,
       books_format: 'pdf',
     });
+
+    const auditLogs = (await (
+      await fetch(`${baseUrl}/api/audit-logs?module=ventas`)
+    ).json()) as {
+      actionType: string;
+      userId: string;
+      userRole: string;
+      details?: { changes?: string[] };
+    }[];
+    const settingsAudit = auditLogs.find(
+      (entry) => entry.actionType === 'configuracion_fiscal_actualizada'
+    );
+    expect(settingsAudit).toMatchObject({
+      userId: 'usr-admin',
+      userRole: 'admin',
+    });
+    expect(settingsAudit?.details?.changes).toContain(
+      'taxRegime: "ordinario" → "especial"'
+    );
+    expect(
+      settingsAudit?.details?.changes?.find((change) =>
+        change.startsWith('authorizationCode:')
+      )
+    ).toBe('authorizationCode: [oculto] → [oculto]');
+    expect(JSON.stringify(settingsAudit)).not.toContain(
+      'AUTH-SECRET-DO-NOT-LOG'
+    );
+
+    const persistedAudit = getDb()
+      .prepare(
+        'SELECT user_id, user_role, details_json FROM audit_logs WHERE action_type = ? ORDER BY rowid DESC LIMIT 1'
+      )
+      .get('configuracion_fiscal_actualizada') as {
+      user_id: string;
+      user_role: string;
+      details_json: string;
+    };
+    expect(persistedAudit.user_id).toBe('usr-admin');
+    expect(persistedAudit.user_role).toBe('admin');
+    expect(persistedAudit.details_json).not.toContain(
+      'AUTH-SECRET-DO-NOT-LOG'
+    );
   });
 
   it('serves costing and dashboard reports', async () => {
@@ -1474,7 +1517,7 @@ describe('mutating endpoints', () => {
     expect((noteList.body as unknown[]).length).toBeGreaterThanOrEqual(2);
 
     const expense = await jsonRequest('/api/expenses', 'POST', {
-      date: invoice!.issuedAt.slice(0, 10),
+      date: `${invoice!.periodYear}-${String(invoice!.periodMonth).padStart(2, '0')}-15`,
       concept: 'Gasto incluido en el libro fiscal',
       category: 'otros',
       categoryLabel: 'Otros',

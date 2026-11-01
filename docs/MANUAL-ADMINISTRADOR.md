@@ -1,6 +1,6 @@
 # Manual de Administración — Mermelada ERP
 
-**Versión:** 1.1 · **Última actualización:** 31/10/2026
+**Versión:** 1.2 · **Última actualización:** 31/10/2026
 **Audiencia:** responsable técnico / administrador del sistema.
 **Documentos relacionados:** [`MANUAL-USUARIO.md`](./MANUAL-USUARIO.md), [`../DEPLOYMENT.md`](../DEPLOYMENT.md), [`../README.md`](../README.md).
 
@@ -355,9 +355,13 @@ Datos que se guardan en la tabla `fiscal_settings` de SQLite:
 | SPE y libros | Sujeto Pasivo Especial, formato de libros (XLSX/CSV/PDF/TXT) y tratamiento de órdenes históricas |
 | Impresión | leyendas legales que se imprimen en los documentos |
 
-Cada guardado actualiza la base de datos de forma inmediata. Antes de emitir
-documentos fiscales, el administrador debe confirmar estos valores con el
-contador. Antes de habilitar emisión real, revise RIF del emisor/cliente,
+Cada guardado actualiza la base de datos de forma inmediata y genera un evento
+de auditoría con actor, rol, campos modificados y valores anteriores/nuevos.
+El código de autorización se redacta y no aparece en el detalle del evento.
+Los cambios se consultan en `GET /api/audit-logs?module=ventas`; conserva hasta
+500 eventos recientes, por lo que no debe tratarse como archivo legal inmutable.
+Antes de emitir documentos fiscales, el administrador debe confirmar estos
+valores con el contador. Antes de habilitar emisión real, revise RIF del emisor/cliente,
 alícuotas, tasa BCV, prefijos y consecutivos disponibles. El servidor verifica
 el formato de RIF, que el documento coincida con la ficha del cliente, la tasa
 positiva y que no se reutilicen números de factura/control. Los importes se
@@ -371,13 +375,27 @@ Estado de las fases:
 | 0 | Datos fiscales validados, régimen de IVA, series y numeración | Implementado; falta confirmar datos reales con el contador |
 | 1 | Factura fiscal imprimible, anulación y notas de crédito/débito | Implementado técnicamente; pendiente validación normativa |
 | 2 | Libros mensuales de Ventas/Compras, conciliación, cierre y exportación | Implementado; CSV auditado con hash y cierre bloqueante |
-| 3 | Contabilidad y estados financieros | Pendiente |
-| 4 | Retenciones de IVA/ISLR y comprobantes | Condicionado a la condición de agente |
-| 5 | Facturación digital y migración al régimen del 19/04/2027 | Planificada |
+| 3 | Contabilidad formal: plan de cuentas, Diario, Mayor, Inventarios y Balances/estados financieros | Por definir con contador en [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13) |
+| 4 | Retenciones de IVA/ISLR y comprobantes | Solo si el contador confirma que aplican |
+| 5 | Facturación digital y migración a SNAT/2026/00093 | Pendiente de requisitos oficiales; fecha límite 19/04/2027 |
 
 La normativa vigente aplica hasta el **18/04/2027**; el nuevo régimen
 (`SNAT/2026/00093`) entra en vigor el **19/04/2027**. Cualquier cambio fiscal
 debe validarse con un contador público antes de producción.
+
+### 9.4. Acciones y responsables del flujo fiscal
+
+| Responsable | Acciones |
+|---|---|
+| Administrador del ERP | Coordinar validación con contador; completar y revisar datos fiscales; revisar datos maestros; consultar auditoría; resolver diferencias de libros; exportar; cerrar solo períodos conciliados; conservar respaldos. |
+| Usuario con permiso de ventas | Verificar RIF/datos del cliente, montos, condición de venta y tasa antes de guardar el pedido. La factura se genera automáticamente si la emisión está habilitada. Si hay un bloqueo, no modificar configuración para eludirlo: escalarlo al administrador. |
+| Administrador autorizado para documentos fiscales | Anular con motivo, crear notas justificadas, revisar duplicados, conciliar/exportar libros y cerrar períodos aprobados. No modificar facturas emitidas ni editar la base de datos directamente. |
+| Contador/especialista externo | Confirmar régimen, obligaciones, tasas, leyendas y formato de documentos/libros; registrar las decisiones en el issue [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13). No tiene un rol de aplicación por defecto. |
+| Desarrollo/responsable técnico | Implementar requisitos ya confirmados, agregar pruebas y controles API/RBAC, actualizar este plan y manuales, y separar P1/P2 en issues de ejecución. |
+
+No habilite retenciones, IGTF, SPE ni facturación digital basándose solo en los
+campos de configuración existentes: estos campos no equivalen a módulos
+funcionales ni acreditan la condición legal de la empresa.
 
 ### 9.2. Emisión y documentos relacionados
 
@@ -452,3 +470,9 @@ procedimiento contable aplicable; no modifique SQLite directamente.
       reutilizar consecutivos.
 - [ ] Un período de libros exportado y conciliado en pruebas antes del primer
       cierre operativo.
+- [ ] Revisión de documentos, leyendas, tasas y libros completada con el contador
+      y documentada en el issue #13.
+- [ ] Obligaciones de retenciones, SPE, IGTF y facturación digital confirmadas;
+      abrir issues de implementación solo para las aplicables.
+- [ ] Plan P1 aprobado y facturación digital/SNAT/2026/00093 priorizada para
+      cumplir antes del 19/04/2027.

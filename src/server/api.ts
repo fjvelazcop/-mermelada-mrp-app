@@ -1081,7 +1081,10 @@ export function createApiApp(): express.Express {
     requireAdmin,
     validateBody(fiscalSettingsSchema),
     mutation((req, res) => {
-      const updated = dbInstance.updateFiscalSettings(req.body);
+      const updated = dbInstance.updateFiscalSettings(
+        req.body,
+        auditActor(req)
+      );
       res.json(updated);
     })
   );

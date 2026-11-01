@@ -1,6 +1,6 @@
 # Manual de Usuario — Mermelada ERP
 
-**Versión:** 1.1 · **Última actualización:** 31/10/2026
+**Versión:** 1.2 · **Última actualización:** 31/10/2026
 **Aplicación:** PulpaCraft MRP / Mermelada ERP
 **Alcance:** personal administrativo, supervisores, operadores de planta, almacén y costos.
 
@@ -73,6 +73,13 @@ compartidos. La sesión expira a las 8 horas.
 Los permisos son por módulo y por acción (**ver, crear, editar, eliminar,
 exportar**). Si un módulo no aparece en el menú, su rol no tiene permiso de
 lectura. Solicite el cambio al administrador.
+
+En el flujo fiscal, el personal con permiso de ventas crea el pedido y la
+factura se genera automáticamente si está habilitada. La configuración fiscal,
+las anulaciones, las notas de crédito/débito y el cierre de libros corresponden
+al administrador. Un contador externo valida criterios tributarios; no debe
+usar una cuenta del ERP salvo que el administrador le asigne explícitamente un
+rol y permisos.
 
 ---
 
@@ -199,6 +206,11 @@ La creación de notas y la consulta, exportación y cierre de libros se reservan
 al administrador. Revise las diferencias antes del cierre; los formatos y
 criterios deben confirmarse con el contador.
 
+**Si una validación bloquea la factura:** no cambie la tasa, RIF, numeración ni
+la configuración fiscal para eludirla. Informe al administrador para que revise
+los datos maestros y, si corresponde, consulte al contador. No edite ni elimine
+una factura emitida; solicite al administrador la corrección documentada.
+
 ---
 
 ## 5. Reglas importantes
@@ -235,8 +247,10 @@ El sistema emite facturas numeradas, notas de crédito/débito y reportes mensua
 de compras y ventas, con impresión, auditoría, exportación CSV y cierre
 bloqueante. La representación y los reportes requieren validación de un
 contador público y **no implican autorización del SENIAT**. Retenciones,
-contabilidad general y facturación digital siguen fuera del alcance actual del
-issue **#11**. **No use las notas de entrega como documento fiscal**.
+contabilidad general, IGTF y facturación digital requieren definición de
+obligaciones con un contador en el [issue #13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13)
+y su implementación posterior, si aplica. La adaptación a SNAT/2026/00093 debe
+planificarse antes del 19/04/2027. **No use las notas de entrega como documento fiscal**.
 
 ---
 
