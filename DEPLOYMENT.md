@@ -383,8 +383,9 @@ en loopback. Añade HSTS y renueva certificados automáticamente
   `uptimeSeconds`, `authEnabled` y `database.connected`.
 - **Script de health:** `node scripts/healthcheck.mjs` (usa `HEALTHCHECK_URL` o
   `http://127.0.0.1:$PORT/api/health`).
-- **Smoke test:** `node scripts/smoke-test.mjs` verifica health, OpenAPI y el
-  HTML SSR de Angular. Úsalo después de cada deploy.
+- **Smoke test:** `node scripts/smoke-test.mjs` verifica health, OpenAPI, la
+  redirección de `/` y el HTML SSR del shell Angular en `/login`. Úsalo después
+  de cada deploy.
 - **Logs Docker:** `docker compose --env-file .env.production logs`; rotación configurada en Compose.
 - **Logs PM2:** `logs/pm2-out.log` y `logs/pm2-error.log`.
 - **Logs systemd:** `journalctl -u mermelada`.
@@ -652,7 +653,7 @@ Checklist de aceptación:
 
 - [ ] `/api/health` responde `status: "ok"` y `database.connected: true`.
 - [ ] El HTML SSR contiene `<app-root` y los assets cargan.
-- [ ] `node scripts/smoke-test.mjs` pasa las 3 comprobaciones.
+- [ ] `node scripts/smoke-test.mjs` pasa las comprobaciones.
 - [ ] El contenedor/servicio se reinicia solo tras `kill` o reboot.
 - [ ] Los logs persisten/rotan y las alertas de uptime están activas.
 - [ ] Un backup reciente existe y una restauración fue probada.

@@ -72,12 +72,25 @@ await check('openapi', '/api/openapi.json', (response, body) => {
   return `openapi=${body.openapi}`;
 });
 
-await check('frontend', '/', (response, body) => {
+await check('frontend-root', '/', (response, body) => {
+  if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
+  const html = String(body);
+  if (html.includes('<app-root')) {
+    return 'Angular SSR HTML served';
+  }
+  // The root route is prerendered as a redirect to the login shell.
+  if (/http-equiv=["']refresh["'][^>]*url=\/login/i.test(html)) {
+    return 'root redirects to /login';
+  }
+  throw new Error('Angular root element not found and no /login redirect');
+});
+
+await check('frontend-login', '/login', (response, body) => {
   if (response.status !== 200) throw new Error(`HTTP ${response.status}`);
   if (!String(body).includes('<app-root')) {
     throw new Error('Angular root element not found');
   }
-  return 'Angular SSR HTML served';
+  return 'Angular login shell served';
 });
 
 if (failed) {
