@@ -11,6 +11,8 @@ import {
   FiscalAdjustmentNote,
   FiscalInvoice,
   FiscalPeriodClosure,
+  FiscalObligationHistoryEntry,
+  FiscalObligationRecord,
   FiscalSettings,
   FinishedGood,
   InventoryMovement,
@@ -496,6 +498,39 @@ export function loadRelationalState(): DatabaseState | null {
       }
     : ({} as FiscalSettings);
 
+  const fiscalObligations = (
+    db.prepare('SELECT * FROM fiscal_obligations ORDER BY rowid').all() as Row[]
+  ).map(
+    (r): FiscalObligationRecord => ({
+      key: r['obligation_key'],
+      title: r['title'],
+      applicability: r['applicability'],
+      normativeReference: r['normative_reference'],
+      reviewedAt: r['reviewed_at'],
+      notes: r['notes'],
+      updatedAt: r['updated_at'],
+      updatedBy: r['updated_by'],
+      updatedByRole: r['updated_by_role'],
+    })
+  );
+  const fiscalObligationHistory = (
+    db
+      .prepare('SELECT * FROM fiscal_obligation_history ORDER BY changed_at DESC, rowid DESC')
+      .all() as Row[]
+  ).map(
+    (r): FiscalObligationHistoryEntry => ({
+      id: r['id'],
+      obligationKey: r['obligation_key'],
+      obligationTitle: r['obligation_title'],
+      previous: JSON.parse(r['previous_json']),
+      current: JSON.parse(r['current_json']),
+      changedAt: r['changed_at'],
+      userId: r['user_id'],
+      userName: r['user_name'],
+      userRole: r['user_role'],
+    })
+  );
+
   const fiscalInvoices = (
     db
       .prepare('SELECT * FROM fiscal_invoices ORDER BY issued_at DESC')
@@ -638,6 +673,8 @@ export function loadRelationalState(): DatabaseState | null {
     expenses,
     expenseCategories,
     fiscalSettings,
+    fiscalObligations,
+    fiscalObligationHistory,
     fiscalInvoices,
     fiscalAdjustmentNotes,
     fiscalPeriodClosures,
@@ -663,6 +700,8 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM exchange_rates;
       DELETE FROM fiscal_adjustment_notes;
       DELETE FROM fiscal_period_closures;
+      DELETE FROM fiscal_obligation_history;
+      DELETE FROM fiscal_obligations;
       DELETE FROM fiscal_invoices;
       DELETE FROM fiscal_settings;
       DELETE FROM expense_categories;
@@ -1167,6 +1206,46 @@ export function saveRelationalState(state: DatabaseState): void {
       snapshot.fiscalSettings.historicalOrdersTreatment,
       snapshot.fiscalSettings.printNotes
     );
+
+    const insertFiscalObligation = db.prepare(`
+      INSERT INTO fiscal_obligations (
+        obligation_key, title, applicability, normative_reference, reviewed_at,
+        notes, updated_at, updated_by, updated_by_role
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const obligation of snapshot.fiscalObligations || []) {
+      insertFiscalObligation.run(
+        obligation.key,
+        obligation.title,
+        obligation.applicability,
+        obligation.normativeReference,
+        obligation.reviewedAt,
+        obligation.notes,
+        obligation.updatedAt,
+        obligation.updatedBy,
+        obligation.updatedByRole
+      );
+    }
+
+    const insertFiscalObligationHistory = db.prepare(`
+      INSERT INTO fiscal_obligation_history (
+        id, obligation_key, obligation_title, previous_json, current_json,
+        changed_at, user_id, user_name, user_role
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const entry of snapshot.fiscalObligationHistory || []) {
+      insertFiscalObligationHistory.run(
+        entry.id,
+        entry.obligationKey,
+        entry.obligationTitle,
+        JSON.stringify(entry.previous),
+        JSON.stringify(entry.current),
+        entry.changedAt,
+        entry.userId,
+        entry.userName,
+        entry.userRole
+      );
+    }
 
     const insertFiscalInvoice = db.prepare(`
       INSERT INTO fiscal_invoices (

@@ -417,6 +417,30 @@ function migrate(db: SqliteDatabase): void {
       print_notes TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS fiscal_obligations (
+      obligation_key TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      applicability TEXT NOT NULL,
+      normative_reference TEXT NOT NULL DEFAULT '',
+      reviewed_at TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_by_role TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS fiscal_obligation_history (
+      id TEXT PRIMARY KEY,
+      obligation_key TEXT NOT NULL,
+      obligation_title TEXT NOT NULL,
+      previous_json TEXT NOT NULL,
+      current_json TEXT NOT NULL,
+      changed_at TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      user_role TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS fiscal_invoices (
       id TEXT PRIMARY KEY,
       serie TEXT NOT NULL DEFAULT 'A',

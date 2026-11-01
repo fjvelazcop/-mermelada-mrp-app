@@ -231,6 +231,8 @@ describe('API documentation, 404s and auth defaults', () => {
     expect(paths['/api/auth/login']).toBeTruthy();
     expect(paths['/api/inventory/raw-materials']).toBeTruthy();
     expect(paths['/api/expenses/{id}']).toBeTruthy();
+    expect(paths['/api/fiscal-obligations']).toBeTruthy();
+    expect(paths['/api/fiscal-obligations/{key}']).toBeTruthy();
 
     const components = body['components'] as {
       securitySchemes: { bearerAuth: { type: string; scheme: string } };
@@ -1314,6 +1316,102 @@ describe('mutating endpoints', () => {
     expect(persistedAudit.details_json).not.toContain(
       'AUTH-SECRET-DO-NOT-LOG'
     );
+  });
+
+  it('records fiscal obligation decisions and keeps a separate history for admins', async () => {
+    const deniedRead = await fetch(`${baseUrl}/api/fiscal-obligations`, {
+      headers: { 'x-demo-role': 'operator' },
+    });
+    expect(deniedRead.status).toBe(403);
+
+    const initial = await jsonRequest('/api/fiscal-obligations', 'GET');
+    expect(initial.response.status).toBe(200);
+    expect((initial.body['obligations'] as unknown[]).length).toBeGreaterThan(0);
+
+    const deniedUpdate = await fetch(
+      `${baseUrl}/api/fiscal-obligations/vat_withholding`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-demo-role': 'operator',
+        },
+        body: JSON.stringify({
+          applicability: 'aplica',
+          normativeReference: 'Providencia aplicable',
+          reviewedAt: '2026-10-31',
+          notes: 'Confirmado por contador',
+        }),
+      }
+    );
+    expect(deniedUpdate.status).toBe(403);
+
+    const update = await jsonRequest('/api/fiscal-obligations/vat_withholding', 'PUT', {
+      applicability: 'no_aplica',
+      normativeReference: 'Constancia revisada por contador',
+      reviewedAt: '2026-10-31',
+      notes: 'La empresa no fue designada agente de retención.',
+    });
+    expect(update.response.status).toBe(200);
+    expect(update.body).toMatchObject({
+      key: 'vat_withholding',
+      applicability: 'no_aplica',
+      updatedBy: 'Administrador (demo)',
+      updatedByRole: 'admin',
+    });
+
+    const updatedState = await jsonRequest('/api/fiscal-obligations', 'GET');
+    const history = updatedState.body['history'] as {
+      obligationKey: string;
+      previous: { applicability: string };
+      current: { applicability: string };
+      userRole: string;
+    }[];
+    expect(history[0]).toMatchObject({
+      obligationKey: 'vat_withholding',
+      previous: { applicability: 'pendiente' },
+      current: { applicability: 'no_aplica' },
+      userRole: 'admin',
+    });
+
+    const persistedHistory = getDb()
+      .prepare(
+        'SELECT obligation_key, previous_json, current_json, user_role FROM fiscal_obligation_history ORDER BY rowid DESC LIMIT 1'
+      )
+      .get() as {
+      obligation_key: string;
+      previous_json: string;
+      current_json: string;
+      user_role: string;
+    };
+    expect(persistedHistory.obligation_key).toBe('vat_withholding');
+    expect(JSON.parse(persistedHistory.previous_json)).toMatchObject({
+      applicability: 'pendiente',
+    });
+    expect(JSON.parse(persistedHistory.current_json)).toMatchObject({
+      applicability: 'no_aplica',
+    });
+    expect(persistedHistory.user_role).toBe('admin');
+
+    const invalid = await jsonRequest('/api/fiscal-obligations/unknown', 'PUT', {
+      applicability: 'aplica',
+      normativeReference: '',
+      reviewedAt: '',
+      notes: '',
+    });
+    expect(invalid.response.status).toBe(422);
+
+    const missingEvidence = await jsonRequest(
+      '/api/fiscal-obligations/igtf',
+      'PUT',
+      {
+        applicability: 'aplica',
+        normativeReference: '',
+        reviewedAt: '',
+        notes: '',
+      }
+    );
+    expect(missingEvidence.response.status).toBe(422);
   });
 
   it('serves costing and dashboard reports', async () => {

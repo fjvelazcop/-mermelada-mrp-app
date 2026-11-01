@@ -398,6 +398,72 @@ export interface FiscalSettings {
   printNotes: string;
 }
 
+export type FiscalObligationKey =
+  | 'tax_regime'
+  | 'special_taxpayer'
+  | 'vat_withholding'
+  | 'islr_withholding'
+  | 'igtf'
+  | 'digital_invoicing'
+  | 'snat_2026_00093'
+  | 'fiscal_documents'
+  | 'fiscal_books';
+
+export type FiscalObligationApplicability =
+  | 'pendiente'
+  | 'aplica'
+  | 'no_aplica';
+
+export interface FiscalObligationRecord {
+  key: FiscalObligationKey;
+  title: string;
+  applicability: FiscalObligationApplicability;
+  normativeReference: string;
+  reviewedAt: string;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string;
+  updatedByRole: string;
+}
+
+export interface FiscalObligationHistoryEntry {
+  id: string;
+  obligationKey: FiscalObligationKey;
+  obligationTitle: string;
+  previous: Pick<
+    FiscalObligationRecord,
+    'applicability' | 'normativeReference' | 'reviewedAt' | 'notes'
+  >;
+  current: Pick<
+    FiscalObligationRecord,
+    'applicability' | 'normativeReference' | 'reviewedAt' | 'notes'
+  >;
+  changedAt: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+}
+
+export interface FiscalObligationsResponse {
+  obligations: FiscalObligationRecord[];
+  history: FiscalObligationHistoryEntry[];
+}
+
+export const FISCAL_OBLIGATION_DEFINITIONS: readonly Pick<
+  FiscalObligationRecord,
+  'key' | 'title'
+>[] = [
+  { key: 'tax_regime', title: 'Régimen tributario de la empresa' },
+  { key: 'special_taxpayer', title: 'Sujeto Pasivo Especial (SPE)' },
+  { key: 'vat_withholding', title: 'Agente de retención de IVA' },
+  { key: 'islr_withholding', title: 'Agente de retención de ISLR' },
+  { key: 'igtf', title: 'Impuesto a las Grandes Transacciones Financieras (IGTF)' },
+  { key: 'digital_invoicing', title: 'Facturación digital y autorización aplicable' },
+  { key: 'snat_2026_00093', title: 'Transición a SNAT/2026/00093' },
+  { key: 'fiscal_documents', title: 'Requisitos de facturas, notas y leyendas' },
+  { key: 'fiscal_books', title: 'Formato y campos de libros fiscales' },
+];
+
 /**
  * Fiscal invoice emitted for a sale.
  *
@@ -904,6 +970,7 @@ export interface AuditLogEntry {
     | 'factura_impresa'
     | 'factura_reimpresa'
     | 'configuracion_fiscal_actualizada'
+    | 'obligacion_fiscal_actualizada'
     | 'nota_fiscal_creada'
     | 'nota_fiscal_impresa'
     | 'libro_fiscal_cerrado'

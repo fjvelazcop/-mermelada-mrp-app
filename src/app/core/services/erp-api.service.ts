@@ -13,6 +13,9 @@ import {
   Employee,
   PayrollWeek,
   FiscalSettings,
+  FiscalObligationKey,
+  FiscalObligationRecord,
+  FiscalObligationsResponse,
   FiscalInvoice,
   FiscalAdjustmentNote,
   FiscalBooksReport,
@@ -548,6 +551,8 @@ export class ErpApiService {
   public expenseCategories = signal<ExpenseCategoryConfig[]>([]);
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
+  public fiscalObligations = signal<FiscalObligationRecord[]>([]);
+  public fiscalObligationHistory = signal<FiscalObligationsResponse['history']>([]);
   public fiscalInvoices = signal<FiscalInvoice[]>([]);
   public fiscalAdjustmentNotes = signal<FiscalAdjustmentNote[]>([]);
   public dashboardData = signal<any | null>(null);
@@ -1624,6 +1629,45 @@ export class ErpApiService {
       this.showToast(msg, 'error');
       throw err;
     }
+  }
+
+  public async refreshFiscalObligations(): Promise<void> {
+    try {
+      const result = await firstValueFrom(
+        this.http.get<FiscalObligationsResponse>('/api/fiscal-obligations')
+      );
+      this.fiscalObligations.set(result.obligations);
+      this.fiscalObligationHistory.set(result.history);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Error al cargar las obligaciones fiscales';
+      this.showToast(message, 'error');
+      throw err;
+    }
+  }
+
+  public async updateFiscalObligation(
+    key: FiscalObligationKey,
+    update: Pick<
+      FiscalObligationRecord,
+      'applicability' | 'normativeReference' | 'reviewedAt' | 'notes'
+    >
+  ): Promise<void> {
+    try {
+      await firstValueFrom(
+        this.http.put<FiscalObligationRecord>(
+          `/api/fiscal-obligations/${key}`,
+          update
+        )
+      );
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Error al guardar la obligación fiscal';
+      this.showToast(message, 'error');
+      throw err;
+    }
+    await this.refreshFiscalObligations();
+    this.showToast('Obligación fiscal e historial actualizados.');
   }
 
   // --- FISCAL INVOICES ---

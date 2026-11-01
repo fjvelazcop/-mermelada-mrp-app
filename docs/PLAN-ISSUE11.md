@@ -1,7 +1,7 @@
 # Plan Issue #11 — SENIAT / Facturación Fiscal Venezolana
 
 **Fecha:** 31/10/2026
-**Estado actual:** El P0 técnico de emisión, notas, libros, cierre, exportación auditada y validaciones está implementado. Se añadió auditoría de cambios a la configuración fiscal. Pendientes: validación externa contable/normativa, definición del alcance P1/P2 y evidencia de aceptación. No implica autorización del SENIAT.
+**Estado actual:** El P0 técnico de emisión, notas, libros, cierre, exportación auditada y validaciones está implementado. Configuración → Datos Fiscales permite al administrador registrar obligaciones tributarias y consultar su historial. Pendientes: validación externa contable/normativa, definición del alcance P1/P2 y evidencia de aceptación. No implica autorización del SENIAT.
 **Vigencia normativa:** SNAT/2011/0071 vence el **18/04/2027**; nuevo régimen SNAT/2026/00093 entra en vigor el **19/04/2027**.
 **Definición de obligaciones:** issue [#13 — obligaciones tributarias y alcance contable con contador](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13).
 
@@ -188,6 +188,8 @@ No existe actualmente una tabla `fiscal_features` ni un sistema general de flags
 - [x] El Libro de Compras del mes cuadra contra gastos con `fiscalBookEligible` y documentos válidos.
 - [x] El cierre mensual bloquea emisión y edición en períodos cerrados.
 - [x] Los exportes son reproducibles y auditables (usuario, fecha, período, hash/total de control).
+- [x] El administrador registra aplicabilidad, referencia, fecha y observaciones de obligaciones; el historial separado conserva cambios y usuario.
+- [x] El rol administrador mantiene permisos absolutos; la lectura/escritura del registro de obligaciones exige admin en API.
 - [ ] Los módulos especializados no están implementados; al desarrollarlos se deben proteger rutas y API por rol, no solo ocultar menús.
 - [x] Existen pruebas de regresión para alícuotas, exentos, no sujetos, redondeos, anulaciones y notas.
 - [ ] Completar revisión dedicada de RIF/datos fiscales, credenciales y secretos hardcodeados antes de certificar este criterio.
@@ -244,8 +246,8 @@ Actualizar este plan y marcar solo las tareas con evidencia técnica o validaci�
 
 | Etapa | Trabajo y responsable | Salida / checklist |
 |---|---|---|
-| **A. Cierre técnico inmediato** | Desarrollo + administrador: auditoría de cambios fiscales, pruebas, documentación por rol y sincronización del checklist. | ✅ Auditoría de configuración y pruebas; ✅ manuales/plan alineados; ⬜ completar revisión de datos sensibles/secretos |
-| **B. Decisiones tributarias (#13)** | Administrador coordina y entrega datos; contador/especialista confirma régimen/SPE, retenciones, IGTF, facturación digital, leyes/leyendas y formato de libros. | ⬜ Matriz de obligaciones fechada, con fundamento, evidencia y responsable; ⬜ validación de representación y libros |
+| **A. Registro de decisiones** | Administrador registra en Configuración → Datos Fiscales → Obligaciones y validaciones la conclusión del contador, referencia, fecha y observaciones. | ✅ Interfaz e historial persistente con usuario/rol; solo admin consulta y edita. Registrar no activa módulos. |
+| **B. Decisiones tributarias (#13)** | Administrador coordina y entrega datos; contador/especialista confirma régimen/SPE, retenciones, IGTF, facturación digital, leyes/leyendas y formato de libros. Luego registrar decisiones en la interfaz. | ⬜ Matriz de obligaciones fechada, con fundamento, evidencia y responsable; ⬜ validación de representación y libros |
 | **C. Alcance P1** | Dirección + contador definen; desarrollo estima y ejecuta en issues derivados. **P1: contabilidad formal y retenciones, si corresponden.** | ⬜ Aprobación del alcance; ⬜ plan de cuentas/asientos; ⬜ Diario/Mayor; ⬜ Inventarios y Balances/estados financieros; ⬜ retenciones aplicables |
 | **D. Preparación P2** | Administrador y especialista verifican normativa vigente; desarrollo implementa requisitos confirmados, pruebas, credenciales seguras y contingencia. | ⬜ requisitos oficiales trazados; ⬜ adaptación SNAT/2026/00093; ⬜ facturación digital y verificación antes del 19/04/2027 |
 | **E. Liberación** | Administrador ejecuta pruebas operativas; contador revisa documentos/libros; dirección autoriza uso. | ⬜ pruebas UAT; ⬜ permisos por rol verificados; ⬜ respaldo/restauración probados; ⬜ aprobación externa y decisión de producción |
@@ -253,6 +255,7 @@ Actualizar este plan y marcar solo las tareas con evidencia técnica o validaci�
 ### Acciones por rol
 
 - **Administrador del ERP:** coordina la revisión externa; no infiere ni cambia el régimen por su cuenta; configura datos fiscales solo después de validarlos, revisa el log de auditoría, corrige datos maestros, concilia exportes, no cierra un período con diferencias y mantiene backups.
+- **Permisos:** el rol `admin` conserva permisos absolutos activos para todos los módulos/acciones; el API de obligaciones exige administrador para leer o guardar. Los demás roles no reciben permiso a la sección ni endpoints.
 - **Personal con permiso de ventas:** verifica RIF, datos del cliente, precios, condición de venta y tasa antes de guardar el pedido que emite la factura; comunica cualquier bloqueo al administrador. No altera documentos emitidos.
 - **Administrador que opera facturación fiscal:** tramita anulaciones con motivo, emite notas justificadas, revisa y exporta libros, concilia diferencias y cierra únicamente el período aprobado.
 - **Contador/especialista externo:** valida obligaciones, tasas, leyendas, formatos y tratamiento contable; entrega decisiones documentadas. No se le atribuye un rol de aplicación salvo que la organización lo cree y autorice explícitamente.

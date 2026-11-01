@@ -84,6 +84,7 @@ const auditActionSchema = z.enum([
   'factura_impresa',
   'factura_reimpresa',
   'configuracion_fiscal_actualizada',
+  'obligacion_fiscal_actualizada',
   'nota_fiscal_creada',
   'nota_fiscal_impresa',
   'libro_fiscal_cerrado',
@@ -524,6 +525,57 @@ export const fiscalSettingsSchema = z
     printNotes: z.string().max(2000),
   })
   .partial();
+
+const fiscalObligationKeySchema = z.enum([
+  'tax_regime',
+  'special_taxpayer',
+  'vat_withholding',
+  'islr_withholding',
+  'igtf',
+  'digital_invoicing',
+  'snat_2026_00093',
+  'fiscal_documents',
+  'fiscal_books',
+]);
+
+export const fiscalObligationParamsSchema = z.object({
+  key: fiscalObligationKeySchema,
+});
+
+export const fiscalObligationUpdateSchema = z.object({
+  applicability: z.enum(['pendiente', 'aplica', 'no_aplica']),
+  normativeReference: z.string().trim().max(500),
+  reviewedAt: z.union([
+    z.literal(''),
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use la fecha YYYY-MM-DD')
+      .refine((value) => {
+        const date = new Date(`${value}T00:00:00.000Z`);
+        return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+      }, 'Indique una fecha válida'),
+  ]),
+  notes: z.string().trim().max(4000),
+}).superRefine((data, ctx) => {
+  if (data.applicability !== 'pendiente' && !data.reviewedAt) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['reviewedAt'],
+      message: 'Registre la fecha de la decisión del contador',
+    });
+  }
+  if (
+    data.applicability !== 'pendiente' &&
+    !data.normativeReference &&
+    !data.notes
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['normativeReference'],
+      message: 'Registre una referencia o las observaciones que respaldan la decisión',
+    });
+  }
+});
 
 export const fiscalInvoiceAnnulmentSchema = z.object({
   reason: z.string().trim().min(3).max(500),

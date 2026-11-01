@@ -888,6 +888,32 @@
 
   <!-- SECTION 4: DATOS FISCALES (SOLO ADMINISTRADOR) -->
   @if (activeSection() === 'fiscal' && isAdmin()) {
+    <div class="flex flex-wrap gap-2">
+      <button
+        type="button"
+        (click)="setFiscalSubsection('settings')"
+        class="rounded-xl px-4 py-2.5 text-sm font-semibold"
+        [class.bg-stone-900]="fiscalSubsection() === 'settings'"
+        [class.text-white]="fiscalSubsection() === 'settings'"
+        [class.bg-white]="fiscalSubsection() !== 'settings'"
+        [class.text-stone-700]="fiscalSubsection() !== 'settings'"
+      >
+        Datos fiscales
+      </button>
+      <button
+        type="button"
+        (click)="setFiscalSubsection('obligations')"
+        class="rounded-xl px-4 py-2.5 text-sm font-semibold"
+        [class.bg-stone-900]="fiscalSubsection() === 'obligations'"
+        [class.text-white]="fiscalSubsection() === 'obligations'"
+        [class.bg-white]="fiscalSubsection() !== 'obligations'"
+        [class.text-stone-700]="fiscalSubsection() !== 'obligations'"
+      >
+        Obligaciones y validaciones
+      </button>
+    </div>
+
+    @if (fiscalSubsection() === 'settings') {
     <form [formGroup]="fiscalForm" (ngSubmit)="saveFiscalSettings()" class="space-y-5">
       <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 flex items-start gap-3">
         <mat-icon class="text-amber-700 mt-0.5">gavel</mat-icon>
@@ -1204,5 +1230,155 @@
         </div>
       </div>
     </form>
+    } @else {
+      <div class="space-y-5">
+        <div class="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+          <div class="flex items-start gap-3">
+            <mat-icon class="mt-0.5 text-sky-700">info</mat-icon>
+            <div>
+              <h2 class="font-bold">Registro de decisiones tributarias</h2>
+              <p class="mt-1">
+                Use esta sección para documentar lo confirmado por el contador o especialista.
+                Guardar una obligación no activa cálculos, retenciones ni facturación digital.
+                Los cambios quedan en un historial persistente con usuario y fecha.
+              </p>
+              <p class="mt-1 font-semibold">Solo Administrador puede consultar o modificar este registro.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+          <section class="space-y-4 rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+            <div>
+              <label for="fiscal-obligation" class="mb-1 block text-xs font-bold uppercase tracking-wide text-stone-600">
+                Obligación a documentar
+              </label>
+              <select
+                id="fiscal-obligation"
+                [value]="selectedFiscalObligationKey()"
+                (change)="handleFiscalObligationSelection($event)"
+                class="min-h-11 w-full rounded-xl border border-stone-300 bg-white px-3 text-sm"
+              >
+                @for (item of fiscalObligationDefinitions; track item.key) {
+                  <option [value]="item.key">{{ item.title }}</option>
+                }
+              </select>
+            </div>
+
+            @if (selectedFiscalObligation(); as obligation) {
+              <div class="rounded-xl bg-stone-50 p-3 text-sm">
+                <div class="text-xs font-semibold uppercase tracking-wide text-stone-500">Estado registrado</div>
+                <div class="mt-1 font-bold text-stone-900">{{ applicabilityLabel(obligation.applicability) }}</div>
+                @if (obligation.updatedAt) {
+                  <div class="mt-1 text-xs text-stone-600">
+                    Último cambio: {{ obligation.updatedAt | date:'dd/MM/yyyy HH:mm' }}
+                    por {{ obligation.updatedBy }} ({{ obligation.updatedByRole }})
+                  </div>
+                }
+              </div>
+            }
+
+            <form [formGroup]="fiscalObligationForm" (ngSubmit)="saveFiscalObligation()" class="space-y-4">
+              <div>
+                <label for="obligation-applicability" class="mb-1 block text-xs font-bold text-stone-600">Resultado de la revisión</label>
+                <select
+                  id="obligation-applicability"
+                  formControlName="applicability"
+                  class="min-h-11 w-full rounded-xl border border-stone-300 bg-white px-3 text-sm"
+                >
+                  <option value="pendiente">Pendiente de validar</option>
+                  <option value="aplica">Aplica</option>
+                  <option value="no_aplica">No aplica</option>
+                </select>
+                <p class="mt-1 text-[11px] text-stone-500">Para confirmar “Aplica” o “No aplica”, indique fecha y una referencia o conclusión del contador.</p>
+              </div>
+              <div>
+                <label for="obligation-reference" class="mb-1 block text-xs font-bold text-stone-600">Referencia normativa o evidencia</label>
+                <input
+                  id="obligation-reference"
+                  formControlName="normativeReference"
+                  maxlength="500"
+                  placeholder="Norma, artículo, comunicación o documento revisado"
+                  class="min-h-11 w-full rounded-xl border border-stone-300 px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label for="obligation-reviewed-at" class="mb-1 block text-xs font-bold text-stone-600">Fecha de revisión</label>
+                <input
+                  id="obligation-reviewed-at"
+                  type="date"
+                  formControlName="reviewedAt"
+                  class="min-h-11 w-full rounded-xl border border-stone-300 px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label for="obligation-notes" class="mb-1 block text-xs font-bold text-stone-600">Conclusión y observaciones</label>
+                <textarea
+                  id="obligation-notes"
+                  rows="4"
+                  maxlength="4000"
+                  formControlName="notes"
+                  placeholder="Resumen de lo indicado por el contador y acciones pendientes"
+                  class="w-full rounded-xl border border-stone-300 px-3 py-2 text-sm"
+                ></textarea>
+              </div>
+              <button
+                type="submit"
+                [disabled]="fiscalObligationSaving() || fiscalObligationForm.invalid || !fiscalObligationForm.dirty"
+                class="inline-flex min-h-11 items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                <mat-icon class="text-base">{{ fiscalObligationSaving() ? 'hourglass_top' : 'save' }}</mat-icon>
+                Guardar decisión e historial
+              </button>
+            </form>
+          </section>
+
+          <section class="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+            <h3 class="font-bold text-stone-900">Historial de cambios</h3>
+            <p class="mb-4 mt-1 text-xs text-stone-500">Cada registro conserva el estado anterior y nuevo, la referencia, las observaciones, fecha y administrador responsable.</p>
+            @if (selectedFiscalObligationHistory().length) {
+              <ol class="space-y-3">
+                @for (entry of selectedFiscalObligationHistory(); track entry.id) {
+                  <li class="rounded-xl border border-stone-200 p-3 text-xs">
+                    <div class="flex flex-wrap justify-between gap-2">
+                      <strong>{{ entry.userName }} · {{ entry.userRole }}</strong>
+                      <time>{{ entry.changedAt | date:'dd/MM/yyyy HH:mm' }}</time>
+                    </div>
+                    <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                      <div class="rounded-lg bg-stone-50 p-2">
+                        <div class="font-bold text-stone-500">Antes · {{ applicabilityLabel(entry.previous.applicability) }}</div>
+                        @if (entry.previous.normativeReference) {
+                          <p class="mt-1"><strong>Referencia:</strong> {{ entry.previous.normativeReference }}</p>
+                        }
+                        @if (entry.previous.reviewedAt) {
+                          <p class="mt-1"><strong>Revisado:</strong> {{ entry.previous.reviewedAt }}</p>
+                        }
+                        @if (entry.previous.notes) {
+                          <p class="mt-1 whitespace-pre-wrap"><strong>Observaciones:</strong> {{ entry.previous.notes }}</p>
+                        }
+                      </div>
+                      <div class="rounded-lg bg-emerald-50 p-2">
+                        <div class="font-bold text-emerald-800">Después · {{ applicabilityLabel(entry.current.applicability) }}</div>
+                        @if (entry.current.normativeReference) {
+                          <p class="mt-1"><strong>Referencia:</strong> {{ entry.current.normativeReference }}</p>
+                        }
+                        @if (entry.current.reviewedAt) {
+                          <p class="mt-1"><strong>Revisado:</strong> {{ entry.current.reviewedAt }}</p>
+                        }
+                        @if (entry.current.notes) {
+                          <p class="mt-1 whitespace-pre-wrap"><strong>Observaciones:</strong> {{ entry.current.notes }}</p>
+                        }
+                      </div>
+                    </div>
+                  </li>
+                }
+              </ol>
+            } @else {
+              <p class="rounded-xl bg-stone-50 p-4 text-sm text-stone-600">Todavía no hay decisiones registradas para esta obligación.</p>
+            }
+          </section>
+        </div>
+      </div>
+    }
   }
 </div>

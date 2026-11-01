@@ -14,6 +14,10 @@ import {
   Employee,
   PayrollWeek,
   FiscalSettings,
+  FiscalObligationRecord,
+  FiscalObligationHistoryEntry,
+  FiscalObligationKey,
+  FISCAL_OBLIGATION_DEFINITIONS,
   FiscalInvoice,
   FiscalAdjustmentNote,
   FiscalAdjustmentReason,
@@ -57,11 +61,26 @@ export interface DatabaseState {
   expenses: Expense[];
   expenseCategories: ExpenseCategoryConfig[];
   fiscalSettings: FiscalSettings;
+  fiscalObligations: FiscalObligationRecord[];
+  fiscalObligationHistory: FiscalObligationHistoryEntry[];
   fiscalInvoices: FiscalInvoice[];
   fiscalAdjustmentNotes: FiscalAdjustmentNote[];
   fiscalPeriodClosures: FiscalPeriodClosure[];
   exchangeRates: DailyExchangeRates;
   auditLogs: AuditLogEntry[];
+}
+
+function createInitialFiscalObligations(): FiscalObligationRecord[] {
+  return FISCAL_OBLIGATION_DEFINITIONS.map((obligation) => ({
+    ...obligation,
+    applicability: 'pendiente',
+    normativeReference: '',
+    reviewedAt: '',
+    notes: '',
+    updatedAt: '',
+    updatedBy: '',
+    updatedByRole: '',
+  }));
 }
 
 export function createInitialDatabase(): DatabaseState {
@@ -1603,6 +1622,8 @@ export function createInitialDatabase(): DatabaseState {
     expenses,
     expenseCategories,
     fiscalSettings,
+    fiscalObligations: createInitialFiscalObligations(),
+    fiscalObligationHistory: [],
     fiscalInvoices: [],
     fiscalAdjustmentNotes: [],
     fiscalPeriodClosures: [],
@@ -1617,7 +1638,17 @@ export class ErpDatabase {
   constructor() {
     const persisted = loadRelationalState();
     if (persisted) {
-      this.state = persisted;
+      this.state = {
+        ...persisted,
+        fiscalObligations:
+          persisted.fiscalObligations?.length > 0
+            ? persisted.fiscalObligations
+            : createInitialFiscalObligations(),
+        fiscalObligationHistory: persisted.fiscalObligationHistory || [],
+      };
+      if (!persisted.fiscalObligations?.length) {
+        this.persist();
+      }
       return;
     }
 
@@ -1626,6 +1657,11 @@ export class ErpDatabase {
     this.state = legacy
       ? {
           ...legacy,
+          fiscalObligations:
+            legacy.fiscalObligations?.length > 0
+              ? legacy.fiscalObligations
+              : createInitialFiscalObligations(),
+          fiscalObligationHistory: legacy.fiscalObligationHistory || [],
           fiscalAdjustmentNotes: legacy.fiscalAdjustmentNotes || [],
           fiscalPeriodClosures: legacy.fiscalPeriodClosures || [],
         }
@@ -3219,6 +3255,72 @@ export class ErpDatabase {
     }
 
     return this.state.fiscalSettings;
+  }
+
+  public getFiscalObligations(): FiscalObligationRecord[] {
+    return this.state.fiscalObligations;
+  }
+
+  public getFiscalObligationHistory(): FiscalObligationHistoryEntry[] {
+    return this.state.fiscalObligationHistory;
+  }
+
+  public updateFiscalObligation(
+    key: FiscalObligationKey,
+    updates: Pick<
+      FiscalObligationRecord,
+      'applicability' | 'normativeReference' | 'reviewedAt' | 'notes'
+    >,
+    actor: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
+  ): FiscalObligationRecord | null {
+    const obligation = this.state.fiscalObligations.find((item) => item.key === key);
+    if (!obligation) return null;
+
+    const previous = {
+      applicability: obligation.applicability,
+      normativeReference: obligation.normativeReference,
+      reviewedAt: obligation.reviewedAt,
+      notes: obligation.notes,
+    };
+    const current = { ...updates };
+    if (JSON.stringify(previous) === JSON.stringify(current)) return obligation;
+
+    const changedAt = new Date().toISOString();
+    Object.assign(obligation, current, {
+      updatedAt: changedAt,
+      updatedBy: actor.userName,
+      updatedByRole: actor.userRole,
+    });
+
+    const historyEntry: FiscalObligationHistoryEntry = {
+      id: `fobh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      obligationKey: key,
+      obligationTitle: obligation.title,
+      previous,
+      current,
+      changedAt,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+    };
+    this.state.fiscalObligationHistory.unshift(historyEntry);
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'obligacion_fiscal_actualizada',
+      title: `Obligación fiscal actualizada: ${obligation.title}`,
+      description: `Estado: ${previous.applicability} → ${current.applicability}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: current.applicability === 'pendiente' ? 'warning' : 'info',
+      details: {
+        targetCode: key,
+        changes: [
+          `applicability: ${previous.applicability} → ${current.applicability}`,
+        ],
+      },
+    });
+    return obligation;
   }
 
   // --- FISCAL INVOICES ---

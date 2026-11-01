@@ -1,6 +1,6 @@
 # Manual de Administración — Mermelada ERP
 
-**Versión:** 1.2 · **Última actualización:** 31/10/2026
+**Versión:** 1.3 · **Última actualización:** 31/10/2026
 **Audiencia:** responsable técnico / administrador del sistema.
 **Documentos relacionados:** [`MANUAL-USUARIO.md`](./MANUAL-USUARIO.md), [`../DEPLOYMENT.md`](../DEPLOYMENT.md), [`../README.md`](../README.md).
 
@@ -122,12 +122,17 @@ Los roles base (`admin`, `supervisor_planta`, `operator`, `analista_costos`,
 `almacenista`) no se pueden eliminar. Los roles personalizados sí, siempre que
 no tengan usuarios asignados. La matriz de permisos se edita por módulo y acción
 (`view`, `create`, `edit`, `delete`, `export`).
+El rol `admin` mantiene siempre las cinco acciones activas en todos los módulos:
+la matriz las muestra seleccionadas y no permite desactivarlas; la autorización
+también se aplica en el backend. Las obligaciones fiscales nuevas heredan esta
+misma regla y, además, exigen `admin` directamente en la API.
 
 ### 4.4. Auditoría
 
 `GET /api/audit-logs` y la vista **Auditoría** muestran los eventos con usuario,
-rol, módulo y detalle. La retención en memoria del estado demo es de 500
-eventos, pero la tabla SQLite conserva el histórico completo.
+rol, módulo y detalle. El log general conserva hasta 500 eventos recientes
+tanto en memoria como en SQLite. El historial de decisiones de obligaciones
+fiscales se almacena por separado y no usa ese límite.
 
 ---
 
@@ -368,6 +373,26 @@ positiva y que no se reutilicen números de factura/control. Los importes se
 registran en USD y los equivalentes en Bs. se calculan con la tasa guardada en
 el pedido.
 
+### 9.2. Registro de obligaciones y validaciones (solo administrador)
+
+Ruta: **Configuración → Datos Fiscales → Obligaciones y validaciones**. El rol
+administrador mantiene acceso completo a todos los módulos y acciones; para los
+demás roles, la sección no aparece y las rutas API de lectura y escritura
+devuelven prohibido.
+
+Seleccione una obligación y registre el resultado (**Pendiente**, **Aplica** o
+**No aplica**), referencia normativa/evidencia, fecha de revisión y conclusión
+del contador. Para confirmar “Aplica” o “No aplica”, la API exige fecha y
+referencia u observaciones. Guarde cada decisión para agregarla al historial,
+que muestra el estado anterior/nuevo y quién/cuándo la registró.
+
+El historial se conserva en tablas dedicadas de SQLite y no tiene una acción
+para editar o borrar eventos desde la interfaz. Inclúyalo en los respaldos
+regulares. El registro documenta decisiones; **no calcula impuestos, no activa
+retenciones ni integra facturación digital**. No cargue tokens, contraseñas ni
+credenciales en referencias u observaciones. El contador externo no tiene una
+cuenta de acceso predeterminada.
+
 Estado de las fases:
 
 | Fase | Alcance | Estado |
@@ -383,7 +408,7 @@ La normativa vigente aplica hasta el **18/04/2027**; el nuevo régimen
 (`SNAT/2026/00093`) entra en vigor el **19/04/2027**. Cualquier cambio fiscal
 debe validarse con un contador público antes de producción.
 
-### 9.4. Acciones y responsables del flujo fiscal
+### 9.5. Acciones y responsables del flujo fiscal
 
 | Responsable | Acciones |
 |---|---|
@@ -397,7 +422,7 @@ No habilite retenciones, IGTF, SPE ni facturación digital basándose solo en lo
 campos de configuración existentes: estos campos no equivalen a módulos
 funcionales ni acreditan la condición legal de la empresa.
 
-### 9.2. Emisión y documentos relacionados
+### 9.3. Emisión y documentos relacionados
 
 - La factura se crea automáticamente al registrar un pedido cuando `enabled`
   está activo. Mantenga el RIF del cliente en su ficha; el sistema usa la ficha
@@ -414,7 +439,7 @@ funcionales ni acreditan la condición legal de la empresa.
   Las notas de crédito no pueden superar el saldo original pendiente de acreditar
   por categoría/alícuota.
 
-### 9.3. Libros mensuales, exportación y cierre
+### 9.4. Libros mensuales, exportación y cierre
 
 En **Facturación Fiscal → Libros fiscales mensuales**, seleccione el período y
 consulte ventas, compras y conciliación. **Exportar CSV** entrega dos archivos

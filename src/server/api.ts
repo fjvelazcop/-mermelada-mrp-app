@@ -72,6 +72,8 @@ import {
   expenseSchema,
   finishedGoodUpdateSchema,
   fiscalSettingsSchema,
+  fiscalObligationParamsSchema,
+  fiscalObligationUpdateSchema,
   fiscalAdjustmentNoteSchema,
   fiscalPeriodParamsSchema,
   fiscalInvoiceAnnulmentSchema,
@@ -1085,6 +1087,36 @@ export function createApiApp(): express.Express {
         req.body,
         auditActor(req)
       );
+      res.json(updated);
+    })
+  );
+
+  app.get(
+    '/api/fiscal-obligations',
+    requireAdmin,
+    query((_req, res) => {
+      res.json({
+        obligations: dbInstance.getFiscalObligations(),
+        history: dbInstance.getFiscalObligationHistory(),
+      });
+    })
+  );
+
+  app.put(
+    '/api/fiscal-obligations/:key',
+    requireAdmin,
+    validateParams(fiscalObligationParamsSchema),
+    validateBody(fiscalObligationUpdateSchema),
+    mutation((req, res) => {
+      const { key } = fiscalObligationParamsSchema.parse(req.params);
+      const updated = dbInstance.updateFiscalObligation(
+        key,
+        req.body,
+        auditActor(req)
+      );
+      if (!updated) {
+        throw new ApiError(404, 'Obligación fiscal no encontrada');
+      }
       res.json(updated);
     })
   );

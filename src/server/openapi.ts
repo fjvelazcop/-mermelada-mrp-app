@@ -955,6 +955,51 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/fiscal-obligations': {
+    get: {
+      tags: ['Configuración'],
+      summary: 'Consultar obligaciones fiscales registradas e historial (solo administrador)',
+      responses: {
+        200: jsonResponse('Obligaciones e historial', ref('FiscalObligationsResponse')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
+  '/api/fiscal-obligations/{key}': {
+    put: {
+      tags: ['Configuración'],
+      summary: 'Registrar decisión del contador para una obligación (solo administrador)',
+      parameters: [
+        {
+          name: 'key',
+          in: 'path',
+          required: true,
+          schema: {
+            type: 'string',
+            enum: [
+              'tax_regime',
+              'special_taxpayer',
+              'vat_withholding',
+              'islr_withholding',
+              'igtf',
+              'digital_invoicing',
+              'snat_2026_00093',
+              'fiscal_documents',
+              'fiscal_books',
+            ],
+          },
+        },
+      ],
+      requestBody: requestBody(ref('FiscalObligationUpdate')),
+      responses: {
+        200: jsonResponse('Obligación actualizada', ref('FiscalObligation')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
   '/api/fiscal-invoices': {
     get: {
       tags: ['Ventas'],
@@ -2244,6 +2289,40 @@ const schemas: Record<string, JsonObject> = {
   FiscalSettingsUpdate: {
     type: 'object',
     description: 'Cualquier subconjunto de los campos de FiscalSettings',
+  },
+  FiscalObligationUpdate: {
+    type: 'object',
+    required: ['applicability', 'normativeReference', 'reviewedAt', 'notes'],
+    properties: {
+      applicability: { type: 'string', enum: ['pendiente', 'aplica', 'no_aplica'] },
+      normativeReference: { type: 'string', maxLength: 500 },
+      reviewedAt: { type: 'string', format: 'date' },
+      notes: { type: 'string', maxLength: 4000 },
+    },
+  },
+  FiscalObligation: {
+    type: 'object',
+    properties: {
+      key: string,
+      title: string,
+      applicability: { type: 'string', enum: ['pendiente', 'aplica', 'no_aplica'] },
+      normativeReference: string,
+      reviewedAt: { type: 'string', format: 'date' },
+      notes: string,
+      updatedAt: dateTime,
+      updatedBy: string,
+      updatedByRole: string,
+    },
+  },
+  FiscalObligationsResponse: {
+    type: 'object',
+    properties: {
+      obligations: arrayOf('FiscalObligation'),
+      history: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+      },
+    },
   },
   FiscalInvoice: {
     type: 'object',

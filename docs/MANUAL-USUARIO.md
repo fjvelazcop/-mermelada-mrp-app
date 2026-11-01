@@ -1,6 +1,6 @@
 # Manual de Usuario — Mermelada ERP
 
-**Versión:** 1.2 · **Última actualización:** 31/10/2026
+**Versión:** 1.3 · **Última actualización:** 31/10/2026
 **Aplicación:** PulpaCraft MRP / Mermelada ERP
 **Alcance:** personal administrativo, supervisores, operadores de planta, almacén y costos.
 
@@ -205,6 +205,12 @@ sobre el funcionamiento del sistema.
 La creación de notas y la consulta, exportación y cierre de libros se reservan
 al administrador. Revise las diferencias antes del cierre; los formatos y
 criterios deben confirmarse con el contador.
+
+El registro de obligaciones tributarias y sus decisiones es una función
+administrativa exclusiva. Si necesita confirmar si aplica una retención, IGTF,
+SPE u otra obligación, consulte al administrador; no cambie datos fiscales ni
+interprete un estado registrado como habilitación para emitir o cobrar un
+impuesto.
 
 **Si una validación bloquea la factura:** no cambie la tasa, RIF, numeración ni
 la configuración fiscal para eludirla. Informe al administrador para que revise

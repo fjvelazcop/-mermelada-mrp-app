@@ -6,6 +6,9 @@ import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   AppModuleId,
   FiscalBooksFormat,
+  FiscalObligationApplicability,
+  FiscalObligationKey,
+  FISCAL_OBLIGATION_DEFINITIONS,
   FiscalRegime,
   HistoricalOrdersTreatment,
   ModulePermissions,
@@ -37,6 +40,21 @@ export class Settings {
 
   public fiscalSaving = signal<boolean>(false);
   public fiscalSaved = signal<boolean>(false);
+  public fiscalSubsection = signal<'settings' | 'obligations'>('settings');
+  public fiscalObligationSaving = signal<boolean>(false);
+  public selectedFiscalObligationKey = signal<FiscalObligationKey>('tax_regime');
+  public fiscalObligationDefinitions = FISCAL_OBLIGATION_DEFINITIONS;
+  public selectedFiscalObligation = computed(() =>
+    this.api
+      .fiscalObligations()
+      .find((item) => item.key === this.selectedFiscalObligationKey())
+  );
+  public selectedFiscalObligationHistory = computed(() =>
+    this.api
+      .fiscalObligationHistory()
+      .filter((entry) => entry.obligationKey === this.selectedFiscalObligationKey())
+  );
+  private fiscalObligationsLoaded = false;
 
   // Modal / Form state for Users
   public showUserModal = signal<boolean>(false);
@@ -154,6 +172,22 @@ export class Settings {
     printNotes: new FormControl<string>('', {nonNullable: true}),
   });
 
+  public fiscalObligationForm = new FormGroup({
+    applicability: new FormControl<FiscalObligationApplicability>('pendiente', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+    normativeReference: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.maxLength(500)],
+    }),
+    reviewedAt: new FormControl<string>('', {nonNullable: true}),
+    notes: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.maxLength(4000)],
+    }),
+  });
+
   constructor() {
     effect(() => {
       const requested = this.api.requestedSettingsSection();
@@ -195,6 +229,12 @@ export class Settings {
         printNotes: cfg.printNotes,
       });
     });
+
+    effect(() => {
+      if (this.activeSection() === 'fiscal' && this.isAdmin()) {
+        void this.loadFiscalObligations().catch(() => undefined);
+      }
+    });
   }
 
   public selectedRoleForMatrix = computed<SystemRole | undefined>(() => {
@@ -228,6 +268,77 @@ export class Settings {
     if (section === 'fiscal') {
       this.fiscalSaved.set(false);
     }
+  }
+
+  public setFiscalSubsection(subsection: 'settings' | 'obligations') {
+    this.fiscalSubsection.set(subsection);
+  }
+
+  private async loadFiscalObligations() {
+    if (!this.isAdmin() || this.fiscalObligationsLoaded) return;
+    await this.api.refreshFiscalObligations();
+    this.fiscalObligationsLoaded = true;
+    this.patchSelectedFiscalObligation();
+  }
+
+  public selectFiscalObligation(key: FiscalObligationKey) {
+    if (key === this.selectedFiscalObligationKey()) return;
+    if (
+      this.fiscalObligationForm.dirty &&
+      !window.confirm('Hay cambios sin guardar. ¿Descartarlos y cambiar de obligación?')
+    ) {
+      return;
+    }
+    this.fiscalObligationForm.markAsPristine();
+    this.selectedFiscalObligationKey.set(key);
+    this.patchSelectedFiscalObligation();
+  }
+
+  private patchSelectedFiscalObligation() {
+    const obligation = this.selectedFiscalObligation();
+    if (!obligation || this.fiscalObligationForm.dirty) return;
+    this.fiscalObligationForm.setValue({
+      applicability: obligation.applicability,
+      normativeReference: obligation.normativeReference,
+      reviewedAt: obligation.reviewedAt,
+      notes: obligation.notes,
+    });
+    this.fiscalObligationForm.markAsPristine();
+  }
+
+  public handleFiscalObligationSelection(event: Event) {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    const key = target.value as FiscalObligationKey;
+    if (FISCAL_OBLIGATION_DEFINITIONS.some((item) => item.key === key)) {
+      this.selectFiscalObligation(key);
+    }
+  }
+
+  public async saveFiscalObligation() {
+    if (!this.isAdmin()) return;
+    if (this.fiscalObligationForm.invalid) {
+      this.fiscalObligationForm.markAllAsTouched();
+      return;
+    }
+    this.fiscalObligationSaving.set(true);
+    try {
+      await this.api.updateFiscalObligation(
+        this.selectedFiscalObligationKey(),
+        this.fiscalObligationForm.getRawValue()
+      );
+      this.fiscalObligationForm.markAsPristine();
+    } catch {
+      // The API service reports the failure.
+    } finally {
+      this.fiscalObligationSaving.set(false);
+    }
+  }
+
+  public applicabilityLabel(value: FiscalObligationApplicability): string {
+    if (value === 'aplica') return 'Aplica';
+    if (value === 'no_aplica') return 'No aplica';
+    return 'Pendiente de validar';
   }
 
   public async saveFiscalSettings() {

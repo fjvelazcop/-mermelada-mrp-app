@@ -14,6 +14,8 @@ El ERP incluye emisión de facturas, notas de crédito/débito, libros mensuales
 Ventas/Compras, exportación CSV auditada y cierre de período. La implementación
 requiere validación de un contador público y no implica autorización del SENIAT.
 Los cambios de configuración fiscal también quedan registrados en auditoría.
+El administrador dispone de una sección para registrar obligaciones confirmadas
+por el contador y consultar su historial; guardarlas no activa módulos fiscales.
 Retenciones, contabilidad formal, régimen SPE, IGTF y facturación digital se
 definirán con el contador en el issue [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13);
 su implementación, si aplica, se planificará en issues separados vinculados al
