@@ -230,7 +230,9 @@ The backend suite (`src/server/**/*.spec.ts`, Vitest) uses a real temporary SQLi
 
 ## 🚀 Getting Started
 
-> **Local URLs (todo en un solo proceso):** `npm run dev` levanta Angular + SSR + API en
+> **⚠️ Para trabajar desde celulares:** El túnel de Cloudflare ('cloudflared') permite acceder
+al sistema desde cualquier dispositivo en la red local usando la URL pública del túnel
+(ej. ⟳https://<nombre>.trycloudflare.com/). La UI es responsive por defecto con Angular Material. `npm run dev` levanta Angular + SSR + API en
 > **http://localhost:3000**. No uses `http://localhost:3000/` si el proceso no está
 > corriendo: `ERR_CONNECTION_REFUSED` significa que el servidor de desarrollo está apagado.
 
@@ -248,6 +250,12 @@ npm run test:server      # pruebas de integración backend (SQLite + API)
 # 4️⃣ Compilar para producción
 npm run build            # build SSR → dist/app
 npm run start:prod       # sirve el build en http://localhost:4000
+
+### 🛑 Detener el proyecto completamente
+
+[PM2] Spawning PM2 daemon with pm2_home=/home/fjvel/.pm2
+[PM2] PM2 Successfully daemonized
+
 ```
 
 ### Rutas locales
@@ -324,6 +332,30 @@ backups/restore, HTTPS, monitoring, CI/CD secrets and rollback.
 
 ---
 
+
+
+### 📧 Configuración de correo electrónico (sin copia oculta / BCC opcional)
+
+Las notificaciones por correo utilizan SMTP y están configuradas a través de variables de entorno:
+
+| Variable | Propósito |
+|----------|-----------|
+| `SMTP_HOST` | Servidor SMTP |
+| `SMTP_PORT` | Puerto (587 por defecto) |
+| `SMTP_SECURE` | Conexión segura (true para 465, false para 587) |
+| `SMTP_USER` | Usuario SMTP |
+| `SMTP_PASSWORD` | Contraseña SMTP (`SMTP_PASS` también aceptado) |
+| `SMTP_FROM` | Remitente verificado |
+| `SMTP_FROM_NAME` | Nombre del remitente |
+| `SMTP_BCC` | **OCULTA** copia oculta añadida a TODO envío. Déjalo vacío para enviar sin BCC. |
+| `SMTP_TO` | Destinatarios semilla (solo siembra la tabla `notification_recipients` en el primer inicio) |
+| `SMTP_RETRY_DELAY_MS` | Retardo base entre los tres intentos de reenvío |
+
+**Importante:** El campo `SMTP_BCC` se añade automáticamente a cada mensaje de notificación.
+- Para enviar **sin** copia oculta: deja `SMTP_BCC` vacío en el archivo `.env`.
+- Para incluir **CC oculta**: establece una dirección de correo en `SMTP_BCC`.
+
+El correo de notificación se envía cada vez que se inicia un túnel Cloudflare exitoso, incluyendo la URL pública del túnel para compartir acceso al sistema.
 ## 🔌 API Endpoints (Express)
 
 The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `/api/*`. The most frequently used groups are:
