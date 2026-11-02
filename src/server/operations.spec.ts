@@ -122,6 +122,11 @@ describe('healthcheck and smoke-test scripts', () => {
         res.end('<html><body><app-root></app-root></body></html>');
         return;
       }
+      if (req.url === '/login') {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end('<html><body><app-root></app-root></body></html>');
+        return;
+      }
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end('{"error":"not found"}');
     });
@@ -163,7 +168,7 @@ describe('healthcheck and smoke-test scripts', () => {
     expect(stdout).toContain('[smoke] PASS health');
     expect(stdout).toContain('[smoke] PASS openapi');
     expect(stdout).toContain('[smoke] PASS frontend');
-    expect(stdout).toContain('All 3 checks passed');
+    expect(stdout).toContain('All 4 checks passed');
   });
 });
 
