@@ -66,11 +66,11 @@
 
       @if (isAdmin()) {
         <button
-          (click)="openNewManualOrder()"
+          (click)="openNewManualSheetOrder()"
           class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-amber-600 text-white rounded-lg shadow-xs hover:bg-amber-700 transition-colors"
         >
           <mat-icon class="text-amber-100 text-sm">playlist_add</mat-icon>
-          Nueva Orden Manual
+          Nueva Planilla Manual
         </button>
       }
 
@@ -220,9 +220,29 @@
           Solo el Administrador puede crear, editar, eliminar, procesar o anular.
         </p>
       </div>
-      <span class="text-[11px] font-mono font-semibold bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-full">
-        {{ manualOrders().length }} orden(es) manual(es)
-      </span>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-[11px] font-mono font-semibold bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-full">
+          {{ manualOrders().length }} orden(es) manual(es)
+        </span>
+        @if (isAdmin()) {
+          <button
+            type="button"
+            (click)="openNewManualSheetOrder()"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+          >
+            <mat-icon class="text-sm">grid_on</mat-icon>
+            Planilla de marmitas
+          </button>
+          <button
+            type="button"
+            (click)="openNewManualOrder()"
+            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+          >
+            <mat-icon class="text-sm">science</mat-icon>
+            Por fórmulas BOM
+          </button>
+        }
+      </div>
     </div>
 
     @if (manualOrders().length === 0) {
@@ -230,14 +250,24 @@
         <mat-icon class="text-3xl text-stone-300">inventory</mat-icon>
         <p class="text-xs text-stone-500 mt-2">Aún no hay órdenes manuales registradas.</p>
         @if (isAdmin()) {
-          <button
-            type="button"
-            (click)="openNewManualOrder()"
-            class="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
-          >
-            <mat-icon class="text-sm">add</mat-icon>
-            Crear primera orden manual
-          </button>
+          <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              (click)="openNewManualSheetOrder()"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+            >
+              <mat-icon class="text-sm">add</mat-icon>
+              Crear primera planilla de marmitas
+            </button>
+            <button
+              type="button"
+              (click)="openNewManualOrder()"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+            >
+              <mat-icon class="text-sm">science</mat-icon>
+              Cargar por fórmulas BOM
+            </button>
+          </div>
         }
       </div>
     } @else {
@@ -270,18 +300,48 @@
                   </span>
                 </div>
 
-                <div class="mt-2 space-y-1">
-                  @for (formula of order.formulas; track formula.recipeId) {
-                    <div class="text-xs text-stone-700 flex items-center gap-2">
-                      <mat-icon class="text-xs text-stone-400">science</mat-icon>
-                      <span class="font-medium">{{ formula.recipeName }}</span>
-                      <span class="text-stone-400">· {{ formula.batchCount }} lote(s) · {{ formula.targetUnits }} uds</span>
+                @if (order.manualSheet) {
+                  <div class="mt-2 space-y-1">
+                    <div class="text-xs text-stone-700 flex flex-wrap items-center gap-2">
+                      <mat-icon class="text-xs text-amber-600">grid_on</mat-icon>
+                      <span class="font-medium">Planilla de marmitas</span>
+                      <span class="text-stone-400">· {{ order.manualSheet.productionDate }}</span>
+                      <span class="text-stone-400">· {{ order.manualSheet.marmitas.length }} marmitas</span>
                     </div>
-                  }
-                  @if (!order.formulas || order.formulas.length === 0) {
-                    <div class="text-xs text-stone-700">{{ order.recipeName }} ({{ order.targetUnits }} uds)</div>
-                  }
-                </div>
+                    <div class="flex flex-wrap gap-2 pt-1">
+                      <span class="text-[11px] font-mono bg-white border border-stone-200 rounded px-2 py-0.5 text-stone-700">
+                        {{ order.manualSheet.packaging.cunetes | number:'1.0-2' }} cuñete(s)
+                      </span>
+                      <span class="text-[11px] font-mono bg-white border border-stone-200 rounded px-2 py-0.5 text-stone-700">
+                        {{ order.manualSheet.packaging.cajas | number:'1.0-2' }} caja(s)
+                      </span>
+                      <span class="text-[11px] font-mono bg-white border border-stone-200 rounded px-2 py-0.5 text-stone-700">
+                        {{ order.manualSheet.totals.totalKg | number:'1.2-2' }} kg
+                      </span>
+                      @if (api.canViewPrices()) {
+                        <span class="text-[11px] font-mono bg-white border border-stone-200 rounded px-2 py-0.5 text-stone-700">
+                          Costo ${{ order.manualSheet.costs.totalCost | number:'1.2-2' }}
+                        </span>
+                        <span class="text-[11px] font-mono bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5 text-emerald-800">
+                          Valor ${{ order.manualSheet.costs.productionValue | number:'1.2-2' }}
+                        </span>
+                      }
+                    </div>
+                  </div>
+                } @else {
+                  <div class="mt-2 space-y-1">
+                    @for (formula of order.formulas; track formula.recipeId) {
+                      <div class="text-xs text-stone-700 flex items-center gap-2">
+                        <mat-icon class="text-xs text-stone-400">science</mat-icon>
+                        <span class="font-medium">{{ formula.recipeName }}</span>
+                        <span class="text-stone-400">· {{ formula.batchCount }} lote(s) · {{ formula.targetUnits }} uds</span>
+                      </div>
+                    }
+                    @if (!order.formulas || order.formulas.length === 0) {
+                      <div class="text-xs text-stone-700">{{ order.recipeName }} ({{ order.targetUnits }} uds)</div>
+                    }
+                  </div>
+                }
 
                 <div class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-stone-500">
                   @if (order.commitmentReference) {
@@ -316,8 +376,18 @@
                 </div>
               </div>
 
-              @if (isAdmin()) {
-                <div class="flex flex-wrap lg:flex-col gap-2 lg:w-40 shrink-0">
+              <div class="flex flex-wrap lg:flex-col gap-2 lg:w-40 shrink-0">
+                @if (order.manualSheet) {
+                  <button
+                    type="button"
+                    (click)="openManualSheetDetails(order)"
+                    class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold min-h-[38px]"
+                  >
+                    <mat-icon class="text-base">visibility</mat-icon>
+                    Ver detalle
+                  </button>
+                }
+                @if (isAdmin()) {
                   @if (order.status === 'borrador') {
                     <button
                       type="button"
@@ -356,8 +426,8 @@
                       Eliminar
                     </button>
                   }
-                </div>
-              }
+                }
+              </div>
             </div>
 
             @if (order.status === 'completada') {
@@ -516,6 +586,467 @@
       [title]="'Bitácora de Auditoría — Producción, Cocción & Lotes HACCP'"
       [subtitle]="'Trazabilidad inmutable de órdenes de producción, cocción en marmitas, control de °Brix, mermas y fórmulas BOM'"
     />
+  }
+
+  <!-- MODAL: NUEVA PLANILLA MANUAL DE MARMITAS (FORMATO FÍSICO LOTE 72) -->
+  @if (isManualSheetModalOpen()) {
+    @let sc = sheetCosts();
+    @let bsRate = api.exchangeRates()?.currentUsd || 48.35;
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl w-full max-w-6xl max-h-[94vh] overflow-y-auto p-4 sm:p-6 shadow-xl border border-stone-200">
+        <div class="flex items-start justify-between gap-3 pb-4 border-b border-stone-100">
+          <div>
+            <div class="flex items-center gap-2">
+              <mat-icon class="text-amber-700">grid_on</mat-icon>
+              <h3 class="text-lg font-bold text-stone-900">Nueva Planilla Manual de Producción</h3>
+            </div>
+            <p class="text-xs text-stone-500 mt-1">
+              Formato físico de planta (Lote 72). Seis marmitas fijas, insumos, empaques y valoración con las tarifas vigentes.
+            </p>
+          </div>
+          <button (click)="closeManualSheetModal()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="manualSheetForm" (ngSubmit)="submitManualSheetOrder()" class="space-y-4 pt-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Número de Lote *</label>
+              <input
+                type="text"
+                formControlName="lotNumber"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              @if (manualSheetForm.controls.lotNumber.touched && manualSheetForm.controls.lotNumber.invalid) {
+                <span class="text-[11px] text-rose-600 mt-1 block">El lote es obligatorio.</span>
+              }
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Fecha de producción *</label>
+              <input
+                type="date"
+                formControlName="productionDate"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Referencia de compromiso</label>
+              <input
+                type="text"
+                formControlName="commitmentReference"
+                placeholder="ej: Lote 72 / compromiso cliente"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+          </div>
+
+          <div class="border border-stone-200 rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="min-w-[1120px] w-full text-xs">
+                <thead class="bg-stone-100 text-stone-600">
+                  <tr>
+                    <th class="px-2 py-2 text-left font-semibold">Marmita</th>
+                    <th class="px-2 py-2 text-right font-semibold">Cestas/base</th>
+                    <th class="px-2 py-2 text-right font-semibold">Guayaba kg</th>
+                    <th class="px-2 py-2 text-right font-semibold">Azúcar kg</th>
+                    <th class="px-2 py-2 text-right font-semibold">Almidón kg</th>
+                    <th class="px-2 py-2 text-right font-semibold">Químico g</th>
+                    <th class="px-2 py-2 text-right font-semibold">Ácido g</th>
+                    <th class="px-2 py-2 text-right font-semibold">Agua/gasoil</th>
+                    <th class="px-2 py-2 text-center font-semibold">Hora finalizada</th>
+                    <th class="px-2 py-2 text-right font-semibold">Cant. obtenida</th>
+                    <th class="px-2 py-2 text-right font-semibold">Kilos totales</th>
+                    <th class="px-2 py-2 text-center font-semibold">Reproceso</th>
+                  </tr>
+                </thead>
+                <tbody formArrayName="marmitas">
+                  @for (row of sheetMarmitas.controls; track $index; let i = $index) {
+                    <tr [formGroupName]="i" class="border-t border-stone-100 hover:bg-amber-50/30">
+                      <td class="px-2 py-1.5 font-semibold text-stone-800 whitespace-nowrap">Marmita {{ i + 1 }}</td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="basketsBase"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="guavaKg"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="sugarKg"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="starchKg"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="chemicalG"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="acidG"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="waterGasOil"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5 text-center">
+                        <input type="time" formControlName="finishedAt"
+                          class="w-24 rounded-md border border-stone-300 bg-white px-1.5 py-1 text-center font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="obtainedUnits"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5">
+                        <input type="number" min="0" step="0.01" formControlName="totalKg"
+                          class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </td>
+                      <td class="px-1 py-1.5 text-center">
+                        <input type="checkbox" formControlName="reprocess" class="accent-amber-600" />
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+                <tfoot class="bg-amber-50 text-stone-900 font-semibold border-t-2 border-amber-200">
+                  <tr>
+                    <td class="px-2 py-2" colspan="2">Totales</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().guavaKg | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().sugarKg | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().starchKg | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().chemicalG | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().acidG | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().waterGasOil | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-center text-stone-400">—</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().obtainedUnits | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().totalKg | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-center text-stone-400">—</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/60">
+              <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600 mb-3">Presentación y empaques</h4>
+              <div formGroupName="packaging" class="grid grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Peso por envase (kg)</label>
+                  <input type="number" min="0.01" step="0.01" formControlName="presentationKg"
+                    class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                </div>
+                <div>
+                  <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Cuñetes</label>
+                  <input type="number" min="0" step="0.01" formControlName="cunetes"
+                    class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <span class="text-[10px] text-stone-400">Tarifa ${{ sc.cuneteRate | number:'1.2-2' }} / ud</span>
+                </div>
+                <div>
+                  <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Cajas</label>
+                  <input type="number" min="0" step="0.01" formControlName="cajas"
+                    class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <span class="text-[10px] text-stone-400">Tarifa ${{ sc.cajaRate | number:'1.2-2' }} / ud</span>
+                </div>
+              </div>
+
+              <div class="mt-3 pt-3 border-t border-stone-200 space-y-1.5 text-xs">
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-600">Cuñetes ({{ sc.cunetes | number:'1.0-2' }} × ${{ sc.cuneteRate | number:'1.2-2' }})</span>
+                  <span class="font-mono font-semibold text-stone-900">${{ sc.cuneteValue | number:'1.2-2' }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-600">Cajas ({{ sc.cajas | number:'1.0-2' }} × ${{ sc.cajaRate | number:'1.2-2' }})</span>
+                  <span class="font-mono font-semibold text-stone-900">${{ sc.cajaValue | number:'1.2-2' }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-600">Unidades producidas por empaque</span>
+                  <span class="font-mono font-semibold text-stone-900">{{ sc.units | number:'1.0-2' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-stone-200 rounded-xl p-4 bg-white">
+              <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600 mb-3">Costos y valoración</h4>
+              <div class="space-y-1.5 text-xs">
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-600">Insumos (guayaba, azúcar, almidón, químicos, ácidos, agua/gasoil)</span>
+                  <span class="font-mono font-semibold text-stone-900">${{ sc.materialsCost | number:'1.2-2' }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-600">Empaques (cuñetes + cajas)</span>
+                  <span class="font-mono font-semibold text-stone-900">${{ sc.packagingCost | number:'1.2-2' }}</span>
+                </div>
+                <div class="flex items-center justify-between border-t border-stone-200 pt-1.5">
+                  <span class="font-semibold text-stone-800">Costo total del lote</span>
+                  <span class="font-mono font-bold text-stone-900">${{ sc.totalCost | number:'1.2-2' }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-500 text-[11px]">Costo total en bolívares</span>
+                  <span class="font-mono text-stone-600 text-[11px]">Bs. {{ (sc.totalCost * bsRate) | number:'1.2-2' }}</span>
+                </div>
+                <div class="flex items-center justify-between border-t border-stone-200 pt-1.5 mt-1">
+                  <span class="font-semibold text-emerald-800">Valor total de producción</span>
+                  <span class="font-mono font-bold text-emerald-700 text-sm">${{ sc.productionValue | number:'1.2-2' }}</span>
+                </div>
+              </div>
+              <p class="mt-3 text-[10px] leading-relaxed text-stone-500 bg-stone-50 border border-stone-200 rounded-lg p-2">
+                Valoración a costo unitario vigente del producto terminado (PT Guayaba 20 kg cuñete/caja) al momento de guardar.
+                Los insumos y empaques se costean a su costo promedio vigente.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Notas para el operador</label>
+            <textarea
+              formControlName="operatorNotes"
+              rows="2"
+              placeholder="Observaciones de cocción, mermas, reprocesos o empaque"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+            ></textarea>
+          </div>
+
+          <div class="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            Al guardar, la planilla se procesa y descuenta del inventario guayaba, azúcar, almidón, químicos, ácidos,
+            agua/gasoil, cuñetes y cajas. Las unidades producidas quedan como inventario comprometido. Si algo falla,
+            no se crea la orden ni se descuenta inventario.
+          </div>
+
+          <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-stone-100">
+            <button
+              type="button"
+              (click)="closeManualSheetModal()"
+              class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="!canSubmitManualSheet()"
+              class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <mat-icon class="text-base">save</mat-icon>
+              {{ isSavingManualSheet() ? 'Guardando…' : 'Guardar y descontar inventario' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: DETALLE DE PLANILLA MANUAL POR LOTE -->
+  @if (isManualSheetDetailModalOpen()) {
+    @if (selectedManualSheetOrder(); as order) {
+      @if (order.manualSheet; as sheet) {
+        @let orderBsRate = order.exchangeRateUsed || (api.exchangeRates()?.currentUsd || 48.35);
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-xs">
+          <div class="bg-white rounded-2xl w-full max-w-6xl max-h-[94vh] overflow-y-auto p-4 sm:p-6 shadow-xl border border-stone-200">
+            <div class="flex items-start justify-between gap-3 pb-4 border-b border-stone-100">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <mat-icon class="text-amber-700">grid_on</mat-icon>
+                  <h3 class="text-lg font-bold text-stone-900">Planilla del Lote {{ order.lotNumber }}</h3>
+                  <span class="text-[11px] font-mono font-semibold bg-stone-100 text-stone-700 border border-stone-200 px-2 py-0.5 rounded">
+                    {{ order.orderNumber }}
+                  </span>
+                </div>
+                <p class="text-xs text-stone-500 mt-1">
+                  Fecha de producción: {{ sheet.productionDate }} · {{ sheet.marmitas.length }} marmitas · {{ manualStatusLabel(order) }}
+                </p>
+              </div>
+              <button (click)="closeManualSheetDetails()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+              <div class="bg-stone-50 border border-stone-200 rounded-lg p-2.5">
+                <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Cuñetes</span>
+                <span class="font-mono font-bold text-stone-900">{{ sheet.packaging.cunetes | number:'1.0-2' }}</span>
+              </div>
+              <div class="bg-stone-50 border border-stone-200 rounded-lg p-2.5">
+                <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Cajas</span>
+                <span class="font-mono font-bold text-stone-900">{{ sheet.packaging.cajas | number:'1.0-2' }}</span>
+              </div>
+              <div class="bg-stone-50 border border-stone-200 rounded-lg p-2.5">
+                <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Kilos totales</span>
+                <span class="font-mono font-bold text-stone-900">{{ sheet.totals.totalKg | number:'1.2-2' }}</span>
+              </div>
+              @if (api.canViewPrices()) {
+                <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5">
+                  <span class="block text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">Valor producción</span>
+                  <span class="font-mono font-bold text-emerald-800">${{ sheet.costs.productionValue | number:'1.2-2' }}</span>
+                </div>
+              }
+            </div>
+
+            <div class="mt-4 border border-stone-200 rounded-xl overflow-hidden">
+              <div class="overflow-x-auto">
+                <table class="min-w-[1000px] w-full text-xs">
+                  <thead class="bg-stone-100 text-stone-600">
+                    <tr>
+                      <th class="px-2 py-2 text-left font-semibold">Marmita</th>
+                      <th class="px-2 py-2 text-right font-semibold">Cestas/base</th>
+                      <th class="px-2 py-2 text-right font-semibold">Guayaba kg</th>
+                      <th class="px-2 py-2 text-right font-semibold">Azúcar kg</th>
+                      <th class="px-2 py-2 text-right font-semibold">Almidón kg</th>
+                      <th class="px-2 py-2 text-right font-semibold">Químico g</th>
+                      <th class="px-2 py-2 text-right font-semibold">Ácido g</th>
+                      <th class="px-2 py-2 text-right font-semibold">Agua/gasoil</th>
+                      <th class="px-2 py-2 text-center font-semibold">Hora</th>
+                      <th class="px-2 py-2 text-right font-semibold">Cant. obtenida</th>
+                      <th class="px-2 py-2 text-right font-semibold">Kilos totales</th>
+                      <th class="px-2 py-2 text-center font-semibold">Reproceso</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of sheet.marmitas; track row.number) {
+                      <tr class="border-t border-stone-100">
+                        <td class="px-2 py-1.5 font-semibold text-stone-800">Marmita {{ row.number }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.basketsBase | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.guavaKg | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.sugarKg | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.starchKg | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.chemicalG | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.acidG | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.waterGasOil | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-center font-mono">{{ row.finishedAt || '—' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.obtainedUnits | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ row.totalKg | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-center">
+                          <span
+                            class="text-[10px] font-semibold px-1.5 py-0.5 rounded border"
+                            [class.bg-rose-50]="row.reprocess"
+                            [class.text-rose-700]="row.reprocess"
+                            [class.border-rose-200]="row.reprocess"
+                            [class.bg-stone-100]="!row.reprocess"
+                            [class.text-stone-600]="!row.reprocess"
+                            [class.border-stone-200]="!row.reprocess"
+                          >{{ row.reprocess ? 'Sí' : 'No' }}</span>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                  <tfoot class="bg-amber-50 text-stone-900 font-semibold border-t-2 border-amber-200">
+                    <tr>
+                      <td class="px-2 py-2" colspan="2">Totales</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.guavaKg | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.sugarKg | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.starchKg | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.chemicalG | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.acidG | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.waterGasOil | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-center text-stone-400">—</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.obtainedUnits | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.totalKg | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-center text-stone-400">—</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            @if (api.canViewPrices()) {
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/60">
+                  <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600 mb-3">Presentación valorizada</h4>
+                  <div class="space-y-1.5 text-xs">
+                    <div class="flex items-center justify-between">
+                      <span class="text-stone-600">Peso por envase</span>
+                      <span class="font-mono font-semibold text-stone-900">{{ sheet.packaging.presentationKg | number:'1.2-2' }} kg</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-stone-600">Cuñetes ({{ sheet.packaging.cunetes | number:'1.0-2' }} × ${{ sheet.packaging.cuneteUnitRate | number:'1.2-2' }})</span>
+                      <span class="font-mono font-semibold text-stone-900">${{ sheet.costs.cuneteValue | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-stone-600">Cajas ({{ sheet.packaging.cajas | number:'1.0-2' }} × ${{ sheet.packaging.cajaUnitRate | number:'1.2-2' }})</span>
+                      <span class="font-mono font-semibold text-stone-900">${{ sheet.costs.cajaValue | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="flex items-center justify-between border-t border-stone-200 pt-1.5">
+                      <span class="font-semibold text-emerald-800">Valor total de producción</span>
+                      <span class="font-mono font-bold text-emerald-700">${{ sheet.costs.productionValue | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-stone-500 text-[11px]">Equivalente en bolívares</span>
+                      <span class="font-mono text-stone-600 text-[11px]">Bs. {{ (sheet.costs.productionValue * orderBsRate) | number:'1.2-2' }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border border-stone-200 rounded-xl p-4 bg-white">
+                  <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600 mb-3">Costos del lote</h4>
+                  <div class="space-y-1.5 text-xs">
+                    <div class="flex items-center justify-between">
+                      <span class="text-stone-600">Insumos</span>
+                      <span class="font-mono font-semibold text-stone-900">${{ sheet.costs.materialsCost | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-stone-600">Empaques</span>
+                      <span class="font-mono font-semibold text-stone-900">${{ sheet.costs.packagingCost | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="flex items-center justify-between border-t border-stone-200 pt-1.5">
+                      <span class="font-semibold text-stone-800">Costo total</span>
+                      <span class="font-mono font-bold text-stone-900">${{ sheet.costs.totalCost | number:'1.2-2' }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-stone-500 text-[11px]">Costo total en bolívares</span>
+                      <span class="font-mono text-stone-600 text-[11px]">Bs. {{ (sheet.costs.totalCost * orderBsRate) | number:'1.2-2' }}</span>
+                    </div>
+                    @if (order.unitCost) {
+                      <div class="flex items-center justify-between">
+                        <span class="text-stone-600">Costo unitario promedio</span>
+                        <span class="font-mono font-semibold text-stone-900">${{ order.unitCost | number:'1.2-2' }}</span>
+                      </div>
+                    }
+                  </div>
+                  <p class="mt-3 text-[10px] leading-relaxed text-stone-500 bg-stone-50 border border-stone-200 rounded-lg p-2">
+                    <strong>Regla de valoración:</strong> {{ sheet.costs.valuationRule }}
+                  </p>
+                </div>
+              </div>
+            } @else {
+              <div class="mt-4 border border-stone-200 rounded-xl p-4 bg-stone-50/60">
+                <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600 mb-2">Presentación</h4>
+                <div class="flex flex-wrap gap-2 text-xs">
+                  <span class="font-mono bg-white border border-stone-200 rounded px-2 py-1 text-stone-700">{{ sheet.packaging.presentationKg | number:'1.2-2' }} kg por envase</span>
+                  <span class="font-mono bg-white border border-stone-200 rounded px-2 py-1 text-stone-700">{{ sheet.packaging.cunetes | number:'1.0-2' }} cuñete(s)</span>
+                  <span class="font-mono bg-white border border-stone-200 rounded px-2 py-1 text-stone-700">{{ sheet.packaging.cajas | number:'1.0-2' }} caja(s)</span>
+                </div>
+              </div>
+            }
+
+            <div class="mt-4 text-[11px] text-stone-500 flex flex-wrap gap-x-5 gap-y-1">
+              @if (order.commitmentReference) {
+                <span class="inline-flex items-center gap-1"><mat-icon class="text-xs">bookmark</mat-icon> Compromiso: {{ order.commitmentReference }}</span>
+              }
+              @if (order.createdBy) {
+                <span class="inline-flex items-center gap-1"><mat-icon class="text-xs">person_add</mat-icon> Creada por {{ order.createdBy }}</span>
+              }
+              @if (order.processedBy) {
+                <span class="inline-flex items-center gap-1"><mat-icon class="text-xs">check_circle</mat-icon> Procesada por {{ order.processedBy }}{{ order.processedAt ? ' · ' + order.processedAt : '' }}</span>
+              }
+              @if (order.operatorNotes) {
+                <span class="italic">{{ order.operatorNotes }}</span>
+              }
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 mt-4 border-t border-stone-100">
+              <button
+                type="button"
+                (click)="closeManualSheetDetails()"
+                class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    }
   }
 
   <!-- MODAL: CREAR / EDITAR ORDEN MANUAL MULTI-FÓRMULA -->

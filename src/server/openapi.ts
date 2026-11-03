@@ -504,6 +504,23 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/production-orders/manual/sheet': {
+    post: {
+      tags: ['Producción'],
+      summary:
+        'Registrar planilla manual de marmitas y descontar inventario (solo Administrador)',
+      description:
+        'Captura las seis marmitas del formato físico (Lote 72), valida stock, costea insumos y empaques con las tarifas vigentes y, si `processImmediately` es verdadero, procesa la orden en la misma operación. Si falla, no se crea la orden ni se descuenta inventario. Un lote ya registrado (no anulado) se rechaza para evitar doble descuento.',
+      requestBody: requestBody(ref('ManualProductionSheetInput')),
+      responses: {
+        201: jsonResponse('Planilla registrada', ref('ProductionOrder')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
   '/api/production-orders/manual/{id}': {
     put: {
       tags: ['Producción'],
@@ -1653,6 +1670,68 @@ const schemas: Record<string, JsonObject> = {
     description:
       'Cualquier subconjunto de los campos de ManualProductionOrderInput (sin processImmediately).',
   },
+  ManualProductionSheetMarmitaInput: {
+    type: 'object',
+    required: [
+      'number',
+      'basketsBase',
+      'guavaKg',
+      'sugarKg',
+      'starchKg',
+      'chemicalG',
+      'acidG',
+      'waterGasOil',
+      'finishedAt',
+      'obtainedUnits',
+      'totalKg',
+      'reprocess',
+    ],
+    properties: {
+      number: { type: 'integer', minimum: 1, maximum: 6 },
+      basketsBase: number,
+      guavaKg: number,
+      sugarKg: number,
+      starchKg: number,
+      chemicalG: number,
+      acidG: number,
+      waterGasOil: number,
+      finishedAt: { type: 'string', description: 'Hora HH:mm o cadena vacía.' },
+      obtainedUnits: number,
+      totalKg: number,
+      reprocess: boolean,
+    },
+  },
+  ManualProductionSheetInput: {
+    type: 'object',
+    required: ['lotNumber', 'productionDate', 'marmitas', 'packaging'],
+    properties: {
+      lotNumber: string,
+      productionDate: date,
+      marmitas: {
+        type: 'array',
+        description: 'Exactamente seis marmitas (Marmita 1 a Marmita 6).',
+        minItems: 6,
+        maxItems: 6,
+        items: ref('ManualProductionSheetMarmitaInput'),
+      },
+      packaging: {
+        type: 'object',
+        required: ['presentationKg', 'cunetes', 'cajas'],
+        properties: {
+          presentationKg: { type: 'number', exclusiveMinimum: 0 },
+          cunetes: number,
+          cajas: number,
+        },
+      },
+      commitmentReference: string,
+      operatorNotes: string,
+      processImmediately: {
+        type: 'boolean',
+        description:
+          'Procesa la orden al crearla: descuenta insumos y empaques y deja las unidades en inventario comprometido.',
+      },
+    },
+  },
   ProductionOrder: {
     type: 'object',
     properties: {
@@ -1673,6 +1752,59 @@ const schemas: Record<string, JsonObject> = {
         type: 'string',
         enum: ['automatico', 'manual'],
         description: 'manual = orden cargada por el Administrador.',
+      },
+      productionDate: {
+        type: 'string',
+        description: 'Fecha de producción de la planilla manual.',
+      },
+      manualSheet: {
+        type: 'object',
+        description:
+          'Detalle y valoración de la planilla manual de marmitas (formato físico Lote 72).',
+        properties: {
+          productionDate: date,
+          marmitas: {
+            type: 'array',
+            items: ref('ManualProductionSheetMarmitaInput'),
+          },
+          packaging: {
+            type: 'object',
+            properties: {
+              presentationKg: number,
+              cunetes: number,
+              cajas: number,
+              cuneteUnitRate: number,
+              cajaUnitRate: number,
+              cunetePackagingUnitCost: number,
+              cajaPackagingUnitCost: number,
+            },
+          },
+          totals: {
+            type: 'object',
+            properties: {
+              guavaKg: number,
+              sugarKg: number,
+              starchKg: number,
+              chemicalG: number,
+              acidG: number,
+              waterGasOil: number,
+              obtainedUnits: number,
+              totalKg: number,
+            },
+          },
+          costs: {
+            type: 'object',
+            properties: {
+              materialsCost: number,
+              packagingCost: number,
+              totalCost: number,
+              cuneteValue: number,
+              cajaValue: number,
+              productionValue: number,
+              valuationRule: string,
+            },
+          },
+        },
       },
       formulas: {
         type: 'array',

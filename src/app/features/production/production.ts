@@ -22,6 +22,11 @@ export class ProductionComponent {
   public currencyMode = signal<'USD' | 'Bs'>('USD');
   public isCreateOrderModalOpen = signal<boolean>(false);
   public isManualOrderModalOpen = signal<boolean>(false);
+  public isManualSheetModalOpen = signal<boolean>(false);
+  public isManualSheetDetailModalOpen = signal<boolean>(false);
+  public selectedManualSheetOrder = signal<ProductionOrder | null>(null);
+  public isSavingManualSheet = signal<boolean>(false);
+  public sheetRevision = signal<number>(0);
   public editingManualOrderId = signal<string | null>(null);
   public isRecipeDetailModalOpen = signal<boolean>(false);
   public selectedRecipe = signal<RecipeBOM | null>(null);
@@ -56,6 +61,56 @@ export class ProductionComponent {
     >([]),
   });
 
+  /** Manual production sheet based on the physical Lote 72 format. */
+  public manualSheetForm = new FormGroup({
+    lotNumber: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+    productionDate: new FormControl<string>(
+      new Date().toISOString().slice(0, 10),
+      { nonNullable: true, validators: [Validators.required] }
+    ),
+    commitmentReference: new FormControl<string>('', { nonNullable: true }),
+    operatorNotes: new FormControl<string>('', { nonNullable: true }),
+    marmitas: new FormArray<
+      FormGroup<{
+        number: FormControl<number>;
+        basketsBase: FormControl<number>;
+        guavaKg: FormControl<number>;
+        sugarKg: FormControl<number>;
+        starchKg: FormControl<number>;
+        chemicalG: FormControl<number>;
+        acidG: FormControl<number>;
+        waterGasOil: FormControl<number>;
+        finishedAt: FormControl<string>;
+        obtainedUnits: FormControl<number>;
+        totalKg: FormControl<number>;
+        reprocess: FormControl<boolean>;
+      }>
+    >([]),
+    packaging: new FormGroup({
+      presentationKg: new FormControl<number>(20, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0.01)],
+      }),
+      cunetes: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: [Validators.min(0)],
+      }),
+      cajas: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: [Validators.min(0)],
+      }),
+    }),
+  });
+
+  constructor() {
+    this.manualSheetForm.valueChanges.subscribe(() => {
+      this.sheetRevision.update((value) => value + 1);
+    });
+  }
+
   public recipes = computed(() => this.api.recipes());
   public productionOrders = computed(() => this.api.productionOrders());
   public manualOrders = computed(() =>
@@ -71,6 +126,126 @@ export class ProductionComponent {
 
   public get manualFormulas() {
     return this.manualOrderForm.controls.formulas;
+  }
+
+  public get sheetMarmitas() {
+    return this.manualSheetForm.controls.marmitas;
+  }
+
+  private positive(value: unknown): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  private materialRate(ids: string[], patterns: RegExp[]): number {
+    const material = this.api
+      .rawMaterials()
+      .find(
+        (item) =>
+          ids.includes(item.id) ||
+          patterns.some((pattern) => pattern.test(item.name))
+      );
+    return material?.costPerUnit ?? 0;
+  }
+
+  public sheetTotals = computed(() => {
+    this.sheetRevision();
+    const rows = this.sheetMarmitas.getRawValue();
+    return rows.reduce(
+      (acc, row) => ({
+        guavaKg: acc.guavaKg + this.positive(row.guavaKg),
+        sugarKg: acc.sugarKg + this.positive(row.sugarKg),
+        starchKg: acc.starchKg + this.positive(row.starchKg),
+        chemicalG: acc.chemicalG + this.positive(row.chemicalG),
+        acidG: acc.acidG + this.positive(row.acidG),
+        waterGasOil: acc.waterGasOil + this.positive(row.waterGasOil),
+        obtainedUnits: acc.obtainedUnits + this.positive(row.obtainedUnits),
+        totalKg: acc.totalKg + this.positive(row.totalKg),
+      }),
+      {
+        guavaKg: 0,
+        sugarKg: 0,
+        starchKg: 0,
+        chemicalG: 0,
+        acidG: 0,
+        waterGasOil: 0,
+        obtainedUnits: 0,
+        totalKg: 0,
+      }
+    );
+  });
+
+  public sheetUnitRates = computed(() => {
+    const goods = this.api.finishedGoods();
+    const guava = goods.filter((item) => item.flavor === 'Guayaba Criolla');
+    return {
+      cunete:
+        guava.find((item) => item.presentation === 'pote_20kg')?.baseCost ?? 0,
+      caja:
+        guava.find((item) => item.presentation === 'caja_20kg')?.baseCost ?? 0,
+    };
+  });
+
+  public sheetCosts = computed(() => {
+    this.sheetRevision();
+    const totals = this.sheetTotals();
+    const packaging = this.manualSheetForm.controls.packaging.getRawValue();
+    const cunetes = this.positive(packaging.cunetes);
+    const cajas = this.positive(packaging.cajas);
+
+    const materialsCost = Number(
+      (
+        totals.guavaKg * this.materialRate(['rm-1'], [/guayaba/i]) +
+        totals.sugarKg * this.materialRate(['rm-2'], [/az[uú]car/i]) +
+        totals.starchKg * this.materialRate(['rm-20'], [/almid[oó]n/i]) +
+        totals.chemicalG * this.materialRate(['rm-3'], [/pectina/i]) +
+        totals.acidG *
+          this.materialRate(['rm-4'], [/[aá]cido c[ií]trico/i]) +
+        totals.waterGasOil *
+          this.materialRate(['rm-21'], [/gasoil|agua de proceso/i])
+      ).toFixed(2)
+    );
+    const cunetePackagingUnitCost = this.materialRate(
+      ['rm-17'],
+      [/(cu[nñ]ete|pote).*20\s*kg/i]
+    );
+    const cajaPackagingUnitCost = this.materialRate(
+      ['rm-18'],
+      [/caja.*20\s*kg/i]
+    );
+    const packagingCost = Number(
+      (
+        cunetes * cunetePackagingUnitCost +
+        cajas * cajaPackagingUnitCost
+      ).toFixed(2)
+    );
+    const rates = this.sheetUnitRates();
+    const cuneteValue = Number((cunetes * rates.cunete).toFixed(2));
+    const cajaValue = Number((cajas * rates.caja).toFixed(2));
+    return {
+      materialsCost,
+      packagingCost,
+      totalCost: Number((materialsCost + packagingCost).toFixed(2)),
+      cuneteValue,
+      cajaValue,
+      productionValue: Number((cuneteValue + cajaValue).toFixed(2)),
+      cunetePackagingUnitCost,
+      cajaPackagingUnitCost,
+      cuneteRate: rates.cunete,
+      cajaRate: rates.caja,
+      cunetes,
+      cajas,
+      units: cunetes + cajas,
+    };
+  });
+
+  public canSubmitManualSheet(): boolean {
+    const packaging = this.manualSheetForm.controls.packaging.getRawValue();
+    return (
+      this.manualSheetForm.valid &&
+      this.positive(packaging.cunetes) + this.positive(packaging.cajas) > 0 &&
+      !this.isSavingManualSheet()
+    );
   }
 
   // Calculate requirement preview for the selected recipe and batch count
@@ -148,6 +323,150 @@ export class ProductionComponent {
 
   public async processOrder(orderId: string) {
     await this.api.processProductionOrder(orderId);
+  }
+
+  // --- MANUAL PRODUCTION SHEET (PHYSICAL LOTE 72 FORMAT) ---
+
+  private buildMarmitaGroup(number: number) {
+    const nonNegative = [Validators.min(0)];
+    return new FormGroup({
+      number: new FormControl<number>(number, { nonNullable: true }),
+      basketsBase: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      guavaKg: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      sugarKg: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      starchKg: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      chemicalG: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      acidG: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      waterGasOil: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      finishedAt: new FormControl<string>('', { nonNullable: true }),
+      obtainedUnits: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      totalKg: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: nonNegative,
+      }),
+      reprocess: new FormControl<boolean>(false, { nonNullable: true }),
+    });
+  }
+
+  private resetManualSheetForm() {
+    this.sheetMarmitas.clear();
+    for (let index = 1; index <= 6; index += 1) {
+      this.sheetMarmitas.push(this.buildMarmitaGroup(index));
+    }
+    this.manualSheetForm.patchValue({
+      lotNumber: this.autoManualLot(),
+      productionDate: new Date().toISOString().slice(0, 10),
+      commitmentReference: '',
+      operatorNotes: '',
+      packaging: { presentationKg: 20, cunetes: 0, cajas: 0 },
+    });
+  }
+
+  public openNewManualSheetOrder() {
+    if (!this.isAdmin()) {
+      this.api.showToast(
+        'Solo el Administrador puede crear planillas manuales.',
+        'error'
+      );
+      return;
+    }
+    this.resetManualSheetForm();
+    this.isManualSheetModalOpen.set(true);
+  }
+
+  public closeManualSheetModal() {
+    this.isManualSheetModalOpen.set(false);
+  }
+
+  public async submitManualSheetOrder() {
+    if (!this.isAdmin()) {
+      this.api.showToast(
+        'Solo el Administrador puede guardar planillas manuales.',
+        'error'
+      );
+      return;
+    }
+    if (this.manualSheetForm.invalid) {
+      this.manualSheetForm.markAllAsTouched();
+      return;
+    }
+    const value = this.manualSheetForm.getRawValue();
+    if (this.positive(value.packaging.cunetes) + this.positive(value.packaging.cajas) <= 0) {
+      this.api.showToast(
+        'Registre al menos un cuñete o una caja como cantidad obtenida.',
+        'error'
+      );
+      return;
+    }
+
+    this.isSavingManualSheet.set(true);
+    try {
+      await this.api.createManualSheetProductionOrder({
+        lotNumber: value.lotNumber,
+        productionDate: value.productionDate,
+        marmitas: value.marmitas.map((row) => ({
+          ...row,
+          number: Number(row.number),
+          basketsBase: this.positive(row.basketsBase),
+          guavaKg: this.positive(row.guavaKg),
+          sugarKg: this.positive(row.sugarKg),
+          starchKg: this.positive(row.starchKg),
+          chemicalG: this.positive(row.chemicalG),
+          acidG: this.positive(row.acidG),
+          waterGasOil: this.positive(row.waterGasOil),
+          obtainedUnits: this.positive(row.obtainedUnits),
+          totalKg: this.positive(row.totalKg),
+        })),
+        packaging: {
+          presentationKg: this.positive(value.packaging.presentationKg),
+          cunetes: this.positive(value.packaging.cunetes),
+          cajas: this.positive(value.packaging.cajas),
+        },
+        commitmentReference: value.commitmentReference || undefined,
+        operatorNotes: value.operatorNotes || undefined,
+        processImmediately: true,
+      });
+      this.closeManualSheetModal();
+    } catch {
+      // The API service already reports the error; keep the modal open so the
+      // operator can correct the sheet without losing the captured data.
+    } finally {
+      this.isSavingManualSheet.set(false);
+    }
+  }
+
+  public openManualSheetDetails(order: ProductionOrder) {
+    this.selectedManualSheetOrder.set(order);
+    this.isManualSheetDetailModalOpen.set(true);
+  }
+
+  public closeManualSheetDetails() {
+    this.isManualSheetDetailModalOpen.set(false);
+    this.selectedManualSheetOrder.set(null);
   }
 
   // --- MANUAL PRODUCTION ORDERS (ADMIN ONLY) ---

@@ -7,6 +7,7 @@ import {
   FinishedGood,
   RecipeBOM,
   ProductionOrder,
+  ProductionMarmitaSheetRow,
   Customer,
   SalesOrder,
   DeliveryNote,
@@ -1276,6 +1277,38 @@ export class ErpApiService {
     } catch (err: unknown) {
       this.showToast(
         err instanceof Error ? err.message : 'Error al crear orden manual',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async createManualSheetProductionOrder(data: {
+    lotNumber: string;
+    productionDate: string;
+    marmitas: ProductionMarmitaSheetRow[];
+    packaging: { presentationKg: number; cunetes: number; cajas: number };
+    commitmentReference?: string;
+    operatorNotes?: string;
+    processImmediately?: boolean;
+  }) {
+    try {
+      const res = await firstValueFrom<ProductionOrder>(
+        this.http.post<ProductionOrder>(
+          '/api/production-orders/manual/sheet',
+          data
+        )
+      );
+      this.showToast(
+        `Planilla ${res.lotNumber} guardada. ${res.manualSheet?.packaging.cunetes ?? 0} cuñete(s) y ${res.manualSheet?.packaging.cajas ?? 0} caja(s) registrados; inventario descontado.`
+      );
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error
+          ? err.message
+          : 'Error al guardar la planilla manual',
         'error'
       );
       throw err;

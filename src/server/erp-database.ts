@@ -3152,7 +3152,7 @@ export class ErpDatabase {
             targetCode: order.orderNumber,
             lotNumber: order.lotNumber,
             totalUnits: order.targetUnits,
-            totalCost: order.totalProductionCost,
+            costUsd: order.totalProductionCost,
           },
         });
         return processed.order;
@@ -3179,7 +3179,7 @@ export class ErpDatabase {
         targetCode: order.orderNumber,
         lotNumber: order.lotNumber,
         totalUnits: order.targetUnits,
-        totalCost: order.totalProductionCost,
+        costUsd: order.totalProductionCost,
       },
     });
 
