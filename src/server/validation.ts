@@ -210,6 +210,43 @@ export const manualProductionOrderSchema = z.object({
 
 export const manualProductionOrderUpdateSchema = manualProductionOrderSchema;
 
+const timeOfDay = z.union([
+  z.literal(''),
+  z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+]);
+
+export const manualProductionSheetRowSchema = z.object({
+  number: z.coerce.number().int().min(1).max(6),
+  basketsBase: money,
+  guavaKg: money,
+  sugarKg: money,
+  starchKg: money,
+  chemicalG: money,
+  acidG: money,
+  waterGasOil: money,
+  finishedAt: timeOfDay,
+  obtainedUnits: money,
+  totalKg: money,
+  reprocess: z.boolean(),
+});
+
+export const manualProductionSheetOrderSchema = z.object({
+  lotNumber: z.string().trim().min(1).max(80),
+  productionDate: dateLike,
+  marmitas: z.array(manualProductionSheetRowSchema).length(6),
+  packaging: z.object({
+    presentationKg: positive,
+    cunetes: money,
+    cajas: money,
+  }),
+  commitmentReference: z.string().trim().max(200).optional(),
+  operatorNotes: z.string().max(2000).optional(),
+  processImmediately: z.boolean().optional(),
+});
+
+export const manualProductionSheetOrderUpdateSchema =
+  manualProductionSheetOrderSchema.partial({ processImmediately: true });
+
 export const supplierSchema = z.object({
   code: z.string().trim().max(60).optional(),
   businessName: z.string().trim().min(1).max(200),

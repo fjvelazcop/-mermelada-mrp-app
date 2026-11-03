@@ -7,6 +7,10 @@ import {
   RecipeBOM,
   ProductionOrder,
   ProductionOrderFormula,
+  ProductionManualSheet,
+  ProductionMarmitaSheetRow,
+  ProductionSheetTotals,
+  ProductionSheetCosts,
   Customer,
   SalesOrder,
   SalesTaxCategory,
@@ -81,6 +85,54 @@ function createInitialFiscalObligations(): FiscalObligationRecord[] {
     updatedBy: '',
     updatedByRole: '',
   }));
+}
+
+/**
+ * Materials required by the manual production sheet. They are added to the
+ * seed and back-filled into databases created before this module existed.
+ */
+const PRODUCTION_SHEET_MATERIALS: RawMaterial[] = [
+  {
+    id: 'rm-20',
+    code: 'MP-ADI-02',
+    name: 'Almidón de Maíz Grado Alimentario',
+    category: 'aditivo',
+    currentStock: 500,
+    minStock: 50,
+    unit: 'kg',
+    costPerUnit: 1.52,
+    supplier: 'Distribuidora Central Azucarera',
+    lastRestockDate: '2026-10-05',
+    notes: 'Texturizante para la planilla manual de marmitas (Lote 72)',
+  },
+  {
+    id: 'rm-21',
+    code: 'MP-QUI-04',
+    name: 'Gasoil / Agua de Proceso',
+    category: 'quimico',
+    currentStock: 500,
+    minStock: 50,
+    unit: 'l',
+    costPerUnit: 1.0,
+    supplier: 'Distribuidora Gas Industrial Los Llanos C.A.',
+    lastRestockDate: '2026-10-05',
+    notes: 'Combustible y agua de proceso registrados en la planilla de marmitas',
+  },
+];
+
+/** Add the sheet materials when a persisted database predates them. */
+function ensureProductionSheetMaterials(state: DatabaseState): boolean {
+  let changed = false;
+  for (const material of PRODUCTION_SHEET_MATERIALS) {
+    const exists = state.rawMaterials.some(
+      (item) => item.id === material.id || item.code === material.code
+    );
+    if (!exists) {
+      state.rawMaterials.push({ ...material });
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 export function createInitialDatabase(): DatabaseState {
@@ -332,6 +384,7 @@ export function createInitialDatabase(): DatabaseState {
       lastRestockDate: '2026-10-05',
       notes: 'Identificación institucional de gran formato',
     },
+    ...PRODUCTION_SHEET_MATERIALS,
   ];
 
   const finishedGoods: FinishedGood[] = [
@@ -1646,7 +1699,10 @@ export class ErpDatabase {
             : createInitialFiscalObligations(),
         fiscalObligationHistory: persisted.fiscalObligationHistory || [],
       };
-      if (!persisted.fiscalObligations?.length) {
+      if (
+        !persisted.fiscalObligations?.length ||
+        ensureProductionSheetMaterials(this.state)
+      ) {
         this.persist();
       }
       return;
@@ -1666,6 +1722,7 @@ export class ErpDatabase {
           fiscalPeriodClosures: legacy.fiscalPeriodClosures || [],
         }
       : createInitialDatabase();
+    ensureProductionSheetMaterials(this.state);
     this.persist();
   }
 
@@ -2381,19 +2438,39 @@ export class ErpDatabase {
         totalCost: number;
       }
     >();
-    for (const formula of order.formulas || []) {
-      const key = `${formula.flavor}|${formula.presentation}`;
-      const current = outputs.get(key);
-      if (current) {
-        current.units += formula.targetUnits;
-        current.totalCost = Number((current.totalCost + formula.totalProductionCost).toFixed(2));
-      } else {
-        outputs.set(key, {
-          flavor: formula.flavor,
-          presentation: formula.presentation,
-          units: formula.targetUnits,
-          totalCost: formula.totalProductionCost,
+    if (order.manualSheet) {
+      const sheet = order.manualSheet;
+      if (sheet.packaging.cunetes > 0) {
+        outputs.set(`Guayaba Criolla|pote_20kg`, {
+          flavor: 'Guayaba Criolla',
+          presentation: 'pote_20kg',
+          units: sheet.packaging.cunetes,
+          totalCost: sheet.costs.cuneteValue,
         });
+      }
+      if (sheet.packaging.cajas > 0) {
+        outputs.set(`Guayaba Criolla|caja_20kg`, {
+          flavor: 'Guayaba Criolla',
+          presentation: 'caja_20kg',
+          units: sheet.packaging.cajas,
+          totalCost: sheet.costs.cajaValue,
+        });
+      }
+    } else {
+      for (const formula of order.formulas || []) {
+        const key = `${formula.flavor}|${formula.presentation}`;
+        const current = outputs.get(key);
+        if (current) {
+          current.units += formula.targetUnits;
+          current.totalCost = Number((current.totalCost + formula.totalProductionCost).toFixed(2));
+        } else {
+          outputs.set(key, {
+            flavor: formula.flavor,
+            presentation: formula.presentation,
+            units: formula.targetUnits,
+            totalCost: formula.totalProductionCost,
+          });
+        }
       }
     }
     if (outputs.size === 0) {
@@ -2525,17 +2602,35 @@ export class ErpDatabase {
         units: number;
       }
     >();
-    for (const formula of order.formulas || []) {
-      const key = `${formula.flavor}|${formula.presentation}`;
-      const current = outputs.get(key);
-      if (current) {
-        current.units += formula.targetUnits;
-      } else {
-        outputs.set(key, {
-          flavor: formula.flavor,
-          presentation: formula.presentation,
-          units: formula.targetUnits,
+    if (order.manualSheet) {
+      const sheet = order.manualSheet;
+      if (sheet.packaging.cunetes > 0) {
+        outputs.set('Guayaba Criolla|pote_20kg', {
+          flavor: 'Guayaba Criolla',
+          presentation: 'pote_20kg',
+          units: sheet.packaging.cunetes,
         });
+      }
+      if (sheet.packaging.cajas > 0) {
+        outputs.set('Guayaba Criolla|caja_20kg', {
+          flavor: 'Guayaba Criolla',
+          presentation: 'caja_20kg',
+          units: sheet.packaging.cajas,
+        });
+      }
+    } else {
+      for (const formula of order.formulas || []) {
+        const key = `${formula.flavor}|${formula.presentation}`;
+        const current = outputs.get(key);
+        if (current) {
+          current.units += formula.targetUnits;
+        } else {
+          outputs.set(key, {
+            flavor: formula.flavor,
+            presentation: formula.presentation,
+            units: formula.targetUnits,
+          });
+        }
       }
     }
     if (outputs.size === 0) {
@@ -2631,6 +2726,464 @@ export class ErpDatabase {
       message: `Orden manual ${order.orderNumber} anulada. Inventario y materias primas revertidos.`,
       order,
     };
+  }
+
+  // --- MANUAL PRODUCTION SHEET (PHYSICAL LOTE FORMAT) ---
+  private round(value: number, decimals: number): number {
+    const safe = Number.isFinite(value) ? value : 0;
+    return Number(safe.toFixed(decimals));
+  }
+
+  private findSheetRawMaterial(
+    ids: string[],
+    codes: string[],
+    pattern: RegExp
+  ): RawMaterial | undefined {
+    return this.state.rawMaterials.find(
+      (material) =>
+        ids.includes(material.id) ||
+        codes.includes(material.code) ||
+        pattern.test(material.name)
+    );
+  }
+
+  private presentationUnitRate(
+    presentation: 'pote_20kg' | 'caja_20kg'
+  ): number {
+    const finishedGood = this.state.finishedGoods.find(
+      (good) =>
+        good.presentation === presentation &&
+        good.flavor === 'Guayaba Criolla'
+    );
+    return this.round(finishedGood?.baseCost || 0, 4);
+  }
+
+  /**
+   * Build a manual production sheet order without mutating state. All values
+   * are normalised, costed with the rates in force and validated against stock
+   * so a failure never leaves a partial order behind.
+   */
+  private buildManualSheetOrderData(
+    input: {
+      lotNumber: string;
+      productionDate: string;
+      marmitas: ProductionMarmitaSheetRow[];
+      packaging: { presentationKg: number; cunetes: number; cajas: number };
+      commitmentReference?: string;
+      operatorNotes?: string;
+    },
+    actor: { userId: string; userName: string; userRole: string }
+  ): ProductionOrder {
+    if (!input.marmitas || input.marmitas.length !== 6) {
+      throw new Error('La planilla manual debe contener exactamente seis marmitas');
+    }
+
+    const marmitas = [...input.marmitas]
+      .sort((a, b) => a.number - b.number)
+      .map((row): ProductionMarmitaSheetRow => ({
+        number: row.number,
+        basketsBase: this.round(row.basketsBase, 4),
+        guavaKg: this.round(row.guavaKg, 4),
+        sugarKg: this.round(row.sugarKg, 4),
+        starchKg: this.round(row.starchKg, 4),
+        chemicalG: this.round(row.chemicalG, 4),
+        acidG: this.round(row.acidG, 4),
+        waterGasOil: this.round(row.waterGasOil, 4),
+        finishedAt: row.finishedAt || '',
+        obtainedUnits: this.round(row.obtainedUnits, 4),
+        totalKg: this.round(row.totalKg, 4),
+        reprocess: Boolean(row.reprocess),
+      }));
+
+    const negative = marmitas.find((row) =>
+      [
+        row.basketsBase,
+        row.guavaKg,
+        row.sugarKg,
+        row.starchKg,
+        row.chemicalG,
+        row.acidG,
+        row.waterGasOil,
+        row.obtainedUnits,
+        row.totalKg,
+      ].some((value) => !Number.isFinite(value) || value < 0)
+    );
+    if (negative) {
+      throw new Error(
+        `La marmita ${negative.number} contiene valores inválidos. Use números no negativos.`
+      );
+    }
+
+    const cunetes = this.round(input.packaging.cunetes, 4);
+    const cajas = this.round(input.packaging.cajas, 4);
+    const presentationKg = this.round(input.packaging.presentationKg, 4);
+    if (cunetes < 0 || cajas < 0 || presentationKg <= 0) {
+      throw new Error('La presentación y las cantidades de empaque deben ser mayores o iguales a cero');
+    }
+    if (cunetes + cajas <= 0) {
+      throw new Error('Registre al menos un cuñete o una caja como cantidad obtenida');
+    }
+
+    const duplicate = this.state.productionOrders.find(
+      (order) =>
+        order.mode === 'manual' &&
+        order.lotNumber === input.lotNumber &&
+        order.status !== 'anulada'
+    );
+    if (duplicate) {
+      throw new Error(
+        `Ya existe la orden ${duplicate.orderNumber} para el lote ${input.lotNumber}. Anúlela antes de volver a registrarlo.`
+      );
+    }
+
+    const totals: ProductionSheetTotals = marmitas.reduce(
+      (acc, row) => ({
+        guavaKg: this.round(acc.guavaKg + row.guavaKg, 4),
+        sugarKg: this.round(acc.sugarKg + row.sugarKg, 4),
+        starchKg: this.round(acc.starchKg + row.starchKg, 4),
+        chemicalG: this.round(acc.chemicalG + row.chemicalG, 4),
+        acidG: this.round(acc.acidG + row.acidG, 4),
+        waterGasOil: this.round(acc.waterGasOil + row.waterGasOil, 4),
+        obtainedUnits: this.round(acc.obtainedUnits + row.obtainedUnits, 4),
+        totalKg: this.round(acc.totalKg + row.totalKg, 4),
+      }),
+      {
+        guavaKg: 0,
+        sugarKg: 0,
+        starchKg: 0,
+        chemicalG: 0,
+        acidG: 0,
+        waterGasOil: 0,
+        obtainedUnits: 0,
+        totalKg: 0,
+      }
+    );
+
+    type ConsumedItem = ProductionOrder['consumedMaterials'][number];
+    const consumed = new Map<string, ConsumedItem>();
+    let materialsCost = 0;
+
+    const addConsumption = (
+      material: RawMaterial,
+      quantity: number,
+      label: string
+    ) => {
+      if (quantity <= 0) return;
+      const totalCost = this.round(quantity * material.costPerUnit, 2);
+      materialsCost = this.round(materialsCost + totalCost, 2);
+      const existing = consumed.get(material.id);
+      if (existing) {
+        existing.quantityConsumed = this.round(
+          existing.quantityConsumed + quantity,
+          4
+        );
+        existing.totalCost = this.round(existing.totalCost + totalCost, 2);
+        return;
+      }
+      consumed.set(material.id, {
+        materialId: material.id,
+        materialName: material.name || label,
+        quantityConsumed: quantity,
+        unit: material.unit,
+        unitCost: material.costPerUnit,
+        totalCost,
+      });
+    };
+
+    const materialSpecs: {
+      label: string;
+      quantity: number;
+      ids: string[];
+      codes: string[];
+      pattern: RegExp;
+    }[] = [
+      {
+        label: 'guayaba',
+        quantity: totals.guavaKg,
+        ids: ['rm-1'],
+        codes: ['MP-FRU-01'],
+        pattern: /guayaba/i,
+      },
+      {
+        label: 'azúcar',
+        quantity: totals.sugarKg,
+        ids: ['rm-2'],
+        codes: ['MP-ADI-01'],
+        pattern: /az[uú]car/i,
+      },
+      {
+        label: 'almidón',
+        quantity: totals.starchKg,
+        ids: ['rm-20'],
+        codes: ['MP-ADI-02'],
+        pattern: /almid[oó]n/i,
+      },
+      {
+        label: 'químico',
+        quantity: totals.chemicalG,
+        ids: ['rm-3'],
+        codes: ['MP-QUI-01'],
+        pattern: /pectina/i,
+      },
+      {
+        label: 'ácido',
+        quantity: totals.acidG,
+        ids: ['rm-4'],
+        codes: ['MP-QUI-02'],
+        pattern: /[aá]cido c[ií]trico/i,
+      },
+      {
+        label: 'agua/gasoil',
+        quantity: totals.waterGasOil,
+        ids: ['rm-21'],
+        codes: ['MP-QUI-04'],
+        pattern: /gasoil|agua de proceso/i,
+      },
+    ];
+
+    for (const spec of materialSpecs) {
+      if (spec.quantity <= 0) continue;
+      const material = this.findSheetRawMaterial(
+        spec.ids,
+        spec.codes,
+        spec.pattern
+      );
+      if (!material) {
+        throw new Error(
+          `No se encontró la materia prima de ${spec.label}. Regístrela en inventario antes de guardar la planilla.`
+        );
+      }
+      addConsumption(material, spec.quantity, spec.label);
+    }
+
+    let packagingCost = 0;
+    let cunetePackagingUnitCost = 0;
+    let cajaPackagingUnitCost = 0;
+
+    if (cunetes > 0) {
+      const material = this.findSheetRawMaterial(
+        ['rm-17'],
+        ['MP-EMP-12'],
+        /(cu[nñ]ete|pote).*20\s*kg/i
+      );
+      if (!material) {
+        throw new Error(
+          'No se encontró el empaque de cuñete 20kg. Regístrelo en inventario antes de guardar la planilla.'
+        );
+      }
+      cunetePackagingUnitCost = material.costPerUnit;
+      const totalCost = this.round(cunetes * material.costPerUnit, 2);
+      packagingCost = this.round(packagingCost + totalCost, 2);
+      consumed.set(`${material.id}::cunete`, {
+        materialId: material.id,
+        materialName: material.name,
+        quantityConsumed: cunetes,
+        unit: material.unit,
+        unitCost: material.costPerUnit,
+        totalCost,
+      });
+    }
+
+    if (cajas > 0) {
+      const material = this.findSheetRawMaterial(
+        ['rm-18'],
+        ['MP-EMP-13'],
+        /caja.*20\s*kg/i
+      );
+      if (!material) {
+        throw new Error(
+          'No se encontró el empaque de caja 20kg. Regístrelo en inventario antes de guardar la planilla.'
+        );
+      }
+      cajaPackagingUnitCost = material.costPerUnit;
+      const totalCost = this.round(cajas * material.costPerUnit, 2);
+      packagingCost = this.round(packagingCost + totalCost, 2);
+      consumed.set(`${material.id}::caja`, {
+        materialId: material.id,
+        materialName: material.name,
+        quantityConsumed: cajas,
+        unit: material.unit,
+        unitCost: material.costPerUnit,
+        totalCost,
+      });
+    }
+
+    const totalInputKg = totals.totalKg;
+    const inputCostPerKg =
+      totalInputKg > 0 ? materialsCost / totalInputKg : 0;
+    let cuneteUnitRate = this.presentationUnitRate('pote_20kg');
+    let cajaUnitRate = this.presentationUnitRate('caja_20kg');
+    if (cuneteUnitRate <= 0) {
+      cuneteUnitRate = this.round(
+        inputCostPerKg * presentationKg + cunetePackagingUnitCost,
+        2
+      );
+    }
+    if (cajaUnitRate <= 0) {
+      cajaUnitRate = this.round(
+        inputCostPerKg * presentationKg + cajaPackagingUnitCost,
+        2
+      );
+    }
+
+    const cuneteValue = this.round(cunetes * cuneteUnitRate, 2);
+    const cajaValue = this.round(cajas * cajaUnitRate, 2);
+    const productionValue = this.round(cuneteValue + cajaValue, 2);
+    const totalCost = this.round(materialsCost + packagingCost, 2);
+    const costs: ProductionSheetCosts = {
+      materialsCost,
+      packagingCost,
+      totalCost,
+      cuneteValue,
+      cajaValue,
+      productionValue,
+      valuationRule:
+        'Valoración a costo unitario vigente del producto terminado (PT Guayaba 20 kg cuñete/caja) al momento de guardar; los insumos y empaques se costean a su costo promedio vigente.',
+    };
+
+    const missing = [...consumed.values()].filter((item) => {
+      const material = this.state.rawMaterials.find(
+        (entry) => entry.id === item.materialId
+      );
+      return !material || material.currentStock < item.quantityConsumed;
+    });
+    if (missing.length > 0) {
+      const detail = missing
+        .map((item) => {
+          const material = this.state.rawMaterials.find(
+            (entry) => entry.id === item.materialId
+          );
+          return `${item.materialName}: requiere ${item.quantityConsumed} ${item.unit}, disponible ${material?.currentStock ?? 0}`;
+        })
+        .join('; ');
+      throw new Error(`Stock insuficiente para la planilla manual. ${detail}`);
+    }
+
+    const totalUnits = this.round(cunetes + cajas, 4);
+    const orderNumber = this.nextManualOrderNumber();
+    const rate = this.state.exchangeRates.currentUsd || 48.35;
+
+    return {
+      id: `po-man-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      orderNumber,
+      recipeId: 'manual-sheet',
+      recipeName: 'Planilla manual de marmitas',
+      flavor: 'Guayaba Criolla',
+      presentation: cunetes > 0 ? 'pote_20kg' : 'caja_20kg',
+      targetUnits: totalUnits,
+      batchCount: 1,
+      lotNumber: input.lotNumber,
+      status: 'borrador',
+      mode: 'manual',
+      manualSheet: {
+        productionDate: input.productionDate,
+        marmitas,
+        packaging: {
+          presentationKg,
+          cunetes,
+          cajas,
+          cuneteUnitRate,
+          cajaUnitRate,
+          cunetePackagingUnitCost,
+          cajaPackagingUnitCost,
+        },
+        totals,
+        costs,
+      },
+      productionDate: input.productionDate,
+      commitmentReference:
+        input.commitmentReference || `COMPROMISO-${orderNumber}`,
+      customerName: 'Inventario comprometido (orden manual)',
+      startDate: input.productionDate,
+      createdAt: new Date().toISOString().slice(0, 10),
+      exchangeRateUsed: rate,
+      consumedMaterials: [...consumed.values()],
+      directMaterialCost: materialsCost,
+      directLaborCost: 0,
+      indirectCost: packagingCost,
+      totalProductionCost: totalCost,
+      totalCost,
+      unitCost: totalUnits > 0 ? this.round(totalCost / totalUnits, 2) : 0,
+      totalProductionCostBs: this.round(totalCost * rate, 2),
+      unitCostBs:
+        totalUnits > 0
+          ? this.round((totalCost / totalUnits) * rate, 2)
+          : 0,
+      operatorNotes: input.operatorNotes || '',
+      createdBy: actor.userName,
+      updatedBy: actor.userName,
+    };
+  }
+
+  public createManualSheetProductionOrder(
+    input: {
+      lotNumber: string;
+      productionDate: string;
+      marmitas: ProductionMarmitaSheetRow[];
+      packaging: { presentationKg: number; cunetes: number; cajas: number };
+      commitmentReference?: string;
+      operatorNotes?: string;
+      processImmediately?: boolean;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): ProductionOrder {
+    const actor = this.manualOrderActor(actorInput);
+    const order = this.buildManualSheetOrderData(input, actor);
+
+    this.state.productionOrders.unshift(order);
+
+    if (input.processImmediately) {
+      try {
+        const processed = this.processManualProductionOrder(
+          order.id,
+          actorInput
+        );
+        this.addAuditLog({
+          module: 'produccion',
+          actionType: 'orden_manual_creada',
+          title: `Planilla manual ${order.orderNumber} registrada`,
+          description: `Lote ${order.lotNumber}: ${order.manualSheet?.packaging.cunetes ?? 0} cuñete(s), ${order.manualSheet?.packaging.cajas ?? 0} caja(s). Insumos y empaques descontados en la misma operación.`,
+          userId: actor.userId,
+          userName: actor.userName,
+          userRole: actor.userRole,
+          severity: 'success',
+          details: {
+            targetId: order.id,
+            targetCode: order.orderNumber,
+            lotNumber: order.lotNumber,
+            totalUnits: order.targetUnits,
+            totalCost: order.totalProductionCost,
+          },
+        });
+        return processed.order;
+      } catch (err) {
+        const index = this.state.productionOrders.findIndex(
+          (entry) => entry.id === order.id
+        );
+        if (index >= 0) this.state.productionOrders.splice(index, 1);
+        throw err;
+      }
+    }
+
+    this.addAuditLog({
+      module: 'produccion',
+      actionType: 'orden_manual_creada',
+      title: `Planilla manual ${order.orderNumber} creada en borrador`,
+      description: `Se registró la planilla del lote ${order.lotNumber} con ${order.manualSheet?.marmitas.length ?? 0} marmitas y ${order.targetUnits} unidades proyectadas.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: order.id,
+        targetCode: order.orderNumber,
+        lotNumber: order.lotNumber,
+        totalUnits: order.targetUnits,
+        totalCost: order.totalProductionCost,
+      },
+    });
+
+    return order;
   }
 
   // --- SUPPLIERS & PRICE HISTORY ---

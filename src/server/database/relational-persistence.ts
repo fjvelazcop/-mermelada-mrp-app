@@ -197,6 +197,10 @@ export function loadRelationalState(): DatabaseState | null {
       operatorNotes: o(r['operator_notes']),
       mode: (r['mode'] as ProductionOrder['mode']) || 'automatico',
       formulas: r['formulas_json'] ? JSON.parse(r['formulas_json']) : undefined,
+      manualSheet: r['manual_sheet_json']
+        ? JSON.parse(r['manual_sheet_json'])
+        : undefined,
+      productionDate: r['production_date'] ? r['production_date'] : undefined,
       commitmentReference: o(r['commitment_reference']),
       createdBy: o(r['created_by']),
       updatedBy: o(r['updated_by']),
@@ -833,13 +837,13 @@ export function saveRelationalState(state: DatabaseState): void {
       INSERT INTO production_orders (
         id, order_number, recipe_id, recipe_name, flavor, presentation,
         target_units, batch_count, lot_number, status, sales_order_id,
-        customer_name, start_date, completion_date, created_at,
+        customer_name, start_date, completion_date, created_at, production_date,
         exchange_rate_used, direct_material_cost, direct_labor_cost,
         indirect_cost, total_production_cost, total_cost, unit_cost,
         total_production_cost_bs, unit_cost_bs, operator_notes,
-        mode, formulas_json, commitment_reference, created_by, updated_by,
-        processed_by, processed_at, annulled_by, annulled_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        mode, formulas_json, manual_sheet_json, commitment_reference,
+        created_by, updated_by, processed_by, processed_at, annulled_by, annulled_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertProductionMaterial = db.prepare(`
       INSERT INTO production_order_materials (
@@ -864,6 +868,7 @@ export function saveRelationalState(state: DatabaseState): void {
         order.startDate,
         v(order.completionDate),
         v(order.createdAt),
+        v(order.productionDate),
         v(order.exchangeRateUsed),
         order.directMaterialCost,
         order.directLaborCost,
@@ -876,6 +881,9 @@ export function saveRelationalState(state: DatabaseState): void {
         v(order.operatorNotes),
         order.mode || 'automatico',
         v(order.formulas ? JSON.stringify(order.formulas) : undefined),
+        v(
+          order.manualSheet ? JSON.stringify(order.manualSheet) : undefined
+        ),
         v(order.commitmentReference),
         v(order.createdBy),
         v(order.updatedBy),

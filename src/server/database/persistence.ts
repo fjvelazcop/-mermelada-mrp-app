@@ -175,6 +175,7 @@ function migrate(db: SqliteDatabase): void {
       start_date TEXT NOT NULL,
       completion_date TEXT,
       created_at TEXT,
+      production_date TEXT,
       exchange_rate_used REAL,
       direct_material_cost REAL NOT NULL,
       direct_labor_cost REAL NOT NULL,
@@ -187,6 +188,7 @@ function migrate(db: SqliteDatabase): void {
       operator_notes TEXT,
       mode TEXT NOT NULL DEFAULT 'automatico',
       formulas_json TEXT,
+      manual_sheet_json TEXT,
       commitment_reference TEXT,
       created_by TEXT,
       updated_by TEXT,
@@ -684,6 +686,8 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'auth_users', 'avatar_bg', 'TEXT');
   ensureColumn(db, 'production_orders', 'mode', "TEXT NOT NULL DEFAULT 'automatico'");
   ensureColumn(db, 'production_orders', 'formulas_json', 'TEXT');
+  ensureColumn(db, 'production_orders', 'manual_sheet_json', 'TEXT');
+  ensureColumn(db, 'production_orders', 'production_date', 'TEXT');
   ensureColumn(db, 'production_orders', 'commitment_reference', 'TEXT');
   ensureColumn(db, 'production_orders', 'created_by', 'TEXT');
   ensureColumn(db, 'production_orders', 'updated_by', 'TEXT');

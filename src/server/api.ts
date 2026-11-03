@@ -82,6 +82,7 @@ import {
   loginSchema,
   manualProductionOrderSchema,
   manualProductionOrderUpdateSchema,
+  manualProductionSheetOrderSchema,
   notificationRecipientCreateSchema,
   notificationRecipientUpdateSchema,
   passwordResetConfirmSchema,
@@ -574,6 +575,19 @@ export function createApiApp(): express.Express {
     validateBody(manualProductionOrderSchema),
     mutation((req, res) => {
       const created = dbInstance.createManualProductionOrder(
+        req.body,
+        auditActor(req)
+      );
+      res.status(201).json(created);
+    })
+  );
+
+  app.post(
+    '/api/production-orders/manual/sheet',
+    requireAdmin,
+    validateBody(manualProductionSheetOrderSchema),
+    mutation((req, res) => {
+      const created = dbInstance.createManualSheetProductionOrder(
         req.body,
         auditActor(req)
       );

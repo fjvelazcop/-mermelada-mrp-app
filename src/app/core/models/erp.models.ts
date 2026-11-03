@@ -189,6 +189,64 @@ export interface ProductionOrderFormula {
   unitCost: number;
 }
 
+/** One of the six fixed marmitas on the physical plant production sheet. */
+export interface ProductionMarmitaSheetRow {
+  number: number; // 1..6
+  basketsBase: number; // cestas / base
+  guavaKg: number;
+  sugarKg: number;
+  starchKg: number;
+  chemicalG: number;
+  acidG: number;
+  waterGasOil: number; // agua / gasoil
+  finishedAt: string; // HH:mm
+  obtainedUnits: number; // cantidad obtenida
+  totalKg: number; // kilos totales
+  reprocess: boolean;
+}
+
+export interface ProductionSheetPackaging {
+  presentationKg: number; // peso por cuñete / caja (ej. 20 kg)
+  cunetes: number;
+  cajas: number;
+  /** Unit valuation rate in force when the order was saved (USD). */
+  cuneteUnitRate: number;
+  cajaUnitRate: number;
+  /** Packaging material cost per unit in force when the order was saved (USD). */
+  cunetePackagingUnitCost: number;
+  cajaPackagingUnitCost: number;
+}
+
+export interface ProductionSheetTotals {
+  guavaKg: number;
+  sugarKg: number;
+  starchKg: number;
+  chemicalG: number;
+  acidG: number;
+  waterGasOil: number;
+  obtainedUnits: number;
+  totalKg: number;
+}
+
+export interface ProductionSheetCosts {
+  materialsCost: number; // insumos (guayaba, azúcar, almidón, químicos, ácidos, agua/gasoil)
+  packagingCost: number; // envases (cuñetes + cajas)
+  totalCost: number; // insumos + empaques
+  cuneteValue: number;
+  cajaValue: number;
+  productionValue: number; // valor total de producción según tarifa vigente
+  valuationRule: string;
+}
+
+/** Detail captured by the manual production sheet (physical Lote 72 format). */
+export interface ProductionManualSheet {
+  productionDate: string;
+  marmitas: ProductionMarmitaSheetRow[]; // exactly six rows
+  packaging: ProductionSheetPackaging;
+  totals: ProductionSheetTotals;
+  costs: ProductionSheetCosts;
+}
+
 export interface ProductionOrder {
   id: string;
   orderNumber: string; // ej: OP-2026-089
@@ -202,6 +260,8 @@ export interface ProductionOrder {
   status: ProductionOrderStatus;
   mode?: ProductionOrderMode; // automatico = MTO, manual = carga/ajuste manual
   formulas?: ProductionOrderFormula[]; // Solo órdenes manuales multi-fórmula
+  manualSheet?: ProductionManualSheet; // Solo órdenes manuales capturadas con la planilla de marmitas
+  productionDate?: string; // Fecha de producción de la planilla manual
   commitmentReference?: string; // Referencia del compromiso de inventario
   createdBy?: string;
   updatedBy?: string;

@@ -380,6 +380,265 @@ describe('manual production orders', () => {
   });
 });
 
+describe('manual production sheet (physical Lote 72 format)', () => {
+  const lotNumber = 'L-TEST-SHEET-01';
+  let orderId = '';
+  let rawMaterialsBefore: {
+    id: string;
+    name: string;
+    currentStock: number;
+  }[] = [];
+
+  const sheetRow = (number: number, overrides: Record<string, unknown> = {}) => ({
+    number,
+    basketsBase: 1,
+    guavaKg: 10,
+    sugarKg: 8,
+    starchKg: 1,
+    chemicalG: 50,
+    acidG: 20,
+    waterGasOil: 5,
+    finishedAt: '14:30',
+    obtainedUnits: 1,
+    totalKg: 20,
+    reprocess: false,
+    ...overrides,
+  });
+
+  it('rejects non administrators', async () => {
+    const { response } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-FORBIDDEN',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) => sheetRow(n)),
+        packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+        processImmediately: true,
+      },
+      { 'X-Demo-Role': 'operator' }
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it('validates exactly six marmitas', async () => {
+    const { response } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-FIVE',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5].map((n) => sheetRow(n)),
+        packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+        processImmediately: true,
+      }
+    );
+    expect(response.status).toBe(422);
+  });
+
+  it('saves the sheet and deducts inputs, packaging and produced units once', async () => {
+    rawMaterialsBefore = (
+      await request('/api/inventory/raw-materials')
+    ).body as unknown as typeof rawMaterialsBefore;
+
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber,
+        productionDate: '2026-11-03',
+        marmitas: [
+          sheetRow(1),
+          sheetRow(2, {
+            guavaKg: 5,
+            sugarKg: 4,
+            starchKg: 0.5,
+            chemicalG: 25,
+            acidG: 10,
+            waterGasOil: 2.5,
+            obtainedUnits: 1,
+            totalKg: 10,
+          }),
+          sheetRow(3, {
+            guavaKg: 0,
+            sugarKg: 0,
+            starchKg: 0,
+            chemicalG: 0,
+            acidG: 0,
+            waterGasOil: 0,
+            obtainedUnits: 0,
+            totalKg: 0,
+          }),
+          sheetRow(4, {
+            guavaKg: 0,
+            sugarKg: 0,
+            starchKg: 0,
+            chemicalG: 0,
+            acidG: 0,
+            waterGasOil: 0,
+            obtainedUnits: 0,
+            totalKg: 0,
+          }),
+          sheetRow(5, {
+            guavaKg: 0,
+            sugarKg: 0,
+            starchKg: 0,
+            chemicalG: 0,
+            acidG: 0,
+            waterGasOil: 0,
+            obtainedUnits: 0,
+            totalKg: 0,
+          }),
+          sheetRow(6, {
+            guavaKg: 0,
+            sugarKg: 0,
+            starchKg: 0,
+            chemicalG: 0,
+            acidG: 0,
+            waterGasOil: 0,
+            obtainedUnits: 0,
+            totalKg: 0,
+          }),
+        ],
+        packaging: { presentationKg: 20, cunetes: 2, cajas: 1 },
+        commitmentReference: 'Lote 72 de prueba',
+        processImmediately: true,
+      }
+    );
+
+    expect(response.status).toBe(201);
+    expect(body['status']).toBe('completada');
+    expect(body['mode']).toBe('manual');
+    expect(body['targetUnits']).toBe(3);
+    orderId = body['id'] as string;
+
+    const sheet = body['manualSheet'] as unknown as {
+      marmitas: unknown[];
+      totals: { guavaKg: number; sugarKg: number; starchKg: number };
+      costs: {
+        materialsCost: number;
+        packagingCost: number;
+        productionValue: number;
+        valuationRule: string;
+      };
+      packaging: { cuneteUnitRate: number; cajaUnitRate: number };
+    };
+    expect(sheet.marmitas).toHaveLength(6);
+    expect(sheet.totals.guavaKg).toBe(15);
+    expect(sheet.totals.sugarKg).toBe(12);
+    expect(sheet.totals.starchKg).toBe(1.5);
+    expect(sheet.costs.materialsCost).toBeGreaterThan(0);
+    expect(sheet.costs.packagingCost).toBeGreaterThan(0);
+    expect(sheet.costs.productionValue).toBeGreaterThan(0);
+    expect(sheet.costs.valuationRule).toContain('costo unitario vigente');
+    expect(sheet.packaging.cuneteUnitRate).toBeGreaterThan(0);
+    expect(sheet.packaging.cajaUnitRate).toBeGreaterThan(0);
+
+    const after = (await request('/api/inventory/raw-materials'))
+      .body as unknown as typeof rawMaterialsBefore;
+    const stock = (id: string) =>
+      after.find((material) => material.id === id)?.currentStock ?? 0;
+    const beforeStock = (id: string) =>
+      rawMaterialsBefore.find((material) => material.id === id)?.currentStock ??
+      0;
+
+    expect(beforeStock('rm-1') - stock('rm-1')).toBe(15);
+    expect(beforeStock('rm-2') - stock('rm-2')).toBe(12);
+    expect(beforeStock('rm-20') - stock('rm-20')).toBe(1.5);
+    expect(beforeStock('rm-3') - stock('rm-3')).toBe(75);
+    expect(beforeStock('rm-4') - stock('rm-4')).toBe(30);
+    expect(beforeStock('rm-17') - stock('rm-17')).toBe(2);
+    expect(beforeStock('rm-18') - stock('rm-18')).toBe(1);
+
+    const finished = (await request('/api/inventory/finished-goods'))
+      .body as unknown as {
+      flavor: string;
+      presentation: string;
+      reservedUnits: number;
+    }[];
+    const cunete = finished.find(
+      (good) =>
+        good.flavor === 'Guayaba Criolla' &&
+        good.presentation === 'pote_20kg'
+    );
+    const caja = finished.find(
+      (good) =>
+        good.flavor === 'Guayaba Criolla' && good.presentation === 'caja_20kg'
+    );
+    expect(cunete?.reservedUnits ?? 0).toBeGreaterThanOrEqual(2);
+    expect(caja?.reservedUnits ?? 0).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not deduct twice when the same lot is retried', async () => {
+    const before = (await request('/api/inventory/raw-materials'))
+      .body as unknown as typeof rawMaterialsBefore;
+
+    const retry = await request('/api/production-orders/manual/sheet', 'POST', {
+      lotNumber,
+      productionDate: '2026-11-03',
+      marmitas: [1, 2, 3, 4, 5, 6].map((n) => sheetRow(n)),
+      packaging: { presentationKg: 20, cunetes: 2, cajas: 1 },
+      processImmediately: true,
+    });
+    expect(retry.response.status).toBe(400);
+
+    const after = (await request('/api/inventory/raw-materials'))
+      .body as unknown as typeof rawMaterialsBefore;
+    expect(after).toEqual(before);
+  });
+
+  it('does not persist a partial order when stock is insufficient', async () => {
+    const { response } = await request('/api/production-orders/manual/sheet', 'POST', {
+      lotNumber: 'L-TEST-SHEET-NO-STOCK',
+      productionDate: '2026-11-03',
+      marmitas: [1, 2, 3, 4, 5, 6].map((n) =>
+        sheetRow(n, { guavaKg: 999_999 })
+      ),
+      packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+      processImmediately: true,
+    });
+    expect(response.status).toBe(400);
+
+    const manualOrders = (await request('/api/production-orders/manual'))
+      .body as unknown as { lotNumber: string }[];
+    expect(
+      manualOrders.some((order) => order.lotNumber === 'L-TEST-SHEET-NO-STOCK')
+    ).toBe(false);
+  });
+
+  it('exposes the sheet detail and cost by lot', async () => {
+    const list = (await request('/api/production-orders/manual'))
+      .body as unknown as {
+      id: string;
+      lotNumber: string;
+      manualSheet?: { costs: { totalCost: number; productionValue: number } };
+    }[];
+    const order = list.find((entry) => entry.id === orderId);
+    expect(order?.lotNumber).toBe(lotNumber);
+    expect(order?.manualSheet?.costs.totalCost).toBeGreaterThan(0);
+    expect(order?.manualSheet?.costs.productionValue).toBeGreaterThan(0);
+  });
+
+  it('annuls the sheet and reverts inputs, packaging and production', async () => {
+    const { response, body } = await request(
+      `/api/production-orders/manual/${orderId}/annul`,
+      'POST',
+      {}
+    );
+    expect(response.status).toBe(200);
+    expect((body['order'] as JsonBody)['status']).toBe('anulada');
+
+    const after = (await request('/api/inventory/raw-materials'))
+      .body as unknown as typeof rawMaterialsBefore;
+    expect(
+      after.find((material) => material.id === 'rm-1')?.currentStock
+    ).toBe(rawMaterialsBefore.find((material) => material.id === 'rm-1')?.currentStock);
+    expect(
+      after.find((material) => material.id === 'rm-17')?.currentStock
+    ).toBe(rawMaterialsBefore.find((material) => material.id === 'rm-17')?.currentStock);
+  });
+});
+
 describe('sales collection with bank receiver', () => {
   let orderId = '';
 
