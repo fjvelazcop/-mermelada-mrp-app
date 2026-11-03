@@ -113,6 +113,35 @@ la tasa de cambio.
 Estados habituales: pendiente → en proceso → completada. Una orden puede
 anularse; la anulación queda auditada y no borra el historial.
 
+**Planilla manual de marmitas (formato físico Lote 72).** Solo el Administrador
+puede registrarla desde *Producción → Órdenes Manuales de Producción*:
+
+1. Pulse **Planilla de marmitas** e indique lote, fecha de producción y
+   referencia de compromiso.
+2. Complete las seis marmitas fijas con cestas/base, guayaba, azúcar, almidón,
+   químico (g), ácido (g), agua/gasoil, hora finalizada, cantidad obtenida,
+   kilos totales y marca de reproceso.
+3. Registre la presentación (peso por envase), cuñetes y cajas. El sistema
+   calcula en tiempo real los totales, el costo de insumos y empaques, y el valor
+   de producción con las tarifas vigentes.
+4. Guarde la planilla. La orden se procesa en la misma operación y descuenta
+   guayaba, azúcar, almidón, químicos, ácidos, agua/gasoil, cuñetes y cajas; las
+   unidades producidas quedan en inventario comprometido.
+5. Use **Ver detalle** para consultar por lote las seis marmitas, los totales,
+   los costos y la regla de valoración aplicada.
+
+Un mismo lote no puede registrarse dos veces mientras la orden no esté anulada,
+lo que evita descuentos duplicados. Si falta stock o falla el guardado, no se
+crea la orden ni se altera el inventario.
+
+La valoración usa el costo unitario vigente del producto terminado de Guayaba
+20 kg (cuñete y caja) al momento de guardar; los insumos y empaques se costean a
+su costo promedio vigente. No son tarifas fijas: cámbielas en inventario o
+costos cuando cambien sus precios.
+
+Las órdenes manuales cargadas por fórmulas BOM siguen disponibles con el botón
+**Por fórmulas BOM**.
+
 ### 4.4. Inventario y almacén
 
 - **Materia prima:** stock actual, mínimo, unidad, costo y proveedor.
