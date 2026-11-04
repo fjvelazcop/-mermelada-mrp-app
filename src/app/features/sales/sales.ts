@@ -2,7 +2,7 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {DeliveryNote, FiscalPaymentMethod, FiscalSaleCondition, FinishedGood, PriceTierType, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
+import {DeliveryNote, FiscalPaymentMethod, FiscalSaleCondition, FinishedGood, PresentationType, PriceTierType, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {VENEZUELAN_BANKS, bankLabel, findBank} from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel, exportToPdf, downloadDeliveryNotePdf} from '../../core/utils/export.utils';
@@ -17,6 +17,21 @@ export interface PriceTierOption {
   marginPercent: number;
   profitPerUnit: number;
   priceBs: number;
+}
+
+/** Línea del carrito de borrador para un pedido con varios productos. */
+export interface DraftOrderItem {
+  uid: string;
+  finishedGoodId: string;
+  flavor: string;
+  presentation: PresentationType;
+  presentationLabel: string;
+  quantity: number;
+  unitPrice: number;
+  priceTier: PriceTierType;
+  baseCost: number;
+  marginPercent: number;
+  availableUnits: number;
 }
 
 @Component({
@@ -50,6 +65,16 @@ export class SalesComponent {
   public selectedPriceTier = signal<PriceTierType>('mayorista');
   public currentUnitPrice = signal<number>(1.65);
   public currentExchangeRate = signal<number>(48.35);
+
+  // Carrito de borrador: un pedido puede contener varios productos
+  public draftOrderItems = signal<DraftOrderItem[]>([]);
+  public draftSubtotal = computed<number>(() =>
+    Number(this.draftOrderItems().reduce((acc, item) => acc + item.quantity * item.unitPrice, 0).toFixed(2))
+  );
+  public draftTotalCost = computed<number>(() =>
+    Number(this.draftOrderItems().reduce((acc, item) => acc + item.quantity * item.baseCost, 0).toFixed(2))
+  );
+  public draftProfit = computed<number>(() => Number((this.draftSubtotal() - this.draftTotalCost()).toFixed(2)));
 
   // Forms
   public newCustomerForm = new FormGroup({
@@ -231,6 +256,7 @@ export class SalesComponent {
     this.selectedPriceTier.set('mayorista');
     this.currentUnitPrice.set(initialPrice);
     this.currentExchangeRate.set(rate);
+    this.draftOrderItems.set([]);
 
     const initialCustomer = custs[0];
     const initialSaleCondition: FiscalSaleCondition =
@@ -359,30 +385,100 @@ export class SalesComponent {
     this.isProductDropdownOpen.set(false);
   }
 
+  /** Agrega la configuración actual del constructor (producto, cantidad y precio) al carrito. */
+  public addDraftItem() {
+    const fg = this.selectedFinishedGood();
+    if (!fg) return;
+
+    const quantity = Number(this.newOrderForm.controls.quantity.value) || 0;
+    const unitPrice = Number(this.currentUnitPrice()) || 0;
+    if (quantity <= 0 || unitPrice <= 0) {
+      this.api.showToast('Ingresa una cantidad y un precio válidos.', 'error');
+      return;
+    }
+
+    const analysis = this.currentPricingAnalysis();
+    const item: DraftOrderItem = {
+      uid: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      finishedGoodId: fg.id,
+      flavor: fg.flavor,
+      presentation: fg.presentation,
+      presentationLabel: fg.presentationLabel,
+      quantity,
+      unitPrice,
+      priceTier: this.selectedPriceTier(),
+      baseCost: fg.baseCost,
+      marginPercent: analysis.marginPercent,
+      availableUnits: fg.availableUnits,
+    };
+
+    this.draftOrderItems.update((items) => [...items, item]);
+    this.api.showToast(`${quantity} × ${fg.flavor} (${fg.presentationLabel}) agregado al pedido.`);
+  }
+
+  public removeDraftItem(uid: string) {
+    this.draftOrderItems.update((items) => items.filter((item) => item.uid !== uid));
+  }
+
   public async submitSalesOrder() {
     if (this.newOrderForm.invalid) return;
     const v = this.newOrderForm.getRawValue();
     const cust = this.customers().find(c => c.id === v.customerId);
-    const fg = this.finishedGoods().find(f => f.id === v.finishedGoodId);
-    if (!cust || !fg) return;
+    if (!cust) return;
+
+    const drafts = this.draftOrderItems();
+    if (drafts.length === 0) {
+      this.api.showToast('Agrega al menos un producto al pedido.', 'error');
+      return;
+    }
 
     const rate = Number(v.exchangeRateUsed) || this.api.exchangeRates()?.currentUsd || 48.35;
-    const unitPrice = Number(v.unitPrice);
-    const quantity = Number(v.quantity);
-    const subtotal = Number((quantity * unitPrice).toFixed(2));
     const taxCategory = v.taxCategory;
     const taxRate = taxCategory === 'gravado'
       ? Number(v.taxRatePercent ?? this.fiscalSettings()?.taxRatePercent ?? 16)
       : 0;
-    const taxAmount = Number(((subtotal * taxRate) / 100).toFixed(2));
-    const total = Number((subtotal + taxAmount).toFixed(2));
 
+    let subtotal = 0;
+    let taxAmount = 0;
+    const items = drafts.map((draft) => {
+      const lineSubtotal = Number((draft.quantity * draft.unitPrice).toFixed(2));
+      const lineTax = Number(((lineSubtotal * taxRate) / 100).toFixed(2));
+      subtotal = Number((subtotal + lineSubtotal).toFixed(2));
+      taxAmount = Number((taxAmount + lineTax).toFixed(2));
+
+      return {
+        finishedGoodId: draft.finishedGoodId,
+        flavor: draft.flavor,
+        presentation: draft.presentation,
+        presentationLabel: draft.presentationLabel,
+        quantity: draft.quantity,
+        unitPrice: draft.unitPrice,
+        subtotal: lineSubtotal,
+        taxCategory,
+        taxRatePercent: taxRate,
+        taxAmount: lineTax,
+        unitPriceBs: Number((draft.unitPrice * rate).toFixed(2)),
+        subtotalBs: Number((lineSubtotal * rate).toFixed(2)),
+        priceTier: draft.priceTier,
+        profitMarginPercent: draft.marginPercent,
+        baseCost: draft.baseCost,
+      };
+    });
+
+    const total = Number((subtotal + taxAmount).toFixed(2));
     const subtotalBs = Number((subtotal * rate).toFixed(2));
     const taxAmountBs = Number((taxAmount * rate).toFixed(2));
     const totalBs = Number((total * rate).toFixed(2));
 
-    const tier = this.selectedPriceTier();
-    const analysis = this.currentPricingAnalysis();
+    // Agrupa las cantidades por producto para validar el stock disponible real.
+    const requestedByProduct = new Map<string, number>();
+    drafts.forEach((draft) => {
+      requestedByProduct.set(draft.finishedGoodId, (requestedByProduct.get(draft.finishedGoodId) ?? 0) + draft.quantity);
+    });
+    const allAvailable = [...requestedByProduct.entries()].every(([id, requested]) => {
+      const fg = this.finishedGoods().find((entry) => entry.id === id);
+      return fg ? fg.availableUnits >= requested : false;
+    });
 
     await this.api.addSalesOrder({
       customerId: cust.id,
@@ -393,26 +489,9 @@ export class SalesComponent {
       paymentMethod: v.paymentMethod,
       orderDate: new Date().toISOString().slice(0, 10),
       deliveryDate: v.deliveryDate,
-      status: fg.availableUnits >= quantity ? 'listo_despacho' : 'pendiente',
+      status: allAvailable ? 'listo_despacho' : 'pendiente',
       exchangeRateUsed: rate,
-      items: [
-        {
-          finishedGoodId: fg.id,
-          flavor: fg.flavor,
-          presentation: fg.presentation,
-          presentationLabel: fg.presentationLabel,
-          quantity,
-          unitPrice,
-          subtotal,
-          taxCategory,
-          taxRatePercent: taxRate,
-          unitPriceBs: Number((unitPrice * rate).toFixed(2)),
-          subtotalBs,
-          priceTier: tier,
-          profitMarginPercent: analysis.marginPercent,
-          baseCost: fg.baseCost,
-        },
-      ],
+      items,
       subtotal,
       taxAmount,
       total,
@@ -422,6 +501,7 @@ export class SalesComponent {
       notes: v.notes,
     });
 
+    this.draftOrderItems.set([]);
     this.closeNewOrderModal();
   }
 

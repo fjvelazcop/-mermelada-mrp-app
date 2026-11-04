@@ -540,14 +540,18 @@
 
   <!-- MODAL: NUEVO PEDIDO -->
   @if (isNewOrderModalOpen()) {
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs overflow-y-auto">
-      <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl border border-stone-200 my-6">
-        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
-          <div class="flex items-center gap-2">
-            <mat-icon class="text-stone-800">add_shopping_cart</mat-icon>
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-stone-200 flex flex-col max-h-[92vh]">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-stone-100 shrink-0">
+          <div class="flex items-center gap-2.5">
+            <span class="w-9 h-9 rounded-lg bg-stone-900 flex items-center justify-center shrink-0">
+              <mat-icon class="text-white text-lg">add_shopping_cart</mat-icon>
+            </span>
             <div>
-              <h3 class="text-lg font-bold text-stone-900 leading-tight">Nuevo Pedido de Venta (Make-to-Order)</h3>
-              <p class="text-[11px] text-stone-500">Selección de producto terminado, 3 niveles de precios y cálculo dinámico de margen</p>
+              <h3 class="text-base font-bold text-stone-900 leading-tight">Nuevo Pedido de Venta</h3>
+              <p class="text-[11px] text-stone-500">Make-to-Order · El pedido dispara producción bajo demanda</p>
             </div>
           </div>
           <button (click)="closeNewOrderModal()" class="text-stone-400 hover:text-stone-700">
@@ -555,350 +559,356 @@
           </button>
         </div>
 
-        <form [formGroup]="newOrderForm" (ngSubmit)="submitSalesOrder()" class="space-y-4 mt-4">
-          <!-- Cliente Mayorista -->
-          <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Cliente Mayorista</label>
-            <select
-              formControlName="customerId"
-              (change)="onCustomerSelectionChange($any($event.target).value)"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
-            >
-              @for (c of customers(); track c.id) {
-                <option [value]="c.id">{{ c.businessName }} ({{ c.taxId }})</option>
-              }
-            </select>
-          </div>
+        <form [formGroup]="newOrderForm" (ngSubmit)="submitSalesOrder()" class="flex flex-col flex-1 min-h-0">
+          @let subVal = draftSubtotal();
+          @let totalProfit = draftProfit();
+          @let taxVal = currentTaxAmount(subVal);
+          @let totVal = subVal + taxVal;
 
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block">
-              <span class="block text-xs font-semibold text-stone-700 mb-1">Condición de venta</span>
-              <select
-                formControlName="saleCondition"
-                (change)="onSaleConditionChange()"
-                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
-              >
-                <option value="contado">Contado</option>
-                <option value="credito">Crédito</option>
-              </select>
-            </label>
-            <label class="block">
-              <span class="block text-xs font-semibold text-stone-700 mb-1">Forma de pago</span>
-              <select
-                formControlName="paymentMethod"
-                [disabled]="newOrderForm.controls.saleCondition.value === 'credito'"
-                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 disabled:opacity-50"
-              >
-                <option value="credito">Crédito</option>
-                <option value="transferencia_bancaria">Transferencia bancaria</option>
-                <option value="pago_movil">Pago móvil</option>
-                <option value="efectivo_usd">Efectivo USD</option>
-                <option value="efectivo_bs">Efectivo Bs.</option>
-                <option value="zelle">Zelle</option>
-                <option value="tarjeta">Tarjeta</option>
-              </select>
-            </label>
-          </div>
+          <!-- Body scrollable -->
+          <div class="p-6 space-y-5 overflow-y-auto">
 
-          <!-- Producto Terminado & Presentación con Autocomplete & Selector -->
-          <div class="relative">
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-xs font-semibold text-stone-700">
-                Producto Terminado & Presentación
-              </label>
-              @if (selectedFinishedGood(); as fg) {
-                <span class="text-[11px] font-mono text-stone-500">
-                  Costo Base: <strong class="text-stone-800 font-bold">{{ fg.baseCost | veCurrency:'$':2 }}</strong>
-                  <span class="mx-1">•</span>
-                  <span [class.text-emerald-700]="fg.availableUnits > 0" [class.text-amber-700]="fg.availableUnits <= 0">
-                    {{ fg.availableUnits }} uds disponibles
-                  </span>
-                </span>
-              }
-            </div>
-
-            <!-- Input de Búsqueda / Autocomplete -->
-            <div class="relative">
-              <input
-                type="text"
-                [value]="productSearchQuery()"
-                (input)="onProductSearchInput($event)"
-                (focus)="isProductDropdownOpen.set(true)"
-                placeholder="Buscar sabor o presentación (ej: Guayaba, Fresa, 250g)..."
-                class="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-8 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
-              />
-              <mat-icon class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 text-sm">search</mat-icon>
-              @if (productSearchQuery()) {
-                <button
-                  type="button"
-                  (click)="productSearchQuery.set(''); isProductDropdownOpen.set(true)"
-                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
-                >
-                  <mat-icon class="text-xs">close</mat-icon>
-                </button>
-              }
-            </div>
-
-            <!-- Menú Desplegable Autocomplete -->
-            @if (isProductDropdownOpen()) {
-              <div class="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-30 max-h-52 overflow-y-auto divide-y divide-stone-100">
-                @for (fg of filteredProducts(); track fg.id) {
-                  <button
-                    type="button"
-                    (click)="selectProduct(fg)"
-                    class="w-full text-left p-2.5 hover:bg-stone-50 flex items-center justify-between text-xs transition-colors"
-                    [class.bg-amber-50]="selectedProductId() === fg.id"
+            <!-- 1 · Datos del pedido -->
+            <section class="space-y-3">
+              <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">1 · Datos del Pedido</h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-medium text-stone-700 mb-1">Cliente Mayorista</label>
+                  <select
+                    formControlName="customerId"
+                    (change)="onCustomerSelectionChange($any($event.target).value)"
+                    class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
                   >
-                    <div>
-                      <div class="font-bold text-stone-900 flex items-center gap-1.5">
-                        <span>{{ fg.flavor }}</span>
-                        <span class="text-[10px] font-mono font-normal text-stone-400">({{ fg.code }})</span>
-                      </div>
-                      <span class="text-stone-600 text-[11px]">{{ fg.presentationLabel }}</span>
-                    </div>
-                    <div class="text-right">
-                      <div class="font-mono text-[11px] text-stone-500">Costo Base: {{ fg.baseCost | veCurrency:'$':2 }}</div>
-                      <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded" [class.bg-emerald-100]="fg.availableUnits > 0" [class.text-emerald-800]="fg.availableUnits > 0" [class.bg-amber-100]="fg.availableUnits <= 0" [class.text-amber-800]="fg.availableUnits <= 0">
-                        {{ fg.availableUnits }} en stock
+                    @for (c of customers(); track c.id) {
+                      <option [value]="c.id">{{ c.businessName }} ({{ c.taxId }})</option>
+                    }
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-stone-700 mb-1">Condición de Venta</label>
+                  <select
+                    formControlName="saleCondition"
+                    (change)="onSaleConditionChange()"
+                    class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
+                  >
+                    <option value="contado">Contado</option>
+                    <option value="credito">Crédito</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-stone-700 mb-1">Forma de Pago</label>
+                  <select
+                    formControlName="paymentMethod"
+                    [disabled]="newOrderForm.controls.saleCondition.value === 'credito'"
+                    class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 disabled:opacity-50"
+                  >
+                    <option value="credito">Crédito</option>
+                    <option value="transferencia_bancaria">Transferencia bancaria</option>
+                    <option value="pago_movil">Pago móvil</option>
+                    <option value="efectivo_usd">Efectivo USD</option>
+                    <option value="efectivo_bs">Efectivo Bs.</option>
+                    <option value="zelle">Zelle</option>
+                    <option value="tarjeta">Tarjeta</option>
+                  </select>
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-medium text-stone-700 mb-1">Fecha Compromiso de Entrega</label>
+                  <input type="date" formControlName="deliveryDate" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+                </div>
+              </div>
+            </section>
+
+            <!-- 2 · Producto y precio -->
+            <section class="space-y-3">
+              <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">2 · Producto y Precio</h4>
+
+              <!-- Producto autocomplete -->
+              <div class="relative">
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block text-xs font-medium text-stone-700">Producto Terminado & Presentación</label>
+                  @if (selectedFinishedGood(); as fg) {
+                    <span class="text-[11px] font-mono text-stone-500">
+                      Costo Base: <strong class="text-stone-800 font-bold">{{ fg.baseCost | veCurrency:'$':2 }}</strong>
+                      <span class="mx-1">•</span>
+                      <span [class.text-emerald-700]="fg.availableUnits > 0" [class.text-amber-700]="fg.availableUnits <= 0">
+                        {{ fg.availableUnits }} uds disp.
                       </span>
-                    </div>
-                  </button>
-                } @empty {
-                  <div class="p-3 text-center text-xs text-stone-400">
-                    No se encontraron productos coincidentes.
+                    </span>
+                  }
+                </div>
+                <div class="relative">
+                  <input
+                    type="text"
+                    [value]="productSearchQuery()"
+                    (input)="onProductSearchInput($event)"
+                    (focus)="isProductDropdownOpen.set(true)"
+                    placeholder="Buscar sabor o presentación (ej: Guayaba, Fresa, 250g)..."
+                    class="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-8 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                  />
+                  <mat-icon class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 text-sm">search</mat-icon>
+                  @if (productSearchQuery()) {
+                    <button
+                      type="button"
+                      (click)="productSearchQuery.set(''); isProductDropdownOpen.set(true)"
+                      class="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                    >
+                      <mat-icon class="text-xs">close</mat-icon>
+                    </button>
+                  }
+                </div>
+                @if (isProductDropdownOpen()) {
+                  <div class="absolute left-0 right-0 top-full mt-1 bg-white border border-stone-200 rounded-xl shadow-lg z-30 max-h-56 overflow-y-auto divide-y divide-stone-100">
+                    @for (fg of filteredProducts(); track fg.id) {
+                      <button
+                        type="button"
+                        (click)="selectProduct(fg)"
+                        class="w-full text-left p-2.5 hover:bg-stone-50 flex items-center justify-between text-xs transition-colors"
+                        [class.bg-amber-50]="selectedProductId() === fg.id"
+                      >
+                        <div>
+                          <div class="font-bold text-stone-900 flex items-center gap-1.5">
+                            <span>{{ fg.flavor }}</span>
+                            <span class="text-[10px] font-mono font-normal text-stone-400">({{ fg.code }})</span>
+                          </div>
+                          <span class="text-stone-600 text-[11px]">{{ fg.presentationLabel }}</span>
+                        </div>
+                        <div class="text-right">
+                          <div class="font-mono text-[11px] text-stone-500">Costo: {{ fg.baseCost | veCurrency:'$':2 }}</div>
+                          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded" [class.bg-emerald-100]="fg.availableUnits > 0" [class.text-emerald-800]="fg.availableUnits > 0" [class.bg-amber-100]="fg.availableUnits <= 0" [class.text-amber-800]="fg.availableUnits <= 0">
+                            {{ fg.availableUnits }} en stock
+                          </span>
+                        </div>
+                      </button>
+                    } @empty {
+                      <div class="p-3 text-center text-xs text-stone-400">No se encontraron productos coincidentes.</div>
+                    }
                   </div>
                 }
               </div>
-            }
-          </div>
 
-          <!-- SELECTOR DE LOS 3 TIPOS DE PRECIOS & MÁRGENES DE GANANCIA -->
-          <div class="bg-stone-50/90 border border-stone-200 rounded-xl p-3.5 space-y-2.5">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-1.5">
-                <mat-icon class="text-stone-700 text-sm">price_change</mat-icon>
-                <span class="text-xs font-bold text-stone-800">Seleccionar Tipo de Precio (3 Niveles)</span>
+              <!-- Selector de 3 niveles de precio -->
+              <div class="bg-stone-50/90 border border-stone-200 rounded-xl p-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold text-stone-700">Tipo de Precio</span>
+                  <span class="text-[10px] text-stone-500">Elige un nivel o edita el precio abajo</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  @for (tier of availablePriceTiers(); track tier.tier) {
+                    <button
+                      type="button"
+                      (click)="applyPriceTier(tier.tier)"
+                      class="rounded-lg border px-2.5 py-2 text-left transition-all"
+                      [class.border-stone-900]="selectedPriceTier() === tier.tier"
+                      [class.bg-white]="selectedPriceTier() === tier.tier"
+                      [class.ring-1]="selectedPriceTier() === tier.tier"
+                      [class.ring-stone-900/20]="selectedPriceTier() === tier.tier"
+                      [class.border-stone-200]="selectedPriceTier() !== tier.tier"
+                      [class.bg-white/60]="selectedPriceTier() !== tier.tier"
+                    >
+                      <div class="flex items-center justify-between gap-1">
+                        <span class="text-[10px] font-bold text-stone-700 uppercase tracking-wide">{{ tier.shortLabel }}</span>
+                        @if (selectedPriceTier() === tier.tier) {
+                          <mat-icon class="text-xs text-stone-900">check_circle</mat-icon>
+                        }
+                      </div>
+                      <span class="block text-sm font-bold font-mono text-stone-900 leading-tight mt-0.5">{{ tier.price | veCurrency:'$':2 }}</span>
+                      <span class="block text-[9px] font-mono text-stone-500 leading-tight">≈ {{ tier.priceBs | veCurrency:'Bs.':2 }}</span>
+                      <span class="inline-block mt-1 text-[9px] font-mono font-bold text-emerald-700">+{{ tier.marginPercent }}% margen</span>
+                    </button>
+                  }
+                </div>
               </div>
-              @if (selectedFinishedGood(); as fg) {
-                <span class="text-[11px] text-stone-500">
-                  Costo Base: <strong class="font-mono text-stone-800">{{ fg.baseCost | veCurrency:'$':2 }}</strong>
-                </span>
-              }
-            </div>
 
-            <!-- Grid de 3 Tipos de Precios con Margen -->
-            <div class="grid grid-cols-3 gap-2">
-              @for (tier of availablePriceTiers(); track tier.tier) {
-                <button
-                  type="button"
-                  (click)="applyPriceTier(tier.tier)"
-                  class="relative p-2.5 rounded-lg border text-left transition-all flex flex-col justify-between"
-                  [class.border-stone-900]="selectedPriceTier() === tier.tier"
-                  [class.bg-white]="selectedPriceTier() === tier.tier"
-                  [class.shadow-xs]="selectedPriceTier() === tier.tier"
-                  [class.ring-2]="selectedPriceTier() === tier.tier"
-                  [class.ring-stone-900/15]="selectedPriceTier() === tier.tier"
-                  [class.border-stone-200]="selectedPriceTier() !== tier.tier"
-                  [class.bg-white/60]="selectedPriceTier() !== tier.tier"
-                  [class.hover:border-stone-300]="selectedPriceTier() !== tier.tier"
-                >
-                  <div>
-                    <div class="flex items-center justify-between gap-1">
-                      <span class="text-[11px] font-bold text-stone-800 uppercase tracking-wide truncate">
-                        {{ tier.shortLabel }}
-                      </span>
-                      @if (selectedPriceTier() === tier.tier) {
-                        <mat-icon class="text-xs text-stone-900">check_circle</mat-icon>
-                      }
-                    </div>
-                    <div class="mt-1">
-                      <span class="text-base font-bold font-mono text-stone-900 block leading-tight">
-                        {{ tier.price | veCurrency:'$':2 }}
-                      </span>
-                      <span class="text-[10px] font-mono text-stone-500 block leading-tight">
-                        ≈ {{ tier.priceBs | veCurrency:'Bs.':2 }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="mt-2 pt-1.5 border-t border-stone-100 flex items-center justify-between text-[10px]">
-                    <span class="text-stone-500">Margen:</span>
-                    <span class="font-mono font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded">
-                      +{{ tier.marginPercent }}%
+              <!-- Cantidad y precio editable -->
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-stone-700 mb-1">Cantidad de Frascos</label>
+                  <input
+                    type="number"
+                    formControlName="quantity"
+                    min="1"
+                    class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono focus:outline-none focus:ring-1 focus:ring-stone-400"
+                  />
+                </div>
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="block text-xs font-medium text-stone-700">Precio Unitario ($)</label>
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded capitalize"
+                      [class.text-amber-800]="selectedPriceTier() === 'personalizado'"
+                      [class.bg-amber-50]="selectedPriceTier() === 'personalizado'"
+                      [class.border]="selectedPriceTier() === 'personalizado'"
+                      [class.border-amber-200]="selectedPriceTier() === 'personalizado'"
+                      [class.text-stone-600]="selectedPriceTier() !== 'personalizado'"
+                      [class.bg-stone-100]="selectedPriceTier() !== 'personalizado'"
+                    >
+                      {{ selectedPriceTier() }}
                     </span>
                   </div>
-                </button>
-              }
-            </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    [value]="currentUnitPrice()"
+                    (input)="onUnitPriceInput($event)"
+                    class="w-full bg-white border border-stone-300 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-stone-900"
+                  />
+                </div>
+              </div>
 
-            <p class="text-[10px] text-stone-500 italic">
-              Elige entre Mayorista, Detal o Especial. También puedes modificar el precio libremente en el campo editable inferior.
-            </p>
-          </div>
+              <!-- Botón agregar al carrito -->
+              <button
+                type="button"
+                (click)="addDraftItem()"
+                [disabled]="!selectedFinishedGood()"
+                class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50"
+              >
+                <mat-icon class="text-base">add_shopping_cart</mat-icon>
+                Agregar este producto al pedido
+              </button>
 
-          <!-- Cantidad y Precio Editable ("poder cambiarlo a gusto") -->
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-semibold text-stone-700 mb-1">Cantidad de Frascos</label>
-              <input
-                type="number"
-                formControlName="quantity"
-                min="1"
-                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono focus:outline-none focus:ring-1 focus:ring-stone-400"
-              />
-            </div>
-
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="block text-xs font-semibold text-stone-700">Precio Unitario Pactado ($)</label>
-                @if (selectedPriceTier() === 'personalizado') {
-                  <span class="text-[10px] font-semibold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
-                    Personalizado
-                  </span>
+              <!-- Carrito de productos del pedido -->
+              <div class="border border-stone-200 rounded-xl overflow-hidden">
+                <div class="flex items-center justify-between px-3 py-2 bg-stone-100/70 border-b border-stone-200">
+                  <span class="text-xs font-semibold text-stone-700">Productos en el pedido</span>
+                  <span class="text-[10px] font-mono font-semibold text-stone-500">{{ draftOrderItems().length }} línea(s)</span>
+                </div>
+                @if (draftOrderItems().length === 0) {
+                  <div class="px-3 py-4 text-center text-[11px] text-stone-400">
+                    Aún no hay productos. Configura uno arriba y pulsa "Agregar".
+                  </div>
                 } @else {
-                  <span class="text-[10px] font-semibold text-stone-600 bg-stone-100 px-1.5 py-0.2 rounded capitalize">
-                    {{ selectedPriceTier() }}
-                  </span>
+                  <div class="divide-y divide-stone-100">
+                    @for (item of draftOrderItems(); track item.uid) {
+                      <div class="flex items-center gap-2 px-3 py-2">
+                        <div class="flex-1 min-w-0">
+                          <div class="text-xs font-semibold text-stone-900 truncate">
+                            {{ item.flavor }}
+                            <span class="font-normal text-stone-500">· {{ item.presentationLabel }}</span>
+                          </div>
+                          <div class="text-[10px] font-mono text-stone-500">
+                            {{ item.quantity }} × {{ item.unitPrice | veCurrency:'$':2 }}
+                            <span class="text-stone-400">· {{ item.priceTier }}</span>
+                          </div>
+                        </div>
+                        <div class="text-right shrink-0">
+                          <div class="text-xs font-mono font-bold text-stone-900">
+                            {{ (item.quantity * item.unitPrice) | veCurrency:'$':2 }}
+                          </div>
+                          <div class="text-[10px] font-mono text-emerald-700">+{{ item.marginPercent }}%</div>
+                        </div>
+                        <button
+                          type="button"
+                          (click)="removeDraftItem(item.uid)"
+                          class="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50 shrink-0"
+                          title="Quitar del pedido"
+                        >
+                          <mat-icon class="text-base">delete</mat-icon>
+                        </button>
+                      </div>
+                    }
+                  </div>
                 }
               </div>
-              <input
-                type="number"
-                step="0.01"
-                [value]="currentUnitPrice()"
-                (input)="onUnitPriceInput($event)"
-                class="w-full bg-white border border-stone-300 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-stone-900"
-              />
-            </div>
-          </div>
+            </section>
 
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block">
-              <span class="block text-xs font-semibold text-stone-700 mb-1">Tratamiento de IVA</span>
-              <select formControlName="taxCategory" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900">
-                <option value="gravado">Gravado</option>
-                <option value="exento">Exento</option>
-                <option value="no_sujeto">No sujeto</option>
-              </select>
-            </label>
-            <label class="block">
-              <span class="block text-xs font-semibold text-stone-700 mb-1">Alícuota (%)</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                formControlName="taxRatePercent"
-                [disabled]="newOrderForm.controls.taxCategory.value !== 'gravado'"
-                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono disabled:opacity-50"
-              />
-            </label>
-          </div>
+            <!-- 3 · Impuestos y moneda -->
+            <section class="space-y-3">
+              <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">3 · Impuestos y Moneda</h4>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-stone-700 mb-1">Tratamiento IVA</label>
+                  <select formControlName="taxCategory" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900">
+                    <option value="gravado">Gravado</option>
+                    <option value="exento">Exento</option>
+                    <option value="no_sujeto">No sujeto</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-stone-700 mb-1">Alícuota (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    formControlName="taxRatePercent"
+                    [disabled]="newOrderForm.controls.taxCategory.value !== 'gravado'"
+                    class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono disabled:opacity-50"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-amber-900 mb-1">Tasa del Día (Bs./USD)</label>
+                  <div class="relative">
+                    <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-xs">Bs.</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      [value]="currentExchangeRate()"
+                      (input)="onExchangeRateInput($event)"
+                      class="w-full bg-amber-50/40 border border-amber-300 rounded-lg pl-8 pr-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-800 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
 
-          <!-- INDICADOR DINÁMICO DE MARGEN DE GANANCIA PARA EL PRECIO ACTUAL -->
-          @let analysis = currentPricingAnalysis();
-          <div class="p-2.5 rounded-lg border text-xs flex items-center justify-between" [class]="analysis.statusClass">
-            <div class="flex items-center gap-1.5">
-              <mat-icon class="text-sm">
-                @if (analysis.status === 'negative') { warning }
-                @else if (analysis.status === 'tight') { error_outline }
-                @else { verified }
-              </mat-icon>
+              <!-- Indicador de margen -->
+              @let analysis = currentPricingAnalysis();
+              <div class="p-2.5 rounded-lg border text-xs flex items-center justify-between" [class]="analysis.statusClass">
+                <div class="flex items-center gap-1.5">
+                  <mat-icon class="text-sm">
+                    @if (analysis.status === 'negative') { warning }
+                    @else if (analysis.status === 'tight') { error_outline }
+                    @else { verified }
+                  </mat-icon>
+                  <div>
+                    <span class="font-bold block text-[11px]">{{ analysis.statusLabel }}</span>
+                    <span class="text-[10px] opacity-85">Costo: {{ analysis.baseCost | veCurrency:'$':2 }} · Ganancia ud: {{ analysis.profitPerUnit | veCurrency:'$':2 }}</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="font-mono font-bold text-sm block">{{ analysis.marginPercent >= 0 ? '+' : '' }}{{ analysis.marginPercent }}%</span>
+                  <span class="text-[10px] opacity-85 block">margen</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- 4 · Resumen y notas -->
+            <section class="space-y-3">
+              <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">4 · Resumen del Pedido</h4>
+              <div class="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-1.5">
+                <div class="flex items-center justify-between text-stone-600">
+                  <span>Base Imponible ({{ draftOrderItems().length }} producto(s)):</span>
+                  <span class="font-mono font-bold text-stone-900">{{ subVal | veCurrency:'$':2 }}</span>
+                </div>
+                <div class="flex items-center justify-between text-stone-600">
+                  <span>IVA ({{ currentTaxRate() }}%):</span>
+                  <span class="font-mono">{{ taxVal | veCurrency:'$':2 }}</span>
+                </div>
+                <div class="flex items-center justify-between text-emerald-800 border-t border-stone-200/60 pt-1.5">
+                  <span>Ganancia Bruta Estimada:</span>
+                  <span class="font-mono font-bold">{{ totalProfit | veCurrency:'$':2 }} (≈ {{ (totalProfit * currentExchangeRate()) | veCurrency:'Bs.':2 }})</span>
+                </div>
+              </div>
               <div>
-                <span class="font-bold block text-[11px]">{{ analysis.statusLabel }}</span>
-                <span class="text-[10px] opacity-85">
-                  Costo Base: {{ analysis.baseCost | veCurrency:'$':2 }} | Ganancia unitaria: {{ analysis.profitPerUnit | veCurrency:'$':2 }}
-                </span>
+                <label class="block text-xs font-medium text-stone-700 mb-1">Instrucciones o Condiciones de Despacho</label>
+                <input type="text" placeholder="ej: Despacho matutino antes de las 9am para panadería" formControlName="notes" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
               </div>
-            </div>
-            <div class="text-right">
-              <span class="font-mono font-bold text-sm block">
-                {{ analysis.marginPercent >= 0 ? '+' : '' }}{{ analysis.marginPercent }}%
-              </span>
-              <span class="text-[10px] opacity-85 block">margen comercial</span>
-            </div>
+            </section>
           </div>
 
-          <!-- Campo de Tasa de Cambio del Día (USD a Bs.) & Fecha -->
-          <div class="grid grid-cols-2 gap-3">
+          <!-- Footer sticky: total + acciones -->
+          <div class="shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-stone-100 bg-stone-50/60">
             <div>
-              <label class="block text-xs font-semibold text-amber-900 mb-1 flex items-center justify-between">
-                <span>Tasa del Día (Bs./USD)</span>
-                <span class="text-[10px] text-amber-700 font-normal">BCV / USDT</span>
-              </label>
-              <div class="relative">
-                <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-xs">Bs.</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  [value]="currentExchangeRate()"
-                  (input)="onExchangeRateInput($event)"
-                  class="w-full bg-amber-50/40 border border-amber-300 rounded-lg pl-8 pr-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-800 font-mono font-bold"
-                />
-              </div>
+              <span class="text-[10px] uppercase font-semibold text-stone-400 tracking-wider block">Total con IVA</span>
+              <span class="font-mono font-bold text-stone-900 text-lg leading-tight block">{{ totVal | veCurrency:'$':2 }}</span>
+              <span class="font-mono text-[11px] text-emerald-800 block">≈ {{ (totVal * currentExchangeRate()) | veCurrency:'Bs.':2 }}</span>
             </div>
-            <div>
-              <label class="block text-xs font-semibold text-stone-700 mb-1">Fecha Compromiso de Entrega</label>
-              <input type="date" formControlName="deliveryDate" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+            <div class="flex items-center gap-2">
+              <button type="button" (click)="closeNewOrderModal()" class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900">
+                Cancelar
+              </button>
+              <button type="submit" [disabled]="newOrderForm.invalid || draftOrderItems().length === 0" class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50">
+                Registrar Pedido
+              </button>
             </div>
-          </div>
-
-          <!-- Vista Previa de Conversión en Bolívares y Dólares + Ganancia Total del Pedido -->
-          <div class="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-1.5">
-            <div class="flex items-center justify-between text-stone-600 pb-1.5 border-b border-stone-200/60">
-              <span>Precio Unitario en Bolívares:</span>
-              <span class="font-mono font-bold text-stone-900">
-                {{ (currentUnitPrice() * currentExchangeRate()) | veCurrency:'Bs.':2 }}
-              </span>
-            </div>
-
-            @let qty = newOrderForm.get('quantity')?.value || 1;
-            @let subVal = currentOrderSubtotal(qty);
-            @let totalCost = (selectedFinishedGood()?.baseCost || 0) * qty;
-            @let totalProfit = subVal - totalCost;
-            @let taxVal = currentTaxAmount(subVal);
-            @let totVal = subVal + taxVal;
-
-            <div class="flex items-center justify-between text-stone-600 text-[11px] pb-1.5 border-b border-stone-200/60">
-              <span>Ganancia Bruta Estimada del Pedido:</span>
-              <span class="font-mono font-bold text-emerald-800">
-                {{ totalProfit | veCurrency:'$':2 }} (≈ {{ (totalProfit * currentExchangeRate()) | veCurrency:'Bs.':2 }})
-              </span>
-            </div>
-
-            <div class="flex items-center justify-between text-stone-600 pt-0.5">
-              <span>Base imponible:</span>
-              <span class="font-mono">{{ subVal | veCurrency:'$':2 }}</span>
-            </div>
-            <div class="flex items-center justify-between text-stone-600">
-              <span>IVA ({{ currentTaxRate() }}%):</span>
-              <span class="font-mono">{{ taxVal | veCurrency:'$':2 }}</span>
-            </div>
-
-            <div class="flex items-center justify-between text-stone-600 pt-0.5">
-              <span class="font-bold text-stone-800">Total Pedido (IVA {{ currentTaxRate() }}%):</span>
-              <div class="text-right">
-                <span class="font-mono font-bold text-stone-900 block text-sm">
-                  {{ totVal | veCurrency:'$':2 }}
-                </span>
-                <span class="font-mono font-bold text-emerald-800 block text-xs">
-                  ≈ {{ (totVal * currentExchangeRate()) | veCurrency:'Bs.':2 }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Instrucciones o Condiciones de Despacho</label>
-            <input type="text" placeholder="ej: Despacho matutino antes de las 9am para panadería" formControlName="notes" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
-          </div>
-
-          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
-            <button type="button" (click)="closeNewOrderModal()" class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900">
-              Cancelar
-            </button>
-            <button type="submit" [disabled]="newOrderForm.invalid" class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50">
-              Registrar Pedido
-            </button>
           </div>
         </form>
       </div>
