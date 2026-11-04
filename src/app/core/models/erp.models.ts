@@ -239,7 +239,7 @@ export interface ProductionSheetCosts {
 }
 
 /** Detail captured by the manual production sheet (physical Lote 72 format). */
-export interface ProductionManualSheet {
+interface ProductionManualSheet {
   productionDate: string;
   marmitas: ProductionMarmitaSheetRow[]; // exactly six rows
   packaging: ProductionSheetPackaging;

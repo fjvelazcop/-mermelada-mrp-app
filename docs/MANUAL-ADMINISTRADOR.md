@@ -43,6 +43,12 @@ pm2 save                                      # persistir la lista actual
 pm2 status
 ```
 
+En PM2 nativo, configura `DB_PATH=./data/mermelada.db` en `.env.production`;
+`/app/data/mermelada.db` es una ruta interna de Docker y puede impedir que el
+backend arranque en el host. PM2 prioriza `.env.production` sobre `.env`, así
+que verifica que allí también estén los datos SMTP reales, no los valores de
+ejemplo, antes de esperar el correo del túnel.
+
 ### 2.2. Verificar salud
 
 ```bash
@@ -58,6 +64,7 @@ Respuesta esperada: `status: "ok"`, `database.connected: true`,
 ```bash
 pm2 logs mermelada-erp --lines 200
 pm2 logs mermelada-tunnel --lines 200
+pm2 logs mermelada-tunnel --lines 50 --nostream  # ver la URL publicada más reciente
 tail -n 100 logs/backup.log
 tail -n 100 logs/tunnel-out.log
 ```
@@ -87,11 +94,16 @@ existe. Plantillas: `.env.example` y `.env.production.example`.
 | Aplicación | `NODE_ENV`, `HOST`, `PORT`, `APP_URL`, `APP_VERSION`, `NG_ALLOWED_HOSTS` | `NG_ALLOWED_HOSTS` nunca debe ser `*`. |
 | Base de datos | `DB_PATH` | Por defecto `./data/mermelada.db`. |
 | Autenticación | `AUTH_ENABLED`, `AUTH_SECRET`, `AUTH_TOKEN_TTL_SECONDS`, `AUTH_SEED_PASSWORD` | `AUTH_SEED_PASSWORD` solo aplica al sembrado inicial de los 5 usuarios demo. |
-| UI | `UI_AUTH_ENABLED`, `UI_AUTH_USER`, `UI_AUTH_PASSWORD` | Basic Auth delante del shell Angular. Falla cerrado (503) si falta la clave. |
+| UI | `UI_AUTH_ENABLED`, `UI_AUTH_USER`, `UI_AUTH_PASSWORD` | Usa `false` para mostrar el login de la app sin el cuadro Basic Auth del navegador. |
 | Rate limiting | `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`, `RATE_LIMIT_LOGIN_WINDOW_MS`, `RATE_LIMIT_LOGIN_MAX` | En memoria; desactivado automáticamente con `NODE_ENV=test`. |
 | Túnel | `TUNNEL_ENABLED`, `TUNNEL_MODE`, `TUNNEL_TOKEN`, `TUNNEL_PUBLIC_URL`, `TUNNEL_INTERNAL_TOKEN`, `TUNNEL_CLOUDFLARED` | `quick` cambia de URL al reiniciar; `token` requiere dominio en Cloudflare. |
 | Correo | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_FROM_NAME`, `SMTP_BCC`, `SMTP_TO` | `SMTP_TO` solo siembra destinatarios la primera vez. |
 | Backups | `BACKUP_DIR`, `BACKUP_RETENTION_DAYS`, `BACKUP_REMOTE`, `BACKUP_REMOTE_RETENTION_DAYS`, `BACKUP_S3_*`, `BACKUP_GDRIVE_*` | Ver sección 5. |
+
+Configura `UI_AUTH_ENABLED=false` para que al abrir o reiniciar el sitio se
+muestre la página de login de la aplicación, sin el diálogo de usuario y
+contraseña del navegador. `AUTH_ENABLED=true` mantiene la autenticación y los
+permisos por rol de la API.
 
 Tras modificar `.env`, reinicie con `--update-env` (PM2 no recarga variables
 solo).
@@ -239,6 +251,17 @@ La copia remota solo purga ficheros `mermelada-*.db` con antigüedad mayor a
 
 ### 6.1. URL vigente
 
+Para consultar la URL del túnel en ejecución sin autenticarse en la API:
+
+```bash
+pm2 status
+pm2 logs mermelada-tunnel --lines 50 --nostream
+```
+
+Busque la línea `[tunnel] public URL detected: https://...` (modo `quick`)
+o `[tunnel] registered https://...` (modo `token`). También puede seguir los
+logs en vivo con `pm2 logs mermelada-tunnel`.
+
 ```bash
 curl -s http://127.0.0.1:4000/api/system/tunnel \
   -H "Authorization: Bearer <token-admin>" | jq
@@ -249,6 +272,15 @@ En modo `quick` la URL cambia en cada reinicio del proceso
 `mermelada-tunnel`. Para una URL fija, cree un túnel nombrado en Cloudflare
 Zero Trust y configure `TUNNEL_MODE=token`, `TUNNEL_TOKEN` y
 `TUNNEL_PUBLIC_URL`.
+
+Cada vez que el túnel se inicia o reinicia, registra la nueva URL y envía el
+correo a los destinatarios activos si SMTP está configurado. Reiniciar solo
+`mermelada-erp` no cambia la URL ni genera otro correo. Para obtener y notificar
+una URL nueva, reinicie el túnel:
+
+```bash
+pm2 restart mermelada-tunnel --update-env
+```
 
 ### 6.2. Reenviar el correo con las URLs
 

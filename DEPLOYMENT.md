@@ -264,11 +264,34 @@ arranca `cloudflared`, extrae la URL pública, la registra en
 `tunnel_sessions` y dispara el correo. Si cloudflared cae o el health check
 público falla 3 veces, PM2 lo reinicia.
 
-La URL vigente se consulta (admin) en `GET /api/system/tunnel` y en
-`logs/tunnel-out.log`; el histórico queda en la base de datos.
+En PM2 nativo, usa `DB_PATH=./data/mermelada.db`; `/app/data/mermelada.db` es
+solo para el contenedor Docker. PM2 prioriza `.env.production` sobre `.env`,
+por lo que el primero debe tener el SMTP real (no `smtp.example.com`) para que
+el aviso pueda enviarse.
+
+Consultar la URL que publicó el proceso activo:
+
+```bash
+pm2 status
+pm2 logs mermelada-tunnel --lines 50 --nostream
+```
+
+Cada inicio o reinicio de `mermelada-tunnel` registra la URL y envía un correo
+a los destinatarios activos si SMTP está configurado. Reiniciar solo
+`mermelada-erp` no cambia ni reenvía la URL. Para un reinicio manual del túnel:
+
+```bash
+pm2 restart mermelada-tunnel --update-env
+```
+
+La URL vigente también se consulta (admin) en `GET /api/system/tunnel`; el
+histórico queda en la base de datos.
 
 ### 5.2 Protección de la UI y correo
 
+- Para mostrar la página de login de la aplicación sin el cuadro de usuario y
+  contraseña del navegador, configura `UI_AUTH_ENABLED=false`. La API sigue
+  protegida por `AUTH_ENABLED=true` y RBAC.
 - `UI_AUTH_ENABLED=true` exige Basic Auth para el shell Angular y los assets.
   La API sigue usando Bearer + RBAC. Si se usa un túnel rápido y se quiere
   evitar el doble login, se puede dejar en `false`; el login de la aplicación
