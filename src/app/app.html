@@ -348,6 +348,7 @@
         </div>
 
         <!-- Tasa BCV Info Mobile -->
+        @if (api.canViewPrices()) {
         <div class="mb-4 p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs">
           <div class="flex items-center justify-between text-stone-500 mb-1">
             <span>Tasa Oficial BCV</span>
@@ -358,6 +359,7 @@
             <span class="text-stone-400 text-[11px]">/ 1 USD</span>
           </div>
         </div>
+        }
 
         <nav class="space-y-1">
           @if (api.canViewModule('dashboard')) {
@@ -718,51 +720,18 @@
 
   <!-- Sticky Bottom Navigation Bar for Mobile (Touch-optimized 44px+ hit targets) -->
   <nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-2 py-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] flex items-center justify-around print:hidden">
-    <button
-      (click)="setTab('dashboard')"
-      class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
-      [class.text-amber-700]="currentTab() === 'dashboard'"
-      [class.font-bold]="currentTab() === 'dashboard'"
-      [class.text-stone-500]="currentTab() !== 'dashboard'"
-    >
-      <mat-icon class="text-xl">dashboard</mat-icon>
-      <span>Tablero</span>
-    </button>
-
-    <button
-      (click)="setTab('costing')"
-      class="flex flex-col items-center justify-center py-1 px-3 rounded-lg text-[10px] font-medium transition-colors relative min-h-[44px]"
-      [class.text-amber-800]="currentTab() === 'costing'"
-      [class.font-bold]="currentTab() === 'costing'"
-      [class.bg-amber-50]="currentTab() === 'costing'"
-      [class.text-stone-600]="currentTab() !== 'costing'"
-    >
-      <span class="absolute -top-1 right-1 w-2 h-2 rounded-full bg-amber-500"></span>
-      <mat-icon class="text-xl">calculate</mat-icon>
-      <span>Costos</span>
-    </button>
-
-    <button
-      (click)="setTab('production')"
-      class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
-      [class.text-amber-700]="currentTab() === 'production'"
-      [class.font-bold]="currentTab() === 'production'"
-      [class.text-stone-500]="currentTab() !== 'production'"
-    >
-      <mat-icon class="text-xl">precision_manufacturing</mat-icon>
-      <span>BOM</span>
-    </button>
-
-    <button
-      (click)="setTab('inventory')"
-      class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
-      [class.text-amber-700]="currentTab() === 'inventory'"
-      [class.font-bold]="currentTab() === 'inventory'"
-      [class.text-stone-500]="currentTab() !== 'inventory'"
-    >
-      <mat-icon class="text-xl">inventory_2</mat-icon>
-      <span>Stock</span>
-    </button>
+    @for (item of mobileQuickTabs(); track item.tab) {
+      <button
+        (click)="setTab(item.tab)"
+        class="flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors min-h-[44px]"
+        [class.text-amber-700]="currentTab() === item.tab"
+        [class.font-bold]="currentTab() === item.tab"
+        [class.text-stone-500]="currentTab() !== item.tab"
+      >
+        <mat-icon class="text-xl">{{ item.icon }}</mat-icon>
+        <span>{{ item.label }}</span>
+      </button>
+    }
 
     <button
       (click)="toggleMobileMenu()"

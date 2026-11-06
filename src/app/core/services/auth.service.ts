@@ -92,8 +92,10 @@ export class AuthService {
             .get<AuthUser>('/api/auth/me')
             .pipe(timeout({first: 8000}))
         );
-        await this.erp.refreshSecurityData();
+        // Apply the profile first so the security refresh knows the real role
+        // and avoids requesting the admin-only user directory as a non-admin.
         this.applyUser(user);
+        await this.erp.refreshSecurityData();
         this.scheduleExpiry(stored);
         this.initializationError.set(null);
       } catch {
@@ -122,7 +124,8 @@ export class AuthService {
     }
     this.token.set(res.token);
     this.scheduleExpiry(res.token);
-    await this.erp.refreshSecurityData();
+    // Apply the profile before loading data so the security refresh knows the
+    // real role and skips the admin-only user directory when needed.
     this.applyUser(res.user);
     await this.erp.refreshAllData();
   }

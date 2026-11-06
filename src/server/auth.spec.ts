@@ -311,30 +311,78 @@ describe('role-based access control', () => {
     expect(edit.status).toBe(200);
   });
 
-  it('allows a supervisor to create inventory movements but not delete expenses', async () => {
+  it('restricts a supervisor to registering production, sales and suppliers', async () => {
     const { token } = await login('supervisor');
 
-    const materials = (await (
-      await fetch(`${baseUrl}/api/inventory/raw-materials`, {
-        headers: authed(token),
-      })
-    ).json()) as { id: string; name: string; unit: string }[];
+    const inventory = await fetch(`${baseUrl}/api/inventory/raw-materials`, {
+      headers: authed(token),
+    });
+    expect(inventory.status).toBe(403);
 
-    const movement = await fetch(`${baseUrl}/api/inventory/movements`, {
+    const production = await fetch(`${baseUrl}/api/production-orders`, {
+      headers: authed(token),
+    });
+    expect(production.status).toBe(200);
+
+    const suppliers = await fetch(`${baseUrl}/api/suppliers`, {
+      headers: authed(token),
+    });
+    expect(suppliers.status).toBe(200);
+
+    const createdSupplier = await fetch(`${baseUrl}/api/suppliers`, {
       method: 'POST',
       headers: { ...authed(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        materialId: materials[0].id,
-        materialName: materials[0].name,
-        type: 'entrada',
-        quantity: 2,
-        costPerUnit: 1.5,
-        totalCost: 3,
-        date: '2026-10-26',
-        performedBy: 'Supervisor',
+        businessName: 'Proveedor Temporal C.A.',
+        taxId: 'J-99999999-9',
+        primaryContact: 'Supervisor',
+        primaryPhone: '+58 412 0000000',
+        fiscalAddress: 'Zona Industrial, Caracas',
+        supplierType: 'fruta',
+        paymentTerms: 'Contado',
+        status: 'activo',
       }),
     });
-    expect(movement.status).toBe(201);
+    expect(createdSupplier.status).toBe(201);
+    const supplier = (await createdSupplier.json()) as { id: string };
+
+    const forbiddenEdit = await fetch(
+      `${baseUrl}/api/suppliers/${supplier.id}`,
+      {
+        method: 'PUT',
+        headers: { ...authed(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primaryContact: 'No permitido' }),
+      }
+    );
+    expect(forbiddenEdit.status).toBe(403);
+
+    // Registering is allowed: the request reaches validation (422) instead of
+    // being rejected by the permission layer (403).
+    for (const path of ['/api/sales/orders', '/api/production-orders']) {
+      const register = await fetch(`${baseUrl}${path}`, {
+        method: 'POST',
+        headers: { ...authed(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(register.status).toBe(422);
+    }
+
+    // Later sales actions are edit operations and must stay blocked.
+    const laterActions = [
+      { path: '/api/sales/orders/missing/status', method: 'PUT', body: { status: 'cobrado' } },
+      { path: '/api/sales/orders/missing/collect', method: 'POST', body: {} },
+      { path: '/api/sales/orders/missing/create-production-order', method: 'POST', body: {} },
+      { path: '/api/sales/orders/missing/create-delivery-note', method: 'POST', body: {} },
+      { path: '/api/production-orders/missing/process', method: 'POST', body: {} },
+    ];
+    for (const action of laterActions) {
+      const response = await fetch(`${baseUrl}${action.path}`, {
+        method: action.method,
+        headers: { ...authed(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify(action.body),
+      });
+      expect(response.status).toBe(403);
+    }
 
     const { token: adminToken } = await login('admin');
     const createdExpense = await fetch(`${baseUrl}/api/expenses`, {
@@ -406,11 +454,32 @@ describe('database-backed roles and permissions', () => {
 
     const supervisor = auth.getRolePermissions('supervisor_planta');
     expect(supervisor?.['inventory']).toEqual({
+      view: false,
+      create: false,
+      edit: false,
+      delete: false,
+      export: false,
+    });
+    expect(supervisor?.['production']).toEqual({
       view: true,
       create: true,
-      edit: true,
+      edit: false,
       delete: false,
-      export: true,
+      export: false,
+    });
+    expect(supervisor?.['sales']).toEqual({
+      view: true,
+      create: true,
+      edit: false,
+      delete: false,
+      export: false,
+    });
+    expect(supervisor?.['suppliers']).toEqual({
+      view: true,
+      create: true,
+      edit: false,
+      delete: false,
+      export: false,
     });
 
     const rows = getDb()

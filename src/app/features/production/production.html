@@ -74,13 +74,15 @@
         </button>
       }
 
-      <button
-        (click)="openCreateOrderModal()"
-        class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg shadow-xs hover:bg-stone-800 transition-colors"
-      >
-        <mat-icon class="text-stone-300 text-sm">precision_manufacturing</mat-icon>
-        Nueva Orden de Producción
-      </button>
+      @if (api.hasPermission('production', 'canCreate')) {
+        <button
+          (click)="openCreateOrderModal()"
+          class="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg shadow-xs hover:bg-stone-800 transition-colors"
+        >
+          <mat-icon class="text-stone-300 text-sm">precision_manufacturing</mat-icon>
+          Nueva Orden de Producción
+        </button>
+      }
     </div>
   </div>
 
@@ -533,13 +535,20 @@
 
               <div>
                 @if (order.status !== 'completada') {
-                  <button
-                    (click)="processOrder(order.id)"
-                    class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-emerald-700 text-white rounded-lg shadow-sm hover:bg-emerald-800 transition-colors"
-                  >
-                    <mat-icon class="text-sm">check_circle</mat-icon>
-                    Procesar y Descontar Insumos
-                  </button>
+                  @if (api.hasPermission('production', 'canEdit')) {
+                    <button
+                      (click)="processOrder(order.id)"
+                      class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold bg-emerald-700 text-white rounded-lg shadow-sm hover:bg-emerald-800 transition-colors"
+                    >
+                      <mat-icon class="text-sm">check_circle</mat-icon>
+                      Procesar y Descontar Insumos
+                    </button>
+                  } @else {
+                    <div class="text-xs text-stone-700 font-medium flex items-center gap-1 bg-stone-50 px-3 py-1.5 rounded-lg border border-stone-200">
+                      <mat-icon class="text-sm text-stone-500">lock</mat-icon>
+                      Registrada · pendiente de proceso
+                    </div>
+                  }
                 } @else {
                   <div class="text-xs text-emerald-800 font-medium flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
                     <mat-icon class="text-sm text-emerald-600">done_all</mat-icon>

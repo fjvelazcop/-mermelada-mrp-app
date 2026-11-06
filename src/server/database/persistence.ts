@@ -754,6 +754,44 @@ function migrate(db: SqliteDatabase): void {
   if (currentVersion < 5) {
     insert.run(5, new Date().toISOString());
   }
+  if (currentVersion < 6) {
+    // Restrict the built-in plant supervisor role to view + register only on
+    // production, sales and suppliers. Existing databases already have the old
+    // permissions persisted, so INSERT OR IGNORE in ensureSeedRoles() would not
+    // update them. Fresh databases are seeded with the new matrix afterwards,
+    // which makes this UPDATE a no-op for them.
+    const supervisorMatrix: Record<
+      string,
+      { view: boolean; create: boolean; edit: boolean; delete: boolean; export: boolean }
+    > = {
+      dashboard: { view: true, create: false, edit: false, delete: false, export: true },
+      inventory: { view: false, create: false, edit: false, delete: false, export: false },
+      production: { view: true, create: true, edit: false, delete: false, export: false },
+      costing: { view: false, create: false, edit: false, delete: false, export: false },
+      sales: { view: true, create: true, edit: false, delete: false, export: false },
+      payroll: { view: false, create: false, edit: false, delete: false, export: false },
+      expenses: { view: false, create: false, edit: false, delete: false, export: false },
+      suppliers: { view: true, create: true, edit: false, delete: false, export: false },
+      settings: { view: false, create: false, edit: false, delete: false, export: false },
+      architecture: { view: false, create: false, edit: false, delete: false, export: false },
+    };
+    const updateSupervisorPermission = db.prepare(`
+      UPDATE auth_role_permissions
+         SET can_view = ?, can_create = ?, can_edit = ?, can_delete = ?, can_export = ?
+       WHERE role_id = 'supervisor_planta' AND module_id = ?
+    `);
+    for (const [moduleId, permission] of Object.entries(supervisorMatrix)) {
+      updateSupervisorPermission.run(
+        permission.view ? 1 : 0,
+        permission.create ? 1 : 0,
+        permission.edit ? 1 : 0,
+        permission.delete ? 1 : 0,
+        permission.export ? 1 : 0,
+        moduleId
+      );
+    }
+    insert.run(6, new Date().toISOString());
+  }
 }
 
 /** Load the persisted state, or `null` if the database has no state yet. */

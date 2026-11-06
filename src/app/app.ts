@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, inject, signal, OnInit, effect} from '@angular/core';
+import {ChangeDetectionStrategy, Component, computed, inject, signal, OnInit, effect} from '@angular/core';
 import {NavigationEnd, Router} from '@angular/router';
 import {filter} from 'rxjs';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
@@ -59,6 +59,36 @@ export class App implements OnInit {
 
   public currentTab = signal<MainNavigationTab>('dashboard');
   public mobileMenuOpen = signal<boolean>(false);
+
+  private readonly quickTabConfig: Record<
+    MainNavigationTab,
+    { label: string; icon: string }
+  > = {
+    dashboard: { label: 'Tablero', icon: 'dashboard' },
+    inventory: { label: 'Stock', icon: 'inventory_2' },
+    production: { label: 'BOM', icon: 'precision_manufacturing' },
+    costing: { label: 'Costos', icon: 'calculate' },
+    sales: { label: 'Ventas', icon: 'point_of_sale' },
+    payroll: { label: 'Nómina', icon: 'badge' },
+    expenses: { label: 'Gastos', icon: 'receipt_long' },
+    suppliers: { label: 'Proveedores', icon: 'local_shipping' },
+    settings: { label: 'Config', icon: 'settings' },
+    architecture: { label: 'Docs', icon: 'architecture' },
+  };
+
+  /**
+   * Quick tabs for the mobile bottom bar. Only modules the active role can view
+   * are returned, capped at four so the bar stays readable.
+   */
+  public mobileQuickTabs = computed(() => {
+    const preferred: MainNavigationTab[] = this.api.isSupervisorPlanta()
+      ? ['dashboard', 'production', 'sales', 'suppliers']
+      : ['dashboard', 'costing', 'production', 'inventory', 'sales', 'suppliers'];
+    return preferred
+      .filter((tab) => this.api.canViewModule(tab))
+      .slice(0, 4)
+      .map((tab) => ({ tab, ...this.quickTabConfig[tab] }));
+  });
 
   // Change-password dialog state (real sessions only)
   public showPasswordModal = signal<boolean>(false);

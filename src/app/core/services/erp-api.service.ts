@@ -80,15 +80,15 @@ export class ErpApiService {
       color: 'amber',
       permissions: {
         dashboard: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
-        inventory: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
-        production: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
-        costing: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
-        sales: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
-        payroll: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        inventory: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        production: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+        costing: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        sales: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+        payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
-        suppliers: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
+        suppliers: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
-        architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        architecture: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
     },
     {
@@ -246,9 +246,16 @@ export class ErpApiService {
     return rId === 'operator' || rId === 'operador_produccion';
   });
 
+  /** Read-only dashboard profile for plant supervision. */
+  public isSupervisorPlanta = computed<boolean>(() => {
+    const role = this.currentRoleObject();
+    const rId = role?.id || this.currentRole();
+    return rId === 'supervisor_planta';
+  });
+
   // Controls whether financial prices, costs, and exchange rate tickers are visible
   public canViewPrices = computed<boolean>(() => {
-    return !this.isProductionOperator();
+    return !this.isProductionOperator() && !this.isSupervisorPlanta();
   });
 
   // Cross-component tab navigation request signal
@@ -392,9 +399,16 @@ export class ErpApiService {
    * the API is unreachable, so demo mode keeps working offline.
    */
   public async refreshSecurityData(): Promise<void> {
+    // `/api/auth/users` is admin-only. Requesting it with any other role would
+    // produce a 403 in the browser console, so only admins load the directory.
+    const usersRequest =
+      this.currentRole() === 'admin'
+        ? firstValueFrom(this.http.get<SystemUser[]>('/api/auth/users'))
+        : Promise.resolve<SystemUser[] | null>(null);
+
     const [rolesResult, usersResult] = await Promise.allSettled([
       firstValueFrom(this.http.get<SystemRole[]>('/api/auth/roles')),
-      firstValueFrom(this.http.get<SystemUser[]>('/api/auth/users')),
+      usersRequest,
     ]);
 
     if (

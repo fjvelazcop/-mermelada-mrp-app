@@ -4,7 +4,11 @@
     <div>
       <h1 class="text-2xl font-bold text-stone-900 tracking-tight">Directorio de Proveedores</h1>
       <p class="text-sm text-stone-500 mt-1">
-        Ficha fija de contacto, datos fiscales y catálogo histórico de precios por proveedor
+        @if (api.isSupervisorPlanta()) {
+          Registro de nuevos proveedores y consulta de sus datos de contacto
+        } @else {
+          Ficha fija de contacto, datos fiscales y catálogo histórico de precios por proveedor
+        }
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
@@ -33,11 +37,13 @@
       <div class="text-2xl font-bold text-emerald-700 mt-1">{{ activeCount() }}</div>
       <span class="text-[11px] text-stone-400">disponibles para compra</span>
     </div>
+    @if (!api.isSupervisorPlanta()) {
     <div class="bg-white border border-stone-200 rounded-xl p-4">
       <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Precios vigentes</span>
       <div class="text-2xl font-bold text-amber-800 mt-1">{{ currentPrices().length }}</div>
       <span class="text-[11px] text-stone-400">referencias activas</span>
     </div>
+    }
     <div class="bg-white border border-stone-200 rounded-xl p-4">
       <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Categorías</span>
       <div class="text-2xl font-bold text-stone-900 mt-1">{{ supplierTypes.length }}</div>
@@ -164,6 +170,7 @@
 
               <!-- Actions -->
               <div class="flex flex-wrap lg:flex-col items-stretch gap-2 lg:w-44 shrink-0">
+                @if (!api.isSupervisorPlanta()) {
                 <button
                   type="button"
                   (click)="togglePrices(supplier.id)"
@@ -172,6 +179,7 @@
                   <mat-icon class="text-base">receipt_long</mat-icon>
                   <span>Precios ({{ supplierPrices(supplier.id).length }})</span>
                 </button>
+                }
                 @if (canEdit()) {
                   <button
                     type="button"
@@ -205,7 +213,7 @@
           </div>
 
           <!-- Price history -->
-          @if (expandedSupplierId() === supplier.id) {
+          @if (expandedSupplierId() === supplier.id && !api.isSupervisorPlanta()) {
             <div class="border-t border-stone-200 bg-stone-50 px-5 py-4">
               <div class="flex items-center justify-between mb-3">
                 <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600">

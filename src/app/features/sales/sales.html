@@ -9,6 +9,7 @@
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <!-- Currency Switcher Toggle -->
+      @if (!api.isSupervisorPlanta()) {
       <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
         <button
           type="button"
@@ -33,6 +34,7 @@
           <span>Bolívares (Bs.)</span>
         </button>
       </div>
+      }
 
       <!-- Export Orders Buttons with Excel, CSV, PDF icons (Guarded by RBAC canExport) -->
       @if (api.hasPermission('sales', 'canExport')) {
@@ -119,10 +121,12 @@
                 <span class="text-base font-bold text-stone-900 font-mono">{{ order.orderNumber }}</span>
                 <span class="text-sm font-semibold text-stone-900">{{ order.customerName }}</span>
                 <span class="text-xs font-mono text-stone-400">RIF: {{ order.customerTaxId }}</span>
+                @if (!api.isSupervisorPlanta()) {
                 <span class="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded" title="Tasa cambiaria oficial del día en que se pactó el pedido">
                   <span>Tasa:</span>
                   <span>{{ (order.exchangeRateUsed || api.exchangeRates()?.currentUsd || 48.35) | veCurrency:'Bs.':2 }}</span>
                 </span>
+                }
                 <span class="text-xs font-semibold px-2.5 py-0.5 rounded"
                   [class.bg-emerald-100]="order.status === 'despachado' || order.status === 'cobrado'"
                   [class.text-emerald-800]="order.status === 'despachado' || order.status === 'cobrado'"
@@ -137,21 +141,24 @@
               <!-- Item Details -->
               <div class="mt-2 text-xs text-stone-600 flex flex-wrap gap-x-4 gap-y-1">
                 @for (item of order.items; track item.finishedGoodId) {
-                  @let orderRate = order.exchangeRateUsed || api.exchangeRates()?.currentUsd || 48.35;
                   <span class="inline-flex items-center flex-wrap gap-1.5">
-                    <strong>{{ item.quantity | veNumber:0 }} uds</strong> {{ item.flavor }} ({{ item.presentationLabel }}) a
-                    @if (currencyMode() === 'USD') {
-                      <strong class="font-mono text-stone-800">{{ item.unitPrice | veCurrency:'$':2 }}</strong>
-                    } @else {
-                      <strong class="font-mono text-stone-800">{{ (item.unitPriceBs || (item.unitPrice * orderRate)) | veCurrency:'Bs.':2 }}</strong>
-                    }
-                    @if (item.priceTier) {
-                      <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-stone-100 text-stone-700 border border-stone-200">
-                        {{ item.priceTier }}
-                        @if (item.profitMarginPercent) {
-                          <span class="ml-1 text-emerald-700 font-bold">+{{ item.profitMarginPercent }}% mrg</span>
-                        }
-                      </span>
+                    <strong>{{ item.quantity | veNumber:0 }} uds</strong> {{ item.flavor }} ({{ item.presentationLabel }})
+                    @if (!api.isSupervisorPlanta()) {
+                      @let orderRate = order.exchangeRateUsed || api.exchangeRates()?.currentUsd || 48.35;
+                      a
+                      @if (currencyMode() === 'USD') {
+                        <strong class="font-mono text-stone-800">{{ item.unitPrice | veCurrency:'$':2 }}</strong>
+                      } @else {
+                        <strong class="font-mono text-stone-800">{{ (item.unitPriceBs || (item.unitPrice * orderRate)) | veCurrency:'Bs.':2 }}</strong>
+                      }
+                      @if (item.priceTier) {
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-stone-100 text-stone-700 border border-stone-200">
+                          {{ item.priceTier }}
+                          @if (item.profitMarginPercent) {
+                            <span class="ml-1 text-emerald-700 font-bold">+{{ item.profitMarginPercent }}% mrg</span>
+                          }
+                        </span>
+                      }
                     }
                   </span>
                 }
@@ -163,7 +170,7 @@
                 </div>
               }
 
-              @if (order.collection) {
+              @if (order.collection && !api.isSupervisorPlanta()) {
                 <div class="mt-2 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <mat-icon class="text-xs text-emerald-600">account_balance</mat-icon>
                   <span class="font-semibold">{{ order.collection.bankCode }} - {{ order.collection.bankName }}</span>
@@ -175,6 +182,7 @@
             </div>
 
             <!-- Financials and Action Buttons -->
+            @if (!api.isSupervisorPlanta()) {
             @let oRate = order.exchangeRateUsed || api.exchangeRates()?.currentUsd || 48.35;
             <div class="flex flex-col sm:flex-row sm:items-center gap-4 border-t lg:border-t-0 pt-3 lg:pt-0 border-stone-100">
               <div class="text-right sm:pr-4">
@@ -236,12 +244,14 @@
                 }
               </div>
             </div>
+            }
           </div>
         </div>
       }
     </div>
   </div>
 
+  @if (!api.isSupervisorPlanta()) {
   <!-- SECCIÓN 2: HISTORIAL DE NOTAS DE ENTREGA EMITIDAS -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-3 border-b border-stone-100">
@@ -354,9 +364,12 @@
       </table>
     </div>
   </div>
+  }
 
   <!-- SECCIÓN 3: FACTURACIÓN FISCAL (FACTURAS EMITIDAS AUTOMÁTICAMENTE) -->
+  @if (!api.isSupervisorPlanta()) {
   <app-fiscal-invoices />
+  }
 
   <!-- SECCIÓN 4: CATÁLOGO DE CLIENTES B2B -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
@@ -392,7 +405,7 @@
   </div>
 
   <!-- MODAL: NOTA DE ENTREGA FORMAL (LISTA PARA IMPRIMIR) -->
-  @if (isDeliveryNoteModalOpen() && selectedDeliveryNote()) {
+  @if (isDeliveryNoteModalOpen() && selectedDeliveryNote() && !api.isSupervisorPlanta()) {
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
       <div class="bg-white rounded-2xl max-w-2xl w-full p-8 shadow-2xl border border-stone-300 my-8">
         <!-- Delivery Note Actions Top Bar (hidden on print) -->
@@ -620,7 +633,9 @@
 
             <!-- 2 · Producto y precio -->
             <section class="space-y-3">
-              <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">2 · Producto y Precio</h4>
+              <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">
+                @if (api.isSupervisorPlanta()) { 2 · Producto } @else { 2 · Producto y Precio }
+              </h4>
 
               <!-- Producto autocomplete -->
               <div class="relative">
@@ -628,8 +643,10 @@
                   <label class="block text-xs font-medium text-stone-700">Producto Terminado & Presentación</label>
                   @if (selectedFinishedGood(); as fg) {
                     <span class="text-[11px] font-mono text-stone-500">
-                      Costo Base: <strong class="text-stone-800 font-bold">{{ fg.baseCost | veCurrency:'$':2 }}</strong>
-                      <span class="mx-1">•</span>
+                      @if (!api.isSupervisorPlanta()) {
+                        Costo Base: <strong class="text-stone-800 font-bold">{{ fg.baseCost | veCurrency:'$':2 }}</strong>
+                        <span class="mx-1">•</span>
+                      }
                       <span [class.text-emerald-700]="fg.availableUnits > 0" [class.text-amber-700]="fg.availableUnits <= 0">
                         {{ fg.availableUnits }} uds disp.
                       </span>
@@ -673,7 +690,9 @@
                           <span class="text-stone-600 text-[11px]">{{ fg.presentationLabel }}</span>
                         </div>
                         <div class="text-right">
-                          <div class="font-mono text-[11px] text-stone-500">Costo: {{ fg.baseCost | veCurrency:'$':2 }}</div>
+                          @if (!api.isSupervisorPlanta()) {
+                            <div class="font-mono text-[11px] text-stone-500">Costo: {{ fg.baseCost | veCurrency:'$':2 }}</div>
+                          }
                           <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded" [class.bg-emerald-100]="fg.availableUnits > 0" [class.text-emerald-800]="fg.availableUnits > 0" [class.bg-amber-100]="fg.availableUnits <= 0" [class.text-amber-800]="fg.availableUnits <= 0">
                             {{ fg.availableUnits }} en stock
                           </span>
@@ -687,6 +706,7 @@
               </div>
 
               <!-- Selector de 3 niveles de precio -->
+              @if (!api.isSupervisorPlanta()) {
               <div class="bg-stone-50/90 border border-stone-200 rounded-xl p-3">
                 <div class="flex items-center justify-between mb-2">
                   <span class="text-xs font-semibold text-stone-700">Tipo de Precio</span>
@@ -718,9 +738,10 @@
                   }
                 </div>
               </div>
+              }
 
               <!-- Cantidad y precio editable -->
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid gap-3" [class.grid-cols-1]="api.isSupervisorPlanta()" [class.grid-cols-2]="!api.isSupervisorPlanta()">
                 <div>
                   <label class="block text-xs font-medium text-stone-700 mb-1">Cantidad de Frascos</label>
                   <input
@@ -730,6 +751,7 @@
                     class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono focus:outline-none focus:ring-1 focus:ring-stone-400"
                   />
                 </div>
+                @if (!api.isSupervisorPlanta()) {
                 <div>
                   <div class="flex items-center justify-between mb-1">
                     <label class="block text-xs font-medium text-stone-700">Precio Unitario ($)</label>
@@ -752,6 +774,7 @@
                     class="w-full bg-white border border-stone-300 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-stone-900"
                   />
                 </div>
+                }
               </div>
 
               <!-- Botón agregar al carrito -->
@@ -785,16 +808,22 @@
                             <span class="font-normal text-stone-500">· {{ item.presentationLabel }}</span>
                           </div>
                           <div class="text-[10px] font-mono text-stone-500">
-                            {{ item.quantity }} × {{ item.unitPrice | veCurrency:'$':2 }}
-                            <span class="text-stone-400">· {{ item.priceTier }}</span>
+                            @if (api.isSupervisorPlanta()) {
+                              {{ item.quantity }} uds
+                            } @else {
+                              {{ item.quantity }} × {{ item.unitPrice | veCurrency:'$':2 }}
+                              <span class="text-stone-400">· {{ item.priceTier }}</span>
+                            }
                           </div>
                         </div>
+                        @if (!api.isSupervisorPlanta()) {
                         <div class="text-right shrink-0">
                           <div class="text-xs font-mono font-bold text-stone-900">
                             {{ (item.quantity * item.unitPrice) | veCurrency:'$':2 }}
                           </div>
                           <div class="text-[10px] font-mono text-emerald-700">+{{ item.marginPercent }}%</div>
                         </div>
+                        }
                         <button
                           type="button"
                           (click)="removeDraftItem(item.uid)"
@@ -811,6 +840,7 @@
             </section>
 
             <!-- 3 · Impuestos y moneda -->
+            @if (!api.isSupervisorPlanta()) {
             <section class="space-y-3">
               <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">3 · Impuestos y Moneda</h4>
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -869,10 +899,12 @@
                 </div>
               </div>
             </section>
+            }
 
             <!-- 4 · Resumen y notas -->
             <section class="space-y-3">
               <h4 class="text-[11px] font-bold text-stone-400 uppercase tracking-wider">4 · Resumen del Pedido</h4>
+              @if (!api.isSupervisorPlanta()) {
               <div class="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-1.5">
                 <div class="flex items-center justify-between text-stone-600">
                   <span>Base Imponible ({{ draftOrderItems().length }} producto(s)):</span>
@@ -887,6 +919,7 @@
                   <span class="font-mono font-bold">{{ totalProfit | veCurrency:'$':2 }} (≈ {{ (totalProfit * currentExchangeRate()) | veCurrency:'Bs.':2 }})</span>
                 </div>
               </div>
+              }
               <div>
                 <label class="block text-xs font-medium text-stone-700 mb-1">Instrucciones o Condiciones de Despacho</label>
                 <input type="text" placeholder="ej: Despacho matutino antes de las 9am para panadería" formControlName="notes" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
@@ -895,12 +928,14 @@
           </div>
 
           <!-- Footer sticky: total + acciones -->
-          <div class="shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-stone-100 bg-stone-50/60">
+          <div class="shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-stone-100 bg-stone-50/60" [class.justify-end]="api.isSupervisorPlanta()">
+            @if (!api.isSupervisorPlanta()) {
             <div>
               <span class="text-[10px] uppercase font-semibold text-stone-400 tracking-wider block">Total con IVA</span>
               <span class="font-mono font-bold text-stone-900 text-lg leading-tight block">{{ totVal | veCurrency:'$':2 }}</span>
               <span class="font-mono text-[11px] text-emerald-800 block">≈ {{ (totVal * currentExchangeRate()) | veCurrency:'Bs.':2 }}</span>
             </div>
+            }
             <div class="flex items-center gap-2">
               <button type="button" (click)="closeNewOrderModal()" class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900">
                 Cancelar
@@ -987,7 +1022,7 @@
   }
 
   <!-- MODAL: REGISTRAR COBRO BANCARIO -->
-  @if (isCollectModalOpen() && collectingOrder()) {
+  @if (isCollectModalOpen() && collectingOrder() && !api.isSupervisorPlanta()) {
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
       <div class="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-6 shadow-xl border border-stone-200">
         <div class="flex items-start justify-between pb-4 border-b border-stone-100">

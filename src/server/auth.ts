@@ -84,6 +84,14 @@ const write: ModulePermissions = {
   delete: false,
   export: true,
 };
+/** View and register new records only, without editing or deleting them. */
+const createOnly: ModulePermissions = {
+  view: true,
+  create: true,
+  edit: false,
+  delete: false,
+  export: false,
+};
 const none: ModulePermissions = {
   view: false,
   create: false,
@@ -107,15 +115,15 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
   },
   supervisor_planta: {
     dashboard: readExport,
-    inventory: write,
-    production: write,
-    costing: read,
-    sales: read,
-    payroll: read,
+    inventory: none,
+    production: createOnly,
+    costing: none,
+    sales: createOnly,
+    payroll: none,
     expenses: none,
-    suppliers: readExport,
+    suppliers: createOnly,
     settings: none,
-    architecture: read,
+    architecture: none,
   },
   operator: {
     dashboard: read,
@@ -1323,7 +1331,13 @@ function resolveAction(req: Request): PermissionAction {
   if (req.method === 'DELETE') return 'delete';
   if (req.method === 'PUT' || req.method === 'PATCH') return 'edit';
   if (req.method === 'POST') {
-    if (/\/(process|refresh|update|status|collect|annul)$/.test(apiPath(req))) return 'edit';
+    if (
+      /\/(process|refresh|update|status|collect|annul|create-production-order|create-delivery-note)$/.test(
+        apiPath(req)
+      )
+    ) {
+      return 'edit';
+    }
     if (/\/print$/.test(apiPath(req))) return 'export';
     return 'create';
   }
