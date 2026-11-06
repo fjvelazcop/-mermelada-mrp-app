@@ -92,6 +92,14 @@ const createOnly: ModulePermissions = {
   delete: false,
   export: false,
 };
+/** Allows creating manual production sheets (LOTE 72 format) but not editing/ deleting existing ones. */
+const manualSheet: ModulePermissions = {
+  view: true,
+  create: true,
+  edit: false,
+  delete: false,
+  export: false,
+};
 const none: ModulePermissions = {
   view: false,
   create: false,

@@ -226,7 +226,7 @@
         <span class="text-[11px] font-mono font-semibold bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-full">
           {{ manualOrders().length }} orden(es) manual(es)
         </span>
-        @if (isAdmin()) {
+        @if (api.hasPermission('production', 'canCreate')) {
           <button
             type="button"
             (click)="openNewManualSheetOrder()"
@@ -235,14 +235,21 @@
             <mat-icon class="text-sm">grid_on</mat-icon>
             Planilla de marmitas
           </button>
-          <button
-            type="button"
-            (click)="openNewManualOrder()"
-            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-100"
-          >
-            <mat-icon class="text-sm">science</mat-icon>
-            Por fórmulas BOM
-          </button>
+          @if (api.hasPermission('production', 'canEdit')) {
+            <button
+              type="button"
+              (click)="openNewManualOrder()"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-stone-300 text-xs font-semibold text-stone-700 hover:bg-stone-100"
+            >
+              <mat-icon class="text-sm">science</mat-icon>
+              Por fórmulas BOM
+            </button>
+          } @else {
+            <div class="text-xs text-stone-700 font-medium flex items-center gap-1 bg-stone-50 px-3 py-1.5 rounded-lg border border-stone-200">
+              <mat-icon class="text-sm text-stone-500">lock</mat-icon>
+              Registrada · pendiente de proceso
+            </div>
+          }
         }
       </div>
     </div>

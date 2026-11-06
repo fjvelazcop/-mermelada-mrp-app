@@ -387,7 +387,7 @@ export class ProductionComponent {
   }
 
   public openNewManualSheetOrder() {
-    if (!this.isAdmin()) {
+    if (!this.isAdmin() && !this.api.isSupervisorPlanta()) {
       this.api.showToast(
         'Solo el Administrador puede crear planillas manuales.',
         'error'
@@ -510,8 +510,8 @@ export class ProductionComponent {
   }
 
   public openNewManualOrder() {
-    if (!this.isAdmin()) {
-      this.api.showToast('Solo el Administrador puede crear órdenes manuales.', 'error');
+    if (!this.api.hasPermission('production', 'canEdit')) {
+      this.api.showToast('No tiene permiso para crear órdenes manuales.', 'error');
       return;
     }
     this.editingManualOrderId.set(null);

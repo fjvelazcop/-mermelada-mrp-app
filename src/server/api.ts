@@ -584,7 +584,6 @@ export function createApiApp(): express.Express {
 
   app.post(
     '/api/production-orders/manual/sheet',
-    requireAdmin,
     validateBody(manualProductionSheetOrderSchema),
     mutation((req, res) => {
       const created = dbInstance.createManualSheetProductionOrder(
