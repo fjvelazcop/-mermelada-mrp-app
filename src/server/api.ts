@@ -33,6 +33,7 @@ import {
   logoutHandler,
   meHandler,
   requireAdmin,
+  requireRole,
   resetPasswordHandler,
   updateRoleHandler,
   updateRolePermissionsHandler,
@@ -584,6 +585,7 @@ export function createApiApp(): express.Express {
 
   app.post(
     '/api/production-orders/manual/sheet',
+    requireRole('admin', 'supervisor_planta'),
     validateBody(manualProductionSheetOrderSchema),
     mutation((req, res) => {
       const created = dbInstance.createManualSheetProductionOrder(

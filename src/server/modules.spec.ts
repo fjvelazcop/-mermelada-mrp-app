@@ -421,6 +421,32 @@ describe('manual production sheet (physical Lote 72 format)', () => {
     expect(response.status).toBe(403);
   });
 
+  it('lets the plant supervisor register a draft sheet without consuming stock', async () => {
+    const before = (await request('/api/inventory/raw-materials'))
+      .body as unknown as { id: string; currentStock: number }[];
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-SUPERVISOR',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) => sheetRow(n)),
+        packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+        // A supervisor cannot process: the server must ignore this flag.
+        processImmediately: true,
+      },
+      { 'X-Demo-Role': 'supervisor_planta' }
+    );
+
+    expect(response.status).toBe(201);
+    expect(body['status']).toBe('borrador');
+    expect(body['mode']).toBe('manual');
+
+    const after = (await request('/api/inventory/raw-materials'))
+      .body as unknown as { id: string; currentStock: number }[];
+    expect(after).toEqual(before);
+  });
+
   it('validates exactly six marmitas', async () => {
     const { response } = await request(
       '/api/production-orders/manual/sheet',

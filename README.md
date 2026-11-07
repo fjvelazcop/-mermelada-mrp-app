@@ -240,8 +240,12 @@ al sistema desde cualquier dispositivo en la red local usando la URL pública de
 # 1️⃣ Instalar dependencias
 npm install      # o bun install
 
-# 2️⃣ Levantar el front + backend local (Angular 21 + Express SSR + SQLite)
+# 2️⃣a) Solo desarrollo: Angular + SSR + API (sin túnel ni correo)
 npm run dev      # http://localhost:3000
+# npm start hace lo mismo con la configuración por defecto de Angular.
+
+# 2️⃣b) Sistema completo: build + PM2 (API/SSR en :4000 + túnel + correo)
+npm run start:all   # usa .env, compila y levanta mermelada-erp + mermelada-tunnel
 
 # 3️⃣ Ejecutar las suites de pruebas
 npm run test             # pruebas unitarias de Angular
@@ -250,12 +254,21 @@ npm run test:server      # pruebas de integración backend (SQLite + API)
 # 4️⃣ Compilar para producción
 npm run build            # build SSR → dist/app
 npm run start:prod       # sirve el build en http://localhost:4000
+```
+
+> **Correo con la URL del túnel:** `npm run start`/`npm run dev` **no** inician
+> `scripts/tunnel.mjs`, por lo que es normal que no llegue ningún correo. El
+> aviso solo se envía cuando PM2 levanta el proceso `mermelada-tunnel`, es
+> decir con `npm run start:all` (local, carga `.env`) o
+> `npm run start:pm2` (producción, carga `.env.production`). Requiere
+> `TUNNEL_ENABLED=true`, `cloudflared` instalado y SMTP configurado. La URL
+> vigente queda en `GET /api/system/tunnel` y en `logs/tunnel-out.log`.
 
 ### 🛑 Detener el proyecto completamente
 
-[PM2] Spawning PM2 daemon with pm2_home=/home/fjvel/.pm2
-[PM2] PM2 Successfully daemonized
-
+```bash
+pm2 delete mermelada-erp mermelada-tunnel 2>/dev/null || true
+pm2 save
 ```
 
 ### Rutas locales

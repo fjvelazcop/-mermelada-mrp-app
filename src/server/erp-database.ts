@@ -3131,7 +3131,12 @@ export class ErpDatabase {
 
     this.state.productionOrders.unshift(order);
 
-    if (input.processImmediately) {
+    // Stock consumption is reserved for administrators. Even if a supervisor
+    // sends processImmediately=true, the sheet stays in draft for review.
+    const shouldProcess =
+      input.processImmediately === true && actor.userRole !== 'supervisor_planta';
+
+    if (shouldProcess) {
       try {
         const processed = this.processManualProductionOrder(
           order.id,

@@ -120,6 +120,10 @@ export class ProductionComponent {
     this.productionOrders().filter((order) => order.mode !== 'manual')
   );
   public isAdmin = computed(() => this.api.currentRole() === 'admin');
+  /** Admin and plant supervisor may register LOTE 72 manual sheets. */
+  public canCreateManualSheet = computed(
+    () => this.isAdmin() || this.api.isSupervisorPlanta()
+  );
   public pendingSalesOrders = computed(() => {
     return this.api.salesOrders().filter(s => s.status === 'pendiente' || s.status === 'en_produccion');
   });
@@ -403,9 +407,9 @@ export class ProductionComponent {
   }
 
   public async submitManualSheetOrder() {
-    if (!this.isAdmin()) {
+    if (!this.canCreateManualSheet()) {
       this.api.showToast(
-        'Solo el Administrador puede guardar planillas manuales.',
+        'No tiene permiso para guardar planillas manuales.',
         'error'
       );
       return;
@@ -448,7 +452,9 @@ export class ProductionComponent {
         },
         commitmentReference: value.commitmentReference || undefined,
         operatorNotes: value.operatorNotes || undefined,
-        processImmediately: true,
+        // Only the administrator may consume stock. Supervisors register the
+        // sheet and leave it in draft for later processing.
+        processImmediately: this.isAdmin(),
       });
       this.closeManualSheetModal();
     } catch {

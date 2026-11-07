@@ -199,6 +199,12 @@ conexiones, espera las peticiones en curso, cierra SQLite y sale con código 0
 
 ## 5. Opción B — PM2
 
+> `npm start`/`npm run dev` ejecutan solo el servidor de desarrollo de Angular
+> (`ng serve`): **no arrancan PM2 ni `scripts/tunnel.mjs`**, por lo que no se
+> envía el correo con la URL del túnel. Para inicializar todo el sistema
+> (API/SSR + túnel + correo) usa `npm run start:all` en local o
+> `npm run start:pm2` en el servidor.
+
 ```bash
 npm ci
 npm run build
@@ -208,7 +214,8 @@ sudo npm i -g pm2
 # ecosystem.config.cjs carga .env.production (o .env si no existe) de forma
 # automática. Ajusta DB_PATH=/opt/mermelada/data/mermelada.db en ese fichero.
 # Usa ENV_FILE=.env.otro para elegir un fichero distinto; las variables ya
-# exportadas en la shell tienen prioridad.
+# exportadas en la shell tienen prioridad. Si en tu máquina existen .env y
+# .env.production y quieres usar el local: ENV_FILE=.env pm2 start ...
 mkdir -p logs data
 pm2 start ecosystem.config.cjs --update-env
 pm2 save

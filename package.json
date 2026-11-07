@@ -15,6 +15,7 @@
     "serve:ssr:app": "node dist/app/server/server.mjs",
     "start:prod": "node dist/app/server/server.mjs",
     "start:pm2": "pm2 start ecosystem.config.cjs --update-env",
+    "start:all": "npm run build && cross-env ENV_FILE=.env pm2 start ecosystem.config.cjs --update-env",
     "backup:db": "node scripts/backup-db.mjs",
     "backup:remote": "node --env-file-if-exists=.env --env-file-if-exists=.env.production scripts/backup-remote.mjs",
     "healthcheck": "node scripts/healthcheck.mjs",
