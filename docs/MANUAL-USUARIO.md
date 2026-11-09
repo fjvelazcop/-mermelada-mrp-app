@@ -119,11 +119,14 @@ puede registrarla desde *Producción → Órdenes Manuales de Producción*:
 1. Pulse **Planilla de marmitas** e indique lote, fecha de producción y
    referencia de compromiso.
 2. Complete las seis marmitas fijas con cestas/base, guayaba, azúcar, almidón,
-   químico (g), ácido (g), agua/gasoil, hora finalizada, cantidad obtenida,
-   kilos totales y marca de reproceso.
+   químico (g), ácido (g), agua/gasoil, hora finalizada, kilos totales y marca de
+   reproceso. **Cant. obtenida** se calcula automáticamente como
+   *kilos totales ÷ peso por envase*. Puede corregirla manualmente; si cambian
+   los kilos o la presentación, el sistema vuelve a calcularla.
 3. Registre la presentación (peso por envase), cuñetes y cajas. El sistema
-   calcula en tiempo real los totales, el costo de insumos y empaques, y el valor
-   de producción con las tarifas vigentes.
+   calcula en tiempo real los totales, el costo de insumos y empaques, el valor
+   de producción con las tarifas vigentes y compara las unidades estimadas por
+   kilos contra las asignadas a cuñetes y cajas, por producto.
 4. Guarde la planilla. La orden se procesa en la misma operación y descuenta
    guayaba, azúcar, almidón, químicos, ácidos, agua/gasoil, cuñetes y cajas; las
    unidades producidas quedan en inventario comprometido.

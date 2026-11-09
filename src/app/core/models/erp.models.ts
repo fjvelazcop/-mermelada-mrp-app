@@ -226,6 +226,8 @@ export interface ProductionSheetTotals {
   waterGasOil: number;
   obtainedUnits: number;
   totalKg: number;
+  /** Units represented by totalKg ÷ presentationKg (snapshot at save time). */
+  estimatedUnits?: number;
 }
 
 export interface ProductionSheetCosts {

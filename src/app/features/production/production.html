@@ -604,6 +604,7 @@
   <!-- MODAL: NUEVA PLANILLA MANUAL DE MARMITAS (FORMATO FÍSICO LOTE 72) -->
   @if (isManualSheetModalOpen()) {
     @let sc = sheetCosts();
+    @let pe = sheetPackagingEstimate();
     @let bsRate = api.exchangeRates()?.currentUsd || 48.35;
     <div class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-xs">
       <div class="bg-white rounded-2xl w-full max-w-6xl max-h-[94vh] overflow-y-auto p-4 sm:p-6 shadow-xl border border-stone-200">
@@ -711,7 +712,11 @@
                       </td>
                       <td class="px-1 py-1.5">
                         <input type="number" min="0" step="0.01" formControlName="obtainedUnits"
+                          title="Se calcula como Kilos totales ÷ peso por envase. Puede editarlo."
                           class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                        @if (isObtainedUnitsManual(i + 1)) {
+                          <span class="mt-0.5 block text-center text-[9px] font-semibold uppercase tracking-wide text-amber-700" title="Ajustado manualmente; se recalcula si cambian los kilos o la presentación">manual</span>
+                        }
                       </td>
                       <td class="px-1 py-1.5">
                         <input type="number" min="0" step="0.01" formControlName="totalKg"
@@ -742,6 +747,14 @@
             </div>
           </div>
 
+          <p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-stone-500">
+            <mat-icon class="text-sm text-amber-700">calculate</mat-icon>
+            <span>
+              <strong class="text-stone-700">Cant. obtenida</strong> se calcula automáticamente como
+              <strong>Kilos totales ÷ peso por envase</strong>. Puede editarla; al cambiar los kilos o la presentación se recalcula.
+            </span>
+          </p>
+
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/60">
               <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600 mb-3">Presentación y empaques</h4>
@@ -766,18 +779,38 @@
               </div>
 
               <div class="mt-3 pt-3 border-t border-stone-200 space-y-1.5 text-xs">
-                <div class="flex items-center justify-between">
-                  <span class="text-stone-600">Cuñetes ({{ sc.cunetes | number:'1.0-2' }} × ${{ sc.cuneteRate | number:'1.2-2' }})</span>
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-stone-600">
+                    Cuñetes · {{ sc.cunetes | number:'1.0-2' }} ud × ${{ sc.cuneteRate | number:'1.2-2' }}
+                    <span class="block text-[10px] text-stone-400">{{ pe.cunetesKg | number:'1.2-2' }} kg</span>
+                  </span>
                   <span class="font-mono font-semibold text-stone-900">${{ sc.cuneteValue | number:'1.2-2' }}</span>
                 </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-stone-600">Cajas ({{ sc.cajas | number:'1.0-2' }} × ${{ sc.cajaRate | number:'1.2-2' }})</span>
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-stone-600">
+                    Cajas · {{ sc.cajas | number:'1.0-2' }} ud × ${{ sc.cajaRate | number:'1.2-2' }}
+                    <span class="block text-[10px] text-stone-400">{{ pe.cajasKg | number:'1.2-2' }} kg</span>
+                  </span>
                   <span class="font-mono font-semibold text-stone-900">${{ sc.cajaValue | number:'1.2-2' }}</span>
                 </div>
-                <div class="flex items-center justify-between">
-                  <span class="text-stone-600">Unidades producidas por empaque</span>
-                  <span class="font-mono font-semibold text-stone-900">{{ sc.units | number:'1.0-2' }}</span>
+                <div class="flex items-center justify-between border-t border-stone-200 pt-1.5 mt-1">
+                  <span class="text-stone-600">Estimado por kilos ({{ sheetTotals().totalKg | number:'1.2-2' }} ÷ {{ pe.presentationKg | number:'1.2-2' }} kg)</span>
+                  <span class="font-mono font-semibold text-stone-900">{{ pe.estimatedUnits | number:'1.0-2' }} ud</span>
                 </div>
+                <div class="flex items-center justify-between">
+                  <span class="text-stone-600">Asignado a empaques</span>
+                  <span class="font-mono font-semibold text-stone-900">{{ pe.assignedUnits | number:'1.0-2' }} ud</span>
+                </div>
+                @if (pe.excessUnits > 0) {
+                  <p class="text-[10px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                    Hay {{ pe.excessUnits | number:'1.0-2' }} ud asignadas de más. Revise cuñetes/cajas o los kilos totales.
+                  </p>
+                }
+                @if (pe.missingUnits > 0) {
+                  <p class="text-[10px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                    Faltan {{ pe.missingUnits | number:'1.0-2' }} ud por asignar. Revise cuñetes/cajas o los kilos totales.
+                  </p>
+                }
               </div>
             </div>
 
@@ -971,6 +1004,12 @@
                       <span class="text-stone-600">Peso por envase</span>
                       <span class="font-mono font-semibold text-stone-900">{{ sheet.packaging.presentationKg | number:'1.2-2' }} kg</span>
                     </div>
+                    @if (sheet.totals.estimatedUnits !== undefined) {
+                      <div class="flex items-center justify-between">
+                        <span class="text-stone-600">Estimado por kilos</span>
+                        <span class="font-mono font-semibold text-stone-900">{{ sheet.totals.estimatedUnits | number:'1.0-2' }} ud</span>
+                      </div>
+                    }
                     <div class="flex items-center justify-between">
                       <span class="text-stone-600">Cuñetes ({{ sheet.packaging.cunetes | number:'1.0-2' }} × ${{ sheet.packaging.cuneteUnitRate | number:'1.2-2' }})</span>
                       <span class="font-mono font-semibold text-stone-900">${{ sheet.costs.cuneteValue | number:'1.2-2' }}</span>

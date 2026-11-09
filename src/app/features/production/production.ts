@@ -6,6 +6,10 @@ import {ErpApiService} from '../../core/services/erp-api.service';
 import {RecipeBOM, ProductionOrder} from '../../core/models/erp.models';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
+import {
+  calculateObtainedUnits,
+  calculatePackagingEstimate,
+} from './manual-sheet-calculations';
 
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
 
@@ -31,6 +35,9 @@ export class ProductionComponent {
   public isRecipeDetailModalOpen = signal<boolean>(false);
   public selectedRecipe = signal<RecipeBOM | null>(null);
   public selectedOrderForDetails = signal<ProductionOrder | null>(null);
+
+  /** Marmitas whose "Cant. obtenida" was edited by hand since the last base change. */
+  private manualUnitsOverrides = new Set<number>();
 
   public productionAuditCount = computed(() =>
     this.api.auditLogs().filter(l => l.module === 'produccion').length
@@ -109,6 +116,9 @@ export class ProductionComponent {
     this.manualSheetForm.valueChanges.subscribe(() => {
       this.sheetRevision.update((value) => value + 1);
     });
+    this.manualSheetForm.controls.packaging.controls.presentationKg.valueChanges.subscribe(
+      () => this.recalculateAllObtainedUnits()
+    );
   }
 
   public recipes = computed(() => this.api.recipes());
@@ -243,6 +253,19 @@ export class ProductionComponent {
     };
   });
 
+  /** Units represented by the captured kilos versus the units assigned to packaging. */
+  public sheetPackagingEstimate = computed(() => {
+    this.sheetRevision();
+    const totals = this.sheetTotals();
+    const packaging = this.manualSheetForm.controls.packaging.getRawValue();
+    return calculatePackagingEstimate(
+      totals.totalKg,
+      packaging.presentationKg,
+      packaging.cunetes,
+      packaging.cajas
+    );
+  });
+
   public canSubmitManualSheet(): boolean {
     const packaging = this.manualSheetForm.controls.packaging.getRawValue();
     return (
@@ -331,9 +354,43 @@ export class ProductionComponent {
 
   // --- MANUAL PRODUCTION SHEET (PHYSICAL LOTE 72 FORMAT) ---
 
+  private recalculateObtainedUnits(number: number, force = false): void {
+    const row = this.sheetMarmitas.controls.find(
+      (control) => control.controls.number.value === number
+    );
+    if (!row) return;
+    if (!force && this.manualUnitsOverrides.has(number)) return;
+
+    if (force && this.manualUnitsOverrides.delete(number)) {
+      this.sheetRevision.update((value) => value + 1);
+    }
+    const presentationKg = this.positive(
+      this.manualSheetForm.controls.packaging.controls.presentationKg.value
+    );
+    const units = calculateObtainedUnits(
+      row.controls.totalKg.value,
+      presentationKg
+    );
+    if (row.controls.obtainedUnits.value === units) return;
+
+    row.controls.obtainedUnits.setValue(units, {emitEvent: false});
+    this.sheetRevision.update((value) => value + 1);
+  }
+
+  private recalculateAllObtainedUnits(): void {
+    for (const row of this.sheetMarmitas.controls) {
+      this.recalculateObtainedUnits(row.controls.number.value, true);
+    }
+  }
+
+  /** True when the operator corrected "Cant. obtenida" after the last base change. */
+  public isObtainedUnitsManual(number: number): boolean {
+    return this.manualUnitsOverrides.has(number);
+  }
+
   private buildMarmitaGroup(number: number) {
     const nonNegative = [Validators.min(0)];
-    return new FormGroup({
+    const group = new FormGroup({
       number: new FormControl<number>(number, { nonNullable: true }),
       basketsBase: new FormControl<number>(0, {
         nonNullable: true,
@@ -374,9 +431,22 @@ export class ProductionComponent {
       }),
       reprocess: new FormControl<boolean>(false, { nonNullable: true }),
     });
+
+    group.controls.totalKg.valueChanges.subscribe(() => {
+      // Kilos totales is the base for the automatic calculation. Editing it
+      // discards a previous manual override so the screen stays consistent.
+      this.recalculateObtainedUnits(group.controls.number.value, true);
+    });
+    group.controls.obtainedUnits.valueChanges.subscribe(() => {
+      // This only fires for user edits: automatic writes use emitEvent: false.
+      this.manualUnitsOverrides.add(group.controls.number.value);
+    });
+
+    return group;
   }
 
   private resetManualSheetForm() {
+    this.manualUnitsOverrides.clear();
     this.sheetMarmitas.clear();
     for (let index = 1; index <= 6; index += 1) {
       this.sheetMarmitas.push(this.buildMarmitaGroup(index));

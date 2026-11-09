@@ -1790,6 +1790,11 @@ const schemas: Record<string, JsonObject> = {
               waterGasOil: number,
               obtainedUnits: number,
               totalKg: number,
+              estimatedUnits: {
+                type: 'number',
+                description:
+                  'Unidades estimadas: totalKg ÷ presentación al momento de guardar.',
+              },
             },
           },
           costs: {

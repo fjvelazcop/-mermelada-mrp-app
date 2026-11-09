@@ -2777,22 +2777,38 @@ export class ErpDatabase {
       throw new Error('La planilla manual debe contener exactamente seis marmitas');
     }
 
+    const presentationKg = this.round(input.packaging.presentationKg, 4);
+    if (!Number.isFinite(presentationKg) || presentationKg <= 0) {
+      throw new Error('La presentación debe ser mayor que cero');
+    }
+
     const marmitas = [...input.marmitas]
       .sort((a, b) => a.number - b.number)
-      .map((row): ProductionMarmitaSheetRow => ({
-        number: row.number,
-        basketsBase: this.round(row.basketsBase, 4),
-        guavaKg: this.round(row.guavaKg, 4),
-        sugarKg: this.round(row.sugarKg, 4),
-        starchKg: this.round(row.starchKg, 4),
-        chemicalG: this.round(row.chemicalG, 4),
-        acidG: this.round(row.acidG, 4),
-        waterGasOil: this.round(row.waterGasOil, 4),
-        finishedAt: row.finishedAt || '',
-        obtainedUnits: this.round(row.obtainedUnits, 4),
-        totalKg: this.round(row.totalKg, 4),
-        reprocess: Boolean(row.reprocess),
-      }));
+      .map((row): ProductionMarmitaSheetRow => {
+        const totalKg = this.round(row.totalKg, 4);
+        const suppliedUnits = this.round(row.obtainedUnits, 4);
+        // The UI derives units from kilos totales. If a client sends zero for a
+        // row with captured weight, reproduce the same formula so the persisted
+        // sheet stays coherent.
+        const obtainedUnits =
+          suppliedUnits > 0 || totalKg <= 0
+            ? suppliedUnits
+            : this.round(totalKg / presentationKg, 2);
+        return {
+          number: row.number,
+          basketsBase: this.round(row.basketsBase, 4),
+          guavaKg: this.round(row.guavaKg, 4),
+          sugarKg: this.round(row.sugarKg, 4),
+          starchKg: this.round(row.starchKg, 4),
+          chemicalG: this.round(row.chemicalG, 4),
+          acidG: this.round(row.acidG, 4),
+          waterGasOil: this.round(row.waterGasOil, 4),
+          finishedAt: row.finishedAt || '',
+          obtainedUnits,
+          totalKg,
+          reprocess: Boolean(row.reprocess),
+        };
+      });
 
     const negative = marmitas.find((row) =>
       [
@@ -2815,9 +2831,8 @@ export class ErpDatabase {
 
     const cunetes = this.round(input.packaging.cunetes, 4);
     const cajas = this.round(input.packaging.cajas, 4);
-    const presentationKg = this.round(input.packaging.presentationKg, 4);
-    if (cunetes < 0 || cajas < 0 || presentationKg <= 0) {
-      throw new Error('La presentación y las cantidades de empaque deben ser mayores o iguales a cero');
+    if (cunetes < 0 || cajas < 0) {
+      throw new Error('Las cantidades de empaque deben ser mayores o iguales a cero');
     }
     if (cunetes + cajas <= 0) {
       throw new Error('Registre al menos un cuñete o una caja como cantidad obtenida');
@@ -3086,7 +3101,13 @@ export class ErpDatabase {
           cunetePackagingUnitCost,
           cajaPackagingUnitCost,
         },
-        totals,
+        totals: {
+          ...totals,
+          estimatedUnits:
+            presentationKg > 0
+              ? this.round(totals.totalKg / presentationKg, 2)
+              : 0,
+        },
         costs,
       },
       productionDate: input.productionDate,

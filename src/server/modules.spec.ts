@@ -447,6 +447,81 @@ describe('manual production sheet (physical Lote 72 format)', () => {
     expect(after).toEqual(before);
   });
 
+  it('derives obtained units from kilos totales when the client omits them', async () => {
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-AUTO-CALC',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) =>
+          n === 1
+            ? sheetRow(n, { totalKg: 40, obtainedUnits: 0 })
+            : sheetRow(n, {
+                guavaKg: 0,
+                sugarKg: 0,
+                starchKg: 0,
+                chemicalG: 0,
+                acidG: 0,
+                waterGasOil: 0,
+                obtainedUnits: 0,
+                totalKg: 0,
+              })
+        ),
+        packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+        processImmediately: false,
+      },
+      { 'X-Demo-Role': 'supervisor_planta' }
+    );
+
+    expect(response.status).toBe(201);
+    const sheet = body['manualSheet'] as unknown as {
+      marmitas: { obtainedUnits: number; totalKg: number }[];
+      totals: { obtainedUnits: number; estimatedUnits: number };
+    };
+    expect(sheet.marmitas[0].totalKg).toBe(40);
+    expect(sheet.marmitas[0].obtainedUnits).toBe(2);
+    expect(sheet.totals.obtainedUnits).toBe(2);
+    expect(sheet.totals.estimatedUnits).toBe(2);
+  });
+
+  it('preserves an explicit obtained units override', async () => {
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-MANUAL-UNITS',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) =>
+          n === 1
+            ? sheetRow(n, { totalKg: 40, obtainedUnits: 1.25 })
+            : sheetRow(n, {
+                guavaKg: 0,
+                sugarKg: 0,
+                starchKg: 0,
+                chemicalG: 0,
+                acidG: 0,
+                waterGasOil: 0,
+                obtainedUnits: 0,
+                totalKg: 0,
+              })
+        ),
+        packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+        processImmediately: false,
+      },
+      { 'X-Demo-Role': 'supervisor_planta' }
+    );
+
+    expect(response.status).toBe(201);
+    const sheet = body['manualSheet'] as unknown as {
+      marmitas: { obtainedUnits: number }[];
+      totals: { obtainedUnits: number; estimatedUnits: number };
+    };
+    expect(sheet.marmitas[0].obtainedUnits).toBe(1.25);
+    expect(sheet.totals.obtainedUnits).toBe(1.25);
+    expect(sheet.totals.estimatedUnits).toBe(2);
+  });
+
   it('validates exactly six marmitas', async () => {
     const { response } = await request(
       '/api/production-orders/manual/sheet',
