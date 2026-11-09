@@ -12,6 +12,61 @@ export function roundSheetValue(value: number): number {
 }
 
 /**
+ * Default yield inferred from the master BOMs (finished kilos / ingredient
+ * kilos). It is configurable in the sheet and only used as a starting value.
+ */
+export const DEFAULT_SHEET_YIELD_PERCENT = 88.6;
+
+function nonNegative(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/** Ingredient mass that becomes product, in kilos. Water/gasoil is excluded. */
+export interface IngredientMassInput {
+  guavaKg: number;
+  sugarKg: number;
+  starchKg: number;
+  chemicalG: number;
+  acidG: number;
+}
+
+/**
+ * Ingredient mass in kilos: guava + sugar + starch + chemical g + acid g.
+ * "Agua/gasoil" is process consumption (utility), not product mass.
+ */
+export function calculateIngredientMassKg(input: IngredientMassInput): number {
+  return roundSheetValue(
+    nonNegative(input.guavaKg) +
+      nonNegative(input.sugarKg) +
+      nonNegative(input.starchKg) +
+      nonNegative(input.chemicalG) / 1000 +
+      nonNegative(input.acidG) / 1000
+  );
+}
+
+/** Clamp the configured yield to a usable percentage. */
+export function normalizeYieldPercent(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SHEET_YIELD_PERCENT;
+  }
+  return Math.min(100, parsed);
+}
+
+/**
+ * Kilos totales estimated from the captured ingredients and the configured
+ * yield. The result is editable by the operator.
+ */
+export function calculateTotalKgFromIngredients(
+  input: IngredientMassInput,
+  yieldPercent: number
+): number {
+  const massKg = calculateIngredientMassKg(input);
+  return roundSheetValue(massKg * (normalizeYieldPercent(yieldPercent) / 100));
+}
+
+/**
  * Units obtained from a marmita: kilos totales ÷ peso por envase.
  * Returns 0 when either input is missing or the presentation is invalid.
  */
@@ -30,6 +85,18 @@ export function calculateObtainedUnits(
     return 0;
   }
   return roundSheetValue(weight / presentation);
+}
+
+/** Units obtained directly from the ingredients, yield and presentation. */
+export function calculateObtainedUnitsFromIngredients(
+  input: IngredientMassInput,
+  yieldPercent: number,
+  presentationKg: number
+): number {
+  return calculateObtainedUnits(
+    calculateTotalKgFromIngredients(input, yieldPercent),
+    presentationKg
+  );
 }
 
 export interface PackagingEstimate {

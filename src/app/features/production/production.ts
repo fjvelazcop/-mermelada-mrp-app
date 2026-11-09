@@ -7,8 +7,10 @@ import {RecipeBOM, ProductionOrder} from '../../core/models/erp.models';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
 import {
+  DEFAULT_SHEET_YIELD_PERCENT,
   calculateObtainedUnits,
   calculatePackagingEstimate,
+  calculateTotalKgFromIngredients,
 } from './manual-sheet-calculations';
 
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
@@ -38,6 +40,8 @@ export class ProductionComponent {
 
   /** Marmitas whose "Cant. obtenida" was edited by hand since the last base change. */
   private manualUnitsOverrides = new Set<number>();
+  /** Marmitas whose "Kilos totales" was edited by hand since the last base change. */
+  private manualTotalKgOverrides = new Set<number>();
 
   public productionAuditCount = computed(() =>
     this.api.auditLogs().filter(l => l.module === 'produccion').length
@@ -109,6 +113,14 @@ export class ProductionComponent {
         nonNullable: true,
         validators: [Validators.min(0)],
       }),
+      rendimiento: new FormControl<number>(DEFAULT_SHEET_YIELD_PERCENT, {
+        nonNullable: true,
+        validators: [
+          Validators.required,
+          Validators.min(0.01),
+          Validators.max(100),
+        ],
+      }),
     }),
   });
 
@@ -118,6 +130,9 @@ export class ProductionComponent {
     });
     this.manualSheetForm.controls.packaging.controls.presentationKg.valueChanges.subscribe(
       () => this.recalculateAllObtainedUnits()
+    );
+    this.manualSheetForm.controls.packaging.controls.rendimiento.valueChanges.subscribe(
+      () => this.recalculateAllTotalKg()
     );
   }
 
@@ -354,6 +369,42 @@ export class ProductionComponent {
 
   // --- MANUAL PRODUCTION SHEET (PHYSICAL LOTE 72 FORMAT) ---
 
+  private recalculateTotalKg(number: number, force = false): void {
+    const row = this.sheetMarmitas.controls.find(
+      (control) => control.controls.number.value === number
+    );
+    if (!row) return;
+    if (!force && this.manualTotalKgOverrides.has(number)) return;
+
+    if (force && this.manualTotalKgOverrides.delete(number)) {
+      this.sheetRevision.update((value) => value + 1);
+    }
+    const packaging = this.manualSheetForm.controls.packaging.getRawValue();
+    const totalKg = calculateTotalKgFromIngredients(
+      {
+        guavaKg: row.controls.guavaKg.value,
+        sugarKg: row.controls.sugarKg.value,
+        starchKg: row.controls.starchKg.value,
+        chemicalG: row.controls.chemicalG.value,
+        acidG: row.controls.acidG.value,
+      },
+      packaging.rendimiento
+    );
+    if (row.controls.totalKg.value !== totalKg) {
+      row.controls.totalKg.setValue(totalKg, { emitEvent: false });
+      this.sheetRevision.update((value) => value + 1);
+    }
+    // Kilos totales is also the base for the units, so a new ingredient
+    // capture always recalculates them and discards a previous unit override.
+    this.recalculateObtainedUnits(number, true);
+  }
+
+  private recalculateAllTotalKg(): void {
+    for (const row of this.sheetMarmitas.controls) {
+      this.recalculateTotalKg(row.controls.number.value, true);
+    }
+  }
+
   private recalculateObtainedUnits(number: number, force = false): void {
     const row = this.sheetMarmitas.controls.find(
       (control) => control.controls.number.value === number
@@ -386,6 +437,11 @@ export class ProductionComponent {
   /** True when the operator corrected "Cant. obtenida" after the last base change. */
   public isObtainedUnitsManual(number: number): boolean {
     return this.manualUnitsOverrides.has(number);
+  }
+
+  /** True when the operator corrected "Kilos totales" after the last base change. */
+  public isTotalKgManual(number: number): boolean {
+    return this.manualTotalKgOverrides.has(number);
   }
 
   private buildMarmitaGroup(number: number) {
@@ -433,8 +489,9 @@ export class ProductionComponent {
     });
 
     group.controls.totalKg.valueChanges.subscribe(() => {
-      // Kilos totales is the base for the automatic calculation. Editing it
-      // discards a previous manual override so the screen stays consistent.
+      // This only fires for user edits: automatic estimate writes use
+      // emitEvent: false. A manual weight becomes the new base for the units.
+      this.manualTotalKgOverrides.add(group.controls.number.value);
       this.recalculateObtainedUnits(group.controls.number.value, true);
     });
     group.controls.obtainedUnits.valueChanges.subscribe(() => {
@@ -442,11 +499,27 @@ export class ProductionComponent {
       this.manualUnitsOverrides.add(group.controls.number.value);
     });
 
+    const ingredientKeys = [
+      'guavaKg',
+      'sugarKg',
+      'starchKg',
+      'chemicalG',
+      'acidG',
+    ] as const;
+    for (const key of ingredientKeys) {
+      group.controls[key].valueChanges.subscribe(() => {
+        // A change in the ingredients is a relevant base change: estimate the
+        // total kilos again and clear a previous manual adjustment.
+        this.recalculateTotalKg(group.controls.number.value, true);
+      });
+    }
+
     return group;
   }
 
   private resetManualSheetForm() {
     this.manualUnitsOverrides.clear();
+    this.manualTotalKgOverrides.clear();
     this.sheetMarmitas.clear();
     for (let index = 1; index <= 6; index += 1) {
       this.sheetMarmitas.push(this.buildMarmitaGroup(index));
@@ -456,7 +529,12 @@ export class ProductionComponent {
       productionDate: new Date().toISOString().slice(0, 10),
       commitmentReference: '',
       operatorNotes: '',
-      packaging: { presentationKg: 20, cunetes: 0, cajas: 0 },
+      packaging: {
+        presentationKg: 20,
+        cunetes: 0,
+        cajas: 0,
+        rendimiento: DEFAULT_SHEET_YIELD_PERCENT,
+      },
     });
   }
 
@@ -519,6 +597,7 @@ export class ProductionComponent {
           presentationKg: this.positive(value.packaging.presentationKg),
           cunetes: this.positive(value.packaging.cunetes),
           cajas: this.positive(value.packaging.cajas),
+          rendimiento: this.positive(value.packaging.rendimiento),
         },
         commitmentReference: value.commitmentReference || undefined,
         operatorNotes: value.operatorNotes || undefined,

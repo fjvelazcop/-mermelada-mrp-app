@@ -522,6 +522,126 @@ describe('manual production sheet (physical Lote 72 format)', () => {
     expect(sheet.totals.estimatedUnits).toBe(2);
   });
 
+  it('derives total kilos from ingredients and yield when the client omits them', async () => {
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-AUTO-TOTAL-KG',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) =>
+          n === 1
+            ? sheetRow(n, {
+                guavaKg: 60,
+                sugarKg: 52,
+                starchKg: 0,
+                chemicalG: 520,
+                acidG: 240,
+                obtainedUnits: 0,
+                totalKg: 0,
+              })
+            : sheetRow(n, {
+                guavaKg: 0,
+                sugarKg: 0,
+                starchKg: 0,
+                chemicalG: 0,
+                acidG: 0,
+                waterGasOil: 0,
+                obtainedUnits: 0,
+                totalKg: 0,
+              })
+        ),
+        packaging: {
+          presentationKg: 20,
+          cunetes: 1,
+          cajas: 0,
+          rendimiento: 88.6,
+        },
+        processImmediately: false,
+      },
+      { 'X-Demo-Role': 'supervisor_planta' }
+    );
+
+    expect(response.status).toBe(201);
+    const sheet = body['manualSheet'] as unknown as {
+      marmitas: { obtainedUnits: number; totalKg: number }[];
+      packaging: { rendimiento: number };
+      totals: { totalKg: number; estimatedUnits: number };
+    };
+    expect(sheet.marmitas[0].totalKg).toBe(99.91);
+    expect(sheet.marmitas[0].obtainedUnits).toBe(5);
+    expect(sheet.packaging.rendimiento).toBe(88.6);
+    expect(sheet.totals.totalKg).toBe(99.91);
+    expect(sheet.totals.estimatedUnits).toBe(5);
+  });
+
+  it('preserves an explicit total kilos override', async () => {
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-MANUAL-TOTAL-KG',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) =>
+          n === 1
+            ? sheetRow(n, {
+                guavaKg: 60,
+                sugarKg: 52,
+                starchKg: 0,
+                chemicalG: 520,
+                acidG: 240,
+                obtainedUnits: 0,
+                totalKg: 40,
+              })
+            : sheetRow(n, {
+                guavaKg: 0,
+                sugarKg: 0,
+                starchKg: 0,
+                chemicalG: 0,
+                acidG: 0,
+                waterGasOil: 0,
+                obtainedUnits: 0,
+                totalKg: 0,
+              })
+        ),
+        packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+        processImmediately: false,
+      },
+      { 'X-Demo-Role': 'supervisor_planta' }
+    );
+
+    expect(response.status).toBe(201);
+    const sheet = body['manualSheet'] as unknown as {
+      marmitas: { obtainedUnits: number; totalKg: number }[];
+      totals: { totalKg: number; estimatedUnits: number };
+    };
+    expect(sheet.marmitas[0].totalKg).toBe(40);
+    expect(sheet.marmitas[0].obtainedUnits).toBe(2);
+    expect(sheet.totals.totalKg).toBe(40);
+    expect(sheet.totals.estimatedUnits).toBe(2);
+  });
+
+  it('rejects a yield outside the valid range', async () => {
+    const { response } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-BAD-YIELD',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) => sheetRow(n)),
+        packaging: {
+          presentationKg: 20,
+          cunetes: 1,
+          cajas: 0,
+          rendimiento: 0,
+        },
+        processImmediately: false,
+      },
+      { 'X-Demo-Role': 'supervisor_planta' }
+    );
+    expect(response.status).toBe(422);
+  });
+
   it('validates exactly six marmitas', async () => {
     const { response } = await request(
       '/api/production-orders/manual/sheet',

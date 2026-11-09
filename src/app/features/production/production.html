@@ -720,7 +720,11 @@
                       </td>
                       <td class="px-1 py-1.5">
                         <input type="number" min="0" step="0.01" formControlName="totalKg"
+                          title="Se estima con los insumos × rendimiento. Puede editarlo."
                           class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                        @if (isTotalKgManual(i + 1)) {
+                          <span class="mt-0.5 block text-center text-[9px] font-semibold uppercase tracking-wide text-amber-700" title="Ajustado manualmente; se recalcula si cambian los insumos o el rendimiento">manual</span>
+                        }
                       </td>
                       <td class="px-1 py-1.5 text-center">
                         <input type="checkbox" formControlName="reprocess" class="accent-amber-600" />
@@ -750,15 +754,19 @@
           <p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-stone-500">
             <mat-icon class="text-sm text-amber-700">calculate</mat-icon>
             <span>
-              <strong class="text-stone-700">Cant. obtenida</strong> se calcula automáticamente como
-              <strong>Kilos totales ÷ peso por envase</strong>. Puede editarla; al cambiar los kilos o la presentación se recalcula.
+              <strong class="text-stone-700">Kilos totales</strong> se estima como
+              <strong>insumos (guayaba, azúcar, almidón, químico y ácido) × rendimiento</strong>;
+              el agua/gasoil es consumo de proceso y no suma masa.
+              <strong class="text-stone-700">Cant. obtenida</strong> se calcula como
+              <strong>Kilos totales ÷ peso por envase</strong>. Ambos valores se pueden editar;
+              al cambiar una base relevante se recalculan.
             </span>
           </p>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/60">
               <h4 class="text-xs font-bold uppercase tracking-wide text-stone-600 mb-3">Presentación y empaques</h4>
-              <div formGroupName="packaging" class="grid grid-cols-3 gap-3">
+              <div formGroupName="packaging" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div>
                   <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Peso por envase (kg)</label>
                   <input type="number" min="0.01" step="0.01" formControlName="presentationKg"
@@ -775,6 +783,12 @@
                   <input type="number" min="0" step="0.01" formControlName="cajas"
                     class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
                   <span class="text-[10px] text-stone-400">Tarifa ${{ sc.cajaRate | number:'1.2-2' }} / ud</span>
+                </div>
+                <div>
+                  <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Rendimiento (%)</label>
+                  <input type="number" min="0.01" max="100" step="0.1" formControlName="rendimiento"
+                    class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <span class="text-[10px] text-stone-400">Insumos → producto</span>
                 </div>
               </div>
 
@@ -1004,6 +1018,12 @@
                       <span class="text-stone-600">Peso por envase</span>
                       <span class="font-mono font-semibold text-stone-900">{{ sheet.packaging.presentationKg | number:'1.2-2' }} kg</span>
                     </div>
+                    @if (sheet.packaging.rendimiento !== undefined) {
+                      <div class="flex items-center justify-between">
+                        <span class="text-stone-600">Rendimiento</span>
+                        <span class="font-mono font-semibold text-stone-900">{{ sheet.packaging.rendimiento | number:'1.1-2' }} %</span>
+                      </div>
+                    }
                     @if (sheet.totals.estimatedUnits !== undefined) {
                       <div class="flex items-center justify-between">
                         <span class="text-stone-600">Estimado por kilos</span>

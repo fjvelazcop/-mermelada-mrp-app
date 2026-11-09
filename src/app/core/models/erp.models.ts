@@ -209,6 +209,8 @@ export interface ProductionSheetPackaging {
   presentationKg: number; // peso por cuñete / caja (ej. 20 kg)
   cunetes: number;
   cajas: number;
+  /** Rendimiento de insumos a producto terminado, en porcentaje (ej. 88.6). */
+  rendimiento?: number;
   /** Unit valuation rate in force when the order was saved (USD). */
   cuneteUnitRate: number;
   cajaUnitRate: number;

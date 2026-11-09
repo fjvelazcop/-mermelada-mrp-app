@@ -1,9 +1,85 @@
 import {
+  DEFAULT_SHEET_YIELD_PERCENT,
+  calculateIngredientMassKg,
   calculateObtainedUnits,
+  calculateObtainedUnitsFromIngredients,
   calculatePackagingEstimate,
+  calculateTotalKgFromIngredients,
 } from './manual-sheet-calculations';
 
 describe('manual sheet calculations', () => {
+  describe('calculateIngredientMassKg', () => {
+    it('adds kilos and converts chemical grams to kilos', () => {
+      expect(
+        calculateIngredientMassKg({
+          guavaKg: 60,
+          sugarKg: 52,
+          starchKg: 1,
+          chemicalG: 520,
+          acidG: 240,
+        })
+      ).toBe(113.76);
+    });
+
+    it('ignores missing or negative values', () => {
+      expect(
+        calculateIngredientMassKg({
+          guavaKg: -5,
+          sugarKg: 10,
+          starchKg: 0,
+          chemicalG: Number.NaN,
+          acidG: 0,
+        })
+      ).toBe(10);
+    });
+  });
+
+  describe('calculateTotalKgFromIngredients', () => {
+    it('applies the configured yield to the ingredient mass', () => {
+      expect(
+        calculateTotalKgFromIngredients(
+          {
+            guavaKg: 60,
+            sugarKg: 52,
+            starchKg: 0,
+            chemicalG: 520,
+            acidG: 240,
+          },
+          88.6
+        )
+      ).toBe(99.91);
+    });
+
+    it('uses the BOM default when the yield is missing', () => {
+      const input = {
+        guavaKg: 10,
+        sugarKg: 10,
+        starchKg: 0,
+        chemicalG: 0,
+        acidG: 0,
+      };
+      expect(calculateTotalKgFromIngredients(input, 0)).toBe(
+        Number((20 * (DEFAULT_SHEET_YIELD_PERCENT / 100)).toFixed(2))
+      );
+    });
+
+    it('derives units from ingredients, yield and presentation', () => {
+      expect(
+        calculateObtainedUnitsFromIngredients(
+          {
+            guavaKg: 60,
+            sugarKg: 52,
+            starchKg: 0,
+            chemicalG: 520,
+            acidG: 240,
+          },
+          88.6,
+          20
+        )
+      ).toBe(5);
+    });
+  });
+
   describe('calculateObtainedUnits', () => {
     it('derives units from kilos totales and presentation', () => {
       expect(calculateObtainedUnits(120, 20)).toBe(6);

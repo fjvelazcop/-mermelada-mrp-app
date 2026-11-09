@@ -238,6 +238,9 @@ export const manualProductionSheetOrderSchema = z.object({
     presentationKg: positive,
     cunetes: money,
     cajas: money,
+    // Optional for backward compatibility: older clients omit it and the
+    // server falls back to the BOM default.
+    rendimiento: z.coerce.number().finite().gt(0).max(100).optional(),
   }),
   commitmentReference: z.string().trim().max(200).optional(),
   operatorNotes: z.string().max(2000).optional(),

@@ -1301,7 +1301,12 @@ export class ErpApiService {
     lotNumber: string;
     productionDate: string;
     marmitas: ProductionMarmitaSheetRow[];
-    packaging: { presentationKg: number; cunetes: number; cajas: number };
+    packaging: {
+      presentationKg: number;
+      cunetes: number;
+      cajas: number;
+      rendimiento?: number;
+    };
     commitmentReference?: string;
     operatorNotes?: string;
     processImmediately?: boolean;

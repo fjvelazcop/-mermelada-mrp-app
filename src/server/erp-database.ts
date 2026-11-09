@@ -2767,7 +2767,12 @@ export class ErpDatabase {
       lotNumber: string;
       productionDate: string;
       marmitas: ProductionMarmitaSheetRow[];
-      packaging: { presentationKg: number; cunetes: number; cajas: number };
+      packaging: {
+        presentationKg: number;
+        cunetes: number;
+        cajas: number;
+        rendimiento?: number;
+      };
       commitmentReference?: string;
       operatorNotes?: string;
     },
@@ -2782,14 +2787,40 @@ export class ErpDatabase {
       throw new Error('La presentación debe ser mayor que cero');
     }
 
+    const yieldPercent = this.round(input.packaging.rendimiento ?? 88.6, 2);
+    if (
+      !Number.isFinite(yieldPercent) ||
+      yieldPercent <= 0 ||
+      yieldPercent > 100
+    ) {
+      throw new Error('El rendimiento debe ser mayor que cero y menor o igual a 100');
+    }
+    const yieldRate = yieldPercent / 100;
+
     const marmitas = [...input.marmitas]
       .sort((a, b) => a.number - b.number)
       .map((row): ProductionMarmitaSheetRow => {
-        const totalKg = this.round(row.totalKg, 4);
+        const guavaKg = this.round(row.guavaKg, 4);
+        const sugarKg = this.round(row.sugarKg, 4);
+        const starchKg = this.round(row.starchKg, 4);
+        const chemicalG = this.round(row.chemicalG, 4);
+        const acidG = this.round(row.acidG, 4);
+        const ingredientMassKg = this.round(
+          guavaKg + sugarKg + starchKg + chemicalG / 1000 + acidG / 1000,
+          4
+        );
+        const suppliedTotalKg = this.round(row.totalKg, 4);
+        // The UI estimates kilos totales from the ingredients and the yield.
+        // Preserve an explicit positive weight (a manual adjustment) and only
+        // derive it when the client sends zero, so older clients stay coherent.
+        const totalKg =
+          suppliedTotalKg > 0
+            ? suppliedTotalKg
+            : ingredientMassKg > 0
+              ? this.round(ingredientMassKg * yieldRate, 2)
+              : 0;
         const suppliedUnits = this.round(row.obtainedUnits, 4);
-        // The UI derives units from kilos totales. If a client sends zero for a
-        // row with captured weight, reproduce the same formula so the persisted
-        // sheet stays coherent.
+        // Same rule for units: derive from kilos totales when they are omitted.
         const obtainedUnits =
           suppliedUnits > 0 || totalKg <= 0
             ? suppliedUnits
@@ -2797,11 +2828,11 @@ export class ErpDatabase {
         return {
           number: row.number,
           basketsBase: this.round(row.basketsBase, 4),
-          guavaKg: this.round(row.guavaKg, 4),
-          sugarKg: this.round(row.sugarKg, 4),
-          starchKg: this.round(row.starchKg, 4),
-          chemicalG: this.round(row.chemicalG, 4),
-          acidG: this.round(row.acidG, 4),
+          guavaKg,
+          sugarKg,
+          starchKg,
+          chemicalG,
+          acidG,
           waterGasOil: this.round(row.waterGasOil, 4),
           finishedAt: row.finishedAt || '',
           obtainedUnits,
@@ -3096,6 +3127,7 @@ export class ErpDatabase {
           presentationKg,
           cunetes,
           cajas,
+          rendimiento: yieldPercent,
           cuneteUnitRate,
           cajaUnitRate,
           cunetePackagingUnitCost,
@@ -3140,7 +3172,12 @@ export class ErpDatabase {
       lotNumber: string;
       productionDate: string;
       marmitas: ProductionMarmitaSheetRow[];
-      packaging: { presentationKg: number; cunetes: number; cajas: number };
+      packaging: {
+        presentationKg: number;
+        cunetes: number;
+        cajas: number;
+        rendimiento?: number;
+      };
       commitmentReference?: string;
       operatorNotes?: string;
       processImmediately?: boolean;

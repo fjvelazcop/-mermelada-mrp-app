@@ -1696,8 +1696,16 @@ const schemas: Record<string, JsonObject> = {
       acidG: number,
       waterGasOil: number,
       finishedAt: { type: 'string', description: 'Hora HH:mm o cadena vacía.' },
-      obtainedUnits: number,
-      totalKg: number,
+      obtainedUnits: {
+        type: 'number',
+        description:
+          'Unidades obtenidas. Si se envía 0 y hay kilos totales, se derivan como totalKg ÷ presentación.',
+      },
+      totalKg: {
+        type: 'number',
+        description:
+          'Kilos totales. Si se envía 0 y hay insumos, se estiman como insumos × rendimiento.',
+      },
       reprocess: boolean,
     },
   },
@@ -1721,6 +1729,13 @@ const schemas: Record<string, JsonObject> = {
           presentationKg: { type: 'number', exclusiveMinimum: 0 },
           cunetes: number,
           cajas: number,
+          rendimiento: {
+            type: 'number',
+            exclusiveMinimum: 0,
+            maximum: 100,
+            description:
+              'Rendimiento de insumos a producto terminado, en porcentaje. Si se omite, el servidor usa 88.6 %.',
+          },
         },
       },
       commitmentReference: string,
@@ -1773,6 +1788,11 @@ const schemas: Record<string, JsonObject> = {
               presentationKg: number,
               cunetes: number,
               cajas: number,
+              rendimiento: {
+                type: 'number',
+                description:
+                  'Rendimiento usado al guardar la planilla, en porcentaje.',
+              },
               cuneteUnitRate: number,
               cajaUnitRate: number,
               cunetePackagingUnitCost: number,
