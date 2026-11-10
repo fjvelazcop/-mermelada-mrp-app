@@ -637,21 +637,18 @@
   <!-- Global Toast Feedback Message -->
   @if (api.toastMessage()) {
     <div
-      class="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold transition-all transform animate-in fade-in slide-in-from-bottom-3 duration-200"
+      class="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold text-white transition-all transform animate-in fade-in slide-in-from-bottom-3 duration-200"
       [class.bg-stone-900]="api.toastMessage()?.type === 'success'"
-      [class.text-white]="api.toastMessage()?.type === 'success'"
       [class.border-stone-800]="api.toastMessage()?.type === 'success'"
       [class.bg-rose-900]="api.toastMessage()?.type === 'error'"
-      [class.text-white]="api.toastMessage()?.type === 'error'"
       [class.border-rose-800]="api.toastMessage()?.type === 'error'"
       [class.bg-amber-900]="api.toastMessage()?.type === 'info'"
-      [class.text-white]="api.toastMessage()?.type === 'info'"
       [class.border-amber-800]="api.toastMessage()?.type === 'info'"
     >
-      <mat-icon class="text-sm">
+      <mat-icon class="text-sm text-white">
         {{ api.toastMessage()?.type === 'success' ? 'check_circle' : (api.toastMessage()?.type === 'error' ? 'error' : 'info') }}
       </mat-icon>
-      <span>{{ api.toastMessage()?.text }}</span>
+      <span class="text-white">{{ api.toastMessage()?.text }}</span>
     </div>
   }
 
