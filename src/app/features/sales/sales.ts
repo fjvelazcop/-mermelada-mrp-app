@@ -98,11 +98,44 @@ export class SalesComponent {
     taxCategory: new FormControl<SalesTaxCategory>('gravado', {nonNullable: true}),
     taxRatePercent: new FormControl<number>(16, {nonNullable: true, validators: [Validators.min(0), Validators.max(100)]}),
     saleCondition: new FormControl<FiscalSaleCondition>('contado', {nonNullable: true}),
+    creditDays: new FormControl<number>(0, {nonNullable: true, validators: [Validators.min(0), Validators.max(365)]}),
     paymentMethod: new FormControl<FiscalPaymentMethod>('transferencia_bancaria', {nonNullable: true}),
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     deliveryDate: new FormControl<string>(new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10), {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
   });
+
+  /** Plazos de crédito ofrecidos por la empresa, en días. */
+  public creditDayOptions = [7, 15, 30, 45, 60, 90, 120, 180];
+
+  constructor() {
+    this.newOrderForm.controls.taxCategory.valueChanges.subscribe((category) => {
+      // Exento y no sujeto no causan IVA: la alícuota debe quedar en 0. Al
+      // volver a gravado se restaura la alícuota vigente (16 % por ahora).
+      this.newOrderForm.controls.taxRatePercent.setValue(
+        this.taxRateForCategory(category),
+        {emitEvent: false}
+      );
+    });
+  }
+
+  private taxRateForCategory(category: SalesTaxCategory): number {
+    return category === 'gravado'
+      ? Number(this.fiscalSettings()?.taxRatePercent ?? 16)
+      : 0;
+  }
+
+  /** Deriva el plazo de crédito desde las condiciones del cliente. */
+  private creditDaysForCustomer(paymentTerms?: string): number {
+    if (!paymentTerms) return 30;
+    const normalized = paymentTerms.toLowerCase();
+    const match = normalized.match(/(\d+)\s*d[ií]as?/);
+    if (match) {
+      const days = Number(match[1]);
+      if (Number.isFinite(days) && days > 0) return days;
+    }
+    return 30;
+  }
 
   /** Cobro bancario de un pedido (banco receptor obligatorio). */
   public collectForm = new FormGroup({
@@ -261,6 +294,10 @@ export class SalesComponent {
     const initialCustomer = custs[0];
     const initialSaleCondition: FiscalSaleCondition =
       initialCustomer?.paymentTerms.toLowerCase().includes('contado') ? 'contado' : 'credito';
+    const initialCreditDays =
+      initialSaleCondition === 'credito'
+        ? this.creditDaysForCustomer(initialCustomer?.paymentTerms)
+        : 0;
     this.newOrderForm.patchValue({
       customerId: custs[0]?.id || '',
       finishedGoodId: initialFg?.id || '',
@@ -270,6 +307,7 @@ export class SalesComponent {
       taxCategory: 'gravado',
       taxRatePercent: this.fiscalSettings()?.taxRatePercent ?? 16,
       saleCondition: initialSaleCondition,
+      creditDays: initialCreditDays,
       paymentMethod: initialSaleCondition === 'credito' ? 'credito' : 'transferencia_bancaria',
       notes: '',
     });
@@ -282,6 +320,10 @@ export class SalesComponent {
       customer?.paymentTerms.toLowerCase().includes('contado') ? 'contado' : 'credito';
     this.newOrderForm.patchValue({
       saleCondition,
+      creditDays:
+        saleCondition === 'credito'
+          ? this.creditDaysForCustomer(customer?.paymentTerms)
+          : 0,
       paymentMethod: saleCondition === 'credito' ? 'credito' : 'transferencia_bancaria',
     });
   }
@@ -289,13 +331,21 @@ export class SalesComponent {
   public onSaleConditionChange(): void {
     const saleCondition = this.newOrderForm.controls.saleCondition.value;
     const currentMethod = this.newOrderForm.controls.paymentMethod.value;
-    this.newOrderForm.controls.paymentMethod.setValue(
-      saleCondition === 'credito'
-        ? 'credito'
-        : currentMethod === 'credito'
-          ? 'transferencia_bancaria'
-          : currentMethod
+    const customer = this.customers().find(
+      (entry) => entry.id === this.newOrderForm.controls.customerId.value
     );
+    this.newOrderForm.patchValue({
+      creditDays:
+        saleCondition === 'credito'
+          ? this.creditDaysForCustomer(customer?.paymentTerms)
+          : 0,
+      paymentMethod:
+        saleCondition === 'credito'
+          ? 'credito'
+          : currentMethod === 'credito'
+            ? 'transferencia_bancaria'
+            : currentMethod,
+    });
   }
 
   public selectProduct(fg: FinishedGood) {
@@ -486,6 +536,7 @@ export class SalesComponent {
       customerTaxId: cust.taxId,
       customerNit: cust.nit,
       saleCondition: v.saleCondition,
+      creditDays: v.saleCondition === 'credito' ? Number(v.creditDays) || 30 : 0,
       paymentMethod: v.paymentMethod,
       orderDate: new Date().toISOString().slice(0, 10),
       deliveryDate: v.deliveryDate,

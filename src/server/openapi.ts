@@ -2038,6 +2038,26 @@ const schemas: Record<string, JsonObject> = {
         type: 'string',
         enum: ['pendiente', 'en_produccion', 'listo_despacho', 'despachado', 'cobrado'],
       },
+      saleCondition: { type: 'string', enum: ['contado', 'credito'] },
+      creditDays: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 365,
+        description:
+          'Plazo de crédito en días. Se guarda con el pedido y aplica solo cuando saleCondition es credito.',
+      },
+      paymentMethod: {
+        type: 'string',
+        enum: [
+          'transferencia_bancaria',
+          'pago_movil',
+          'efectivo_usd',
+          'efectivo_bs',
+          'zelle',
+          'tarjeta',
+          'credito',
+        ],
+      },
       exchangeRateUsed: number,
       items: {
         type: 'array',
@@ -2106,6 +2126,25 @@ const schemas: Record<string, JsonObject> = {
       customerId: string,
       customerName: string,
       customerTaxId: string,
+      saleCondition: { type: 'string', enum: ['contado', 'credito'] },
+      creditDays: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 365,
+        description: 'Plazo de crédito pactado, en días (0 para contado).',
+      },
+      paymentMethod: {
+        type: 'string',
+        enum: [
+          'transferencia_bancaria',
+          'pago_movil',
+          'efectivo_usd',
+          'efectivo_bs',
+          'zelle',
+          'tarjeta',
+          'credito',
+        ],
+      },
       orderDate: date,
       deliveryDate: date,
       status: string,

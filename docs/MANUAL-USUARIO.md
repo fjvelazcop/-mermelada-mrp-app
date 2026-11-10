@@ -166,9 +166,14 @@ Buenas prácticas:
 
 1. Seleccione el cliente y confirme que su razón social y RIF estén correctos.
 2. Agregue productos y revise la categoría y alícuota de IVA de cada línea.
+   Si el tratamiento es **Exento** o **No sujeto**, la alícuota queda en 0; al
+   volver a **Gravado** se restaura la alícuota vigente (16 % actualmente).
 3. Indique condición de venta (contado/crédito), forma de pago y la tasa BCV
-   vigente. Los importes se expresan en USD y el sistema calcula su equivalente
-   en Bs.; no introduzca conversiones manuales en los campos calculados.
+   vigente. Para ventas a crédito seleccione el **plazo en días** (7, 15, 30,
+   45, 60, 90, 120 o 180); el plazo se guarda con el pedido para consultas y
+   cobros posteriores. Los importes se expresan en USD y el sistema calcula su
+   equivalente en Bs.; no introduzca conversiones manuales en los campos
+   calculados.
 4. Guarde el pedido. Si la facturación fiscal está habilitada, se emite la
    factura en ese momento; el pedido reserva inventario y registra quién lo
    creó.

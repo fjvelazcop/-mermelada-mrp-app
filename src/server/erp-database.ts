@@ -3524,6 +3524,15 @@ export class ErpDatabase {
     ) {
       throw new Error('La condición de venta no coincide con la forma de pago.');
     }
+    // El plazo solo aplica a crédito. Si un cliente antiguo no lo envía se
+    // conserva un valor por defecto utilizable (30 días).
+    const requestedCreditDays = Number(data.creditDays);
+    const creditDays =
+      saleCondition === 'credito'
+        ? Number.isFinite(requestedCreditDays) && requestedCreditDays > 0
+          ? Math.round(requestedCreditDays)
+          : 30
+        : 0;
 
     const fiscalTaxRate = this.state.fiscalSettings?.taxRatePercent ?? 0;
     const items = data.items.map((item) => {
@@ -3565,6 +3574,7 @@ export class ErpDatabase {
       customerNit: data.customerNit || customer.nit,
       saleCondition,
       paymentMethod,
+      creditDays,
       exchangeRateUsed: rate,
       items,
       subtotal,

@@ -244,6 +244,7 @@ export function loadRelationalState(): DatabaseState | null {
       customerNit: o(r['customer_nit']),
       saleCondition: o(r['sale_condition']),
       paymentMethod: o(r['payment_method']),
+      creditDays: o(r['credit_days']),
       orderDate: r['order_date'],
       deliveryDate: r['delivery_date'],
       status: r['status'],
@@ -930,12 +931,12 @@ export function saveRelationalState(state: DatabaseState): void {
     const insertSalesOrder = db.prepare(`
       INSERT INTO sales_orders (
         id, order_number, customer_id, customer_name, customer_tax_id,
-        customer_nit, sale_condition, payment_method, order_date, delivery_date,
+        customer_nit, sale_condition, payment_method, credit_days, order_date, delivery_date,
         status, exchange_rate_used, subtotal,
         tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
         has_delivery_note, delivery_note_number, production_order_id, notes,
         created_by, collection_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertSalesItem = db.prepare(`
       INSERT INTO sales_order_items (
@@ -955,6 +956,7 @@ export function saveRelationalState(state: DatabaseState): void {
         v(order.customerNit),
         v(order.saleCondition),
         v(order.paymentMethod),
+        v(order.creditDays),
         order.orderDate,
         order.deliveryDate,
         order.status,

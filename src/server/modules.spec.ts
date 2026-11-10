@@ -915,6 +915,99 @@ describe('sales collection with bank receiver', () => {
   });
 });
 
+describe('credit sale payment terms', () => {
+  async function buildOrderPayload(overrides: Record<string, unknown> = {}) {
+    const customers = (await request('/api/sales/customers'))
+      .body as unknown as {
+      id: string;
+      businessName: string;
+      taxId: string;
+    }[];
+    const goods = (await request('/api/inventory/finished-goods'))
+      .body as unknown as {
+      id: string;
+      flavor: string;
+      presentation: string;
+      presentationLabel: string;
+    }[];
+    const customer = customers[0];
+    const good = goods[0];
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      customerId: customer.id,
+      customerName: customer.businessName,
+      customerTaxId: customer.taxId,
+      orderDate: today,
+      deliveryDate: today,
+      status: 'pendiente',
+      items: [
+        {
+          finishedGoodId: good.id,
+          flavor: good.flavor,
+          presentation: good.presentation,
+          presentationLabel: good.presentationLabel,
+          quantity: 1,
+          unitPrice: 10,
+          subtotal: 10,
+          taxCategory: 'exento',
+          taxRatePercent: 0,
+        },
+      ],
+      subtotal: 10,
+      taxAmount: 0,
+      total: 10,
+      ...overrides,
+    };
+  }
+
+  it('stores the selected credit days for credit orders', async () => {
+    const { response, body } = await request(
+      '/api/sales/orders',
+      'POST',
+      await buildOrderPayload({
+        saleCondition: 'credito',
+        paymentMethod: 'credito',
+        creditDays: 45,
+      })
+    );
+    expect(response.status).toBe(201);
+    expect(body['creditDays']).toBe(45);
+
+    const orders = (await request('/api/sales/orders'))
+      .body as unknown as { id: string; creditDays?: number }[];
+    expect(orders.find((order) => order.id === body['id'])?.creditDays).toBe(
+      45
+    );
+  });
+
+  it('defaults to 30 days when a credit order omits the term', async () => {
+    const { response, body } = await request(
+      '/api/sales/orders',
+      'POST',
+      await buildOrderPayload({
+        saleCondition: 'credito',
+        paymentMethod: 'credito',
+      })
+    );
+    expect(response.status).toBe(201);
+    expect(body['creditDays']).toBe(30);
+  });
+
+  it('clears the credit term for cash orders', async () => {
+    const { response, body } = await request(
+      '/api/sales/orders',
+      'POST',
+      await buildOrderPayload({
+        saleCondition: 'contado',
+        paymentMethod: 'efectivo_bs',
+        creditDays: 45,
+      })
+    );
+    expect(response.status).toBe(201);
+    expect(body['creditDays']).toBe(0);
+  });
+});
+
 describe('expense issuing bank validation', () => {
   const baseExpense = {
     date: '2026-10-20',

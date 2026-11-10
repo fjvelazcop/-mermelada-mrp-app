@@ -394,6 +394,8 @@ export interface SalesOrder {
   customerNit?: string;
   saleCondition?: FiscalSaleCondition;
   paymentMethod?: FiscalPaymentMethod;
+  /** Días de plazo cuando la condición de venta es a crédito (0 = contado). */
+  creditDays?: number;
   orderDate: string;
   deliveryDate: string;
   status: SalesOrderStatus;

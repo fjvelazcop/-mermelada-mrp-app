@@ -136,6 +136,11 @@
                   [class.text-amber-800]="order.status === 'en_produccion' || order.status === 'pendiente'">
                   {{ order.status === 'cobrado' ? 'Cobrado' : (order.status === 'despachado' ? 'Despachado' : (order.status === 'listo_despacho' ? 'Listo en Bodega' : (order.status === 'en_produccion' ? 'En Marmita (MTO)' : 'Pendiente Stock'))) }}
                 </span>
+                @if (order.saleCondition === 'credito') {
+                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200" title="Plazo de crédito pactado">
+                    Crédito {{ order.creditDays || 30 }} días
+                  </span>
+                }
               </div>
 
               <!-- Item Details -->
@@ -608,6 +613,24 @@
                     <option value="credito">Crédito</option>
                   </select>
                 </div>
+                @if (newOrderForm.controls.saleCondition.value === 'credito') {
+                  <div>
+                    <label class="block text-xs font-medium text-stone-700 mb-1">Plazo del Crédito (días)</label>
+                    <select
+                      formControlName="creditDays"
+                      class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
+                    >
+                      @if (!creditDayOptions.includes(newOrderForm.controls.creditDays.value)) {
+                        <option [value]="newOrderForm.controls.creditDays.value">
+                          {{ newOrderForm.controls.creditDays.value }} días
+                        </option>
+                      }
+                      @for (days of creditDayOptions; track days) {
+                        <option [value]="days">{{ days }} días</option>
+                      }
+                    </select>
+                  </div>
+                }
                 <div>
                   <label class="block text-xs font-medium text-stone-700 mb-1">Forma de Pago</label>
                   <select
@@ -863,6 +886,9 @@
                     [disabled]="newOrderForm.controls.taxCategory.value !== 'gravado'"
                     class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono disabled:opacity-50"
                   />
+                  <span class="text-[10px] text-stone-400">
+                    Exento o no sujeto: alícuota en 0. Gravado: {{ fiscalSettings()?.taxRatePercent || 16 }} %.
+                  </span>
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-amber-900 mb-1">Tasa del Día (Bs./USD)</label>

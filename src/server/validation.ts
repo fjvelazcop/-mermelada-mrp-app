@@ -334,6 +334,7 @@ export const salesOrderSchema = z.object({
   customerTaxId: z.string().trim().min(1).max(60),
   customerNit: z.string().trim().max(60).optional(),
   saleCondition: z.enum(['contado', 'credito']).optional(),
+  creditDays: z.coerce.number().int().min(0).max(365).optional(),
   paymentMethod: z.enum([
     'transferencia_bancaria',
     'pago_movil',

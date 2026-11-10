@@ -232,6 +232,7 @@ function migrate(db: SqliteDatabase): void {
       customer_nit TEXT,
       sale_condition TEXT,
       payment_method TEXT,
+      credit_days INTEGER,
       order_date TEXT NOT NULL,
       delivery_date TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -704,6 +705,7 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'sales_orders', 'customer_nit', 'TEXT');
   ensureColumn(db, 'sales_orders', 'sale_condition', 'TEXT');
   ensureColumn(db, 'sales_orders', 'payment_method', 'TEXT');
+  ensureColumn(db, 'sales_orders', 'credit_days', 'INTEGER');
   ensureColumn(db, 'sales_order_items', 'tax_category', 'TEXT');
   ensureColumn(db, 'sales_order_items', 'tax_rate_percent', 'REAL');
   ensureColumn(db, 'sales_order_items', 'tax_amount', 'REAL');
