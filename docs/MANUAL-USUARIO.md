@@ -133,8 +133,10 @@ puede registrarla desde *Producción → Órdenes Manuales de Producción*:
 4. Guarde la planilla. La orden se procesa en la misma operación y descuenta
    guayaba, azúcar, almidón, químicos, ácidos, agua/gasoil, cuñetes y cajas; las
    unidades producidas quedan en inventario comprometido.
-5. Use **Ver detalle** para consultar por lote las seis marmitas, los totales,
-   los costos y la regla de valoración aplicada.
+5. Use el icono de ojo junto al número de orden o **Ver detalle** para consultar
+   por lote las seis marmitas, los totales, los costos y la regla de valoración
+   aplicada. En las órdenes automáticas, el mismo icono abre el detalle de
+   ejecución con fórmulas, materiales consumidos y costos del lote.
 
 Un mismo lote no puede registrarse dos veces mientras la orden no esté anulada,
 lo que evita descuentos duplicados. Si falta stock o falla el guardado, no se

@@ -36,6 +36,7 @@ export class ProductionComponent {
   public editingManualOrderId = signal<string | null>(null);
   public isRecipeDetailModalOpen = signal<boolean>(false);
   public selectedRecipe = signal<RecipeBOM | null>(null);
+  public isOrderDetailsModalOpen = signal<boolean>(false);
   public selectedOrderForDetails = signal<ProductionOrder | null>(null);
 
   /** Marmitas whose "Cant. obtenida" was edited by hand since the last base change. */
@@ -622,6 +623,21 @@ export class ProductionComponent {
   public closeManualSheetDetails() {
     this.isManualSheetDetailModalOpen.set(false);
     this.selectedManualSheetOrder.set(null);
+  }
+
+  /** Abre la planilla manual cuando existe; si no, el detalle de ejecución de la orden. */
+  public openProductionOrderDetails(order: ProductionOrder) {
+    if (order.manualSheet) {
+      this.openManualSheetDetails(order);
+      return;
+    }
+    this.selectedOrderForDetails.set(order);
+    this.isOrderDetailsModalOpen.set(true);
+  }
+
+  public closeProductionOrderDetails() {
+    this.isOrderDetailsModalOpen.set(false);
+    this.selectedOrderForDetails.set(null);
   }
 
   // --- MANUAL PRODUCTION ORDERS (ADMIN ONLY) ---
