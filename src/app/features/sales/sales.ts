@@ -50,6 +50,8 @@ export class SalesComponent {
   public isCollectModalOpen = signal<boolean>(false);
   public collectingOrder = signal<SalesOrder | null>(null);
   public collectingBankQuery = signal<string>('');
+  public isOrderDetailModalOpen = signal<boolean>(false);
+  public selectedOrderDetail = signal<SalesOrder | null>(null);
   public banks = VENEZUELAN_BANKS;
   public bankLabel = bankLabel;
 
@@ -568,6 +570,23 @@ export class SalesComponent {
 
   public currentOrderSubtotal(quantity: number): number {
     return Number((this.currentUnitPrice() * quantity).toFixed(2));
+  }
+
+  // --- ORDER DETAIL (READ ONLY) ---
+
+  public openOrderDetail(order: SalesOrder) {
+    this.selectedOrderDetail.set(order);
+    this.isOrderDetailModalOpen.set(true);
+  }
+
+  public closeOrderDetail() {
+    this.isOrderDetailModalOpen.set(false);
+    this.selectedOrderDetail.set(null);
+  }
+
+  /** Total de unidades del pedido, para el resumen de detalle. */
+  public orderUnitsTotal(order: SalesOrder): number {
+    return order.items.reduce((total, item) => total + item.quantity, 0);
   }
 
   // --- SALES COLLECTION (BANK RECEIVER MANDATORY) ---
