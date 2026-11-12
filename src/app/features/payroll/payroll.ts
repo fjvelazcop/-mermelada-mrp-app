@@ -253,7 +253,7 @@ export class PayrollComponent {
       formatVeNumber(w.fixedAbsorptionCost * mult, 2),
     ]);
 
-    exportToPdf(
+    void exportToPdf(
       'Control de Nómina Semanal y Análisis de Semanas Inactivas',
       `Moneda: ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'} | Tasa de referencia: Bs. ${formatVeNumber(rate, 2)}`,
       headers,

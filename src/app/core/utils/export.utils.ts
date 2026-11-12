@@ -4,8 +4,6 @@
  * and downloadable PDF files via jsPDF and jspdf-autotable.
  */
 
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import {
   DeliveryNote,
   CostStructureAnalysis,
@@ -16,6 +14,29 @@ import {
   WorkerPayrollItem,
 } from '../models/erp.models';
 import { formatVeNumber } from '../pipes/ve-currency.pipe';
+
+/**
+ * jsPDF and its autoTable plugin are heavy (~1 MB with their optional
+ * dependencies such as canvg) and are only needed when the user actually
+ * exports a PDF. Loading them through a dynamic import keeps them out of the
+ * initial bundle; the promise is cached so the chunk is fetched only once.
+ */
+interface PdfLibs {
+  jsPDF: typeof import('jspdf').jsPDF;
+  autoTable: typeof import('jspdf-autotable').default;
+}
+
+let pdfLibsPromise: Promise<PdfLibs> | null = null;
+
+function loadPdfLibs(): Promise<PdfLibs> {
+  pdfLibsPromise ??= Promise.all([import('jspdf'), import('jspdf-autotable')]).then(
+    ([jspdfModule, autoTableModule]) => ({
+      jsPDF: jspdfModule.jsPDF,
+      autoTable: autoTableModule.default,
+    })
+  );
+  return pdfLibsPromise;
+}
 
 export function downloadFile(content: string, filename: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });
@@ -153,7 +174,7 @@ export function exportToExcel(
 /**
  * Generates and downloads a standardized tabular PDF report using jsPDF & autoTable.
  */
-export function exportToPdf(
+export async function exportToPdf(
   titleOrOptions:
     | string
     | {
@@ -183,6 +204,8 @@ export function exportToPdf(
           rows: rows || [],
           totals: totals,
         };
+
+  const { jsPDF, autoTable } = await loadPdfLibs();
 
   const doc = new jsPDF({
     orientation: 'landscape',
@@ -332,12 +355,14 @@ export function exportToPdf(
  * detailed items list, batch numbers, dual currency calculations (USD/Bs.),
  * and legal signature/acceptance blocks.
  */
-export function downloadDeliveryNotePdf(
+export async function downloadDeliveryNotePdf(
   note: DeliveryNote,
   fiscal?: FiscalSettings | null,
   currentExchangeRate?: number,
   currencyMode: 'USD' | 'Bs' = 'USD'
 ) {
+  const { jsPDF, autoTable } = await loadPdfLibs();
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',
@@ -653,7 +678,7 @@ export function downloadDeliveryNotePdf(
  * in official PDF format. Includes unit costs, direct materials, packaging,
  * labor, CIF allocations, inactivity absorption, and suggested wholesale/retail prices.
  */
-export function downloadCostingSummaryPdf(
+export async function downloadCostingSummaryPdf(
   costData: CostStructureAnalysis,
   exchangeRate: number,
   simulationResult?: {
@@ -666,6 +691,8 @@ export function downloadCostingSummaryPdf(
   } | null,
   currencyMode: 'USD' | 'Bs' = 'USD'
 ) {
+  const { jsPDF, autoTable } = await loadPdfLibs();
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',
@@ -1035,7 +1062,9 @@ export interface DetailedCostReportExportData {
  * Generates an executive, highly formatted Cost Estimation Report & Client Quotation PDF
  * based on the Excel calculation sheet (Image 2) and MTO production batches.
  */
-export function downloadDetailedCostEstimationPdf(data: DetailedCostReportExportData) {
+export async function downloadDetailedCostEstimationPdf(data: DetailedCostReportExportData) {
+  const { jsPDF, autoTable } = await loadPdfLibs();
+
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'pt',

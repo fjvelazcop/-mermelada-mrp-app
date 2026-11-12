@@ -965,7 +965,7 @@ export class ProductionComponent {
       ];
     });
 
-    exportToPdf(
+    void exportToPdf(
       'Reporte de Órdenes de Producción y Cocción de Mermeladas (MTO)',
       `Moneda de reporte: ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'} | Tasa de referencia: Bs. ${formatVeNumber(rate, 2)}`,
       headers,

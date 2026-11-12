@@ -255,7 +255,7 @@ export class InventoryComponent {
       ];
     });
 
-    exportToPdf({
+    void exportToPdf({
       title: 'Reporte Oficial de Inventario y Materia Prima',
       subtitle: `Valoración consolidada en ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'}`,
       exchangeRateUsed: rate,
@@ -385,7 +385,7 @@ export class InventoryComponent {
       ];
     });
 
-    exportToPdf({
+    void exportToPdf({
       title: 'Reporte de Compras y Movimientos de Inventario',
       subtitle: `Registro histórico de compras y consumos expresado en ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'}`,
       exchangeRateUsed: rate,

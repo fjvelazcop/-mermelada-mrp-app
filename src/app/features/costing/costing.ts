@@ -632,11 +632,11 @@ export class CostingComponent {
   }
 
   public exportCostingPdf() {
-    this.exportDetailedCostEstimationPdf();
+    void this.exportDetailedCostEstimationPdf();
   }
 
-  public exportDetailedCostEstimationPdf() {
-    downloadDetailedCostEstimationPdf({
+  public async exportDetailedCostEstimationPdf() {
+    await downloadDetailedCostEstimationPdf({
       productionKilosBase: this.productionKilosBase(),
       workDays: this.workDaysPerMonth(),
       customMarginPercent: this.customMarginPercent(),

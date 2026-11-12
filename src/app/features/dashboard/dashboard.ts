@@ -25,7 +25,7 @@ import {
   ProductionStockAlert,
   RecipeFeasibilityResult,
 } from '../../core/models/erp.models';
-import {DashboardRechartsManager} from './dashboard-charts.renderer';
+import type {DashboardRechartsManager} from './dashboard-charts.renderer';
 
 @Component({
   selector: 'app-dashboard',
@@ -203,7 +203,12 @@ export class DashboardComponent implements OnDestroy {
   public turnoverLineContainer = viewChild<ElementRef<HTMLDivElement>>('turnoverLineContainer');
   public turnoverBarContainer = viewChild<ElementRef<HTMLDivElement>>('turnoverBarContainer');
 
-  private rechartsManager = new DashboardRechartsManager();
+  // Recharts + React are heavy and only needed by the dashboard charts, so the
+  // renderer is loaded on demand and kept out of the initial application chunk.
+  private rechartsManager: DashboardRechartsManager | null = null;
+  private rechartsManagerPromise: Promise<DashboardRechartsManager> | null = null;
+  private rechartsRenderSeq = 0;
+  private destroyed = false;
 
   public currencyMode = signal<'USD' | 'Bs'>('USD');
   public metrics = computed(() => this.api.dashboardData());
@@ -317,7 +322,18 @@ export class DashboardComponent implements OnDestroy {
   }
 
   public ngOnDestroy() {
-    this.rechartsManager.destroy();
+    this.destroyed = true;
+    this.rechartsManager?.destroy();
+  }
+
+  private getRechartsManager(): Promise<DashboardRechartsManager> {
+    this.rechartsManagerPromise ??= import('./dashboard-charts.renderer').then(
+      ({DashboardRechartsManager}) => {
+        this.rechartsManager = new DashboardRechartsManager();
+        return this.rechartsManager;
+      }
+    );
+    return this.rechartsManagerPromise;
   }
 
   public renderAllRecharts() {
@@ -334,18 +350,24 @@ export class DashboardComponent implements OnDestroy {
     const tLineEl = this.turnoverLineContainer()?.nativeElement;
     const tBarEl = this.turnoverBarContainer()?.nativeElement;
 
-    if (sBarEl && weekly.length > 0) {
-      this.rechartsManager.renderWeeklySalesBar(sBarEl, weekly, mode, rate);
-    }
-    if (sLineEl && weekly.length > 0) {
-      this.rechartsManager.renderWeeklySalesLine(sLineEl, weekly);
-    }
-    if (tLineEl && turnover.length > 0) {
-      this.rechartsManager.renderInventoryTurnoverLine(tLineEl, turnover);
-    }
-    if (tBarEl && turnoverCats.length > 0) {
-      this.rechartsManager.renderInventoryTurnoverBar(tBarEl, turnoverCats);
-    }
+    const seq = ++this.rechartsRenderSeq;
+    void this.getRechartsManager().then(manager => {
+      // Ignore results from an older render or after the view was destroyed.
+      if (this.destroyed || seq !== this.rechartsRenderSeq) return;
+
+      if (sBarEl && weekly.length > 0) {
+        manager.renderWeeklySalesBar(sBarEl, weekly, mode, rate);
+      }
+      if (sLineEl && weekly.length > 0) {
+        manager.renderWeeklySalesLine(sLineEl, weekly);
+      }
+      if (tLineEl && turnover.length > 0) {
+        manager.renderInventoryTurnoverLine(tLineEl, turnover);
+      }
+      if (tBarEl && turnoverCats.length > 0) {
+        manager.renderInventoryTurnoverBar(tBarEl, turnoverCats);
+      }
+    });
   }
 
   public openEditRateModal() {
@@ -466,7 +488,7 @@ export class DashboardComponent implements OnDestroy {
       r.source,
     ]);
 
-    exportToPdf(
+    void exportToPdf(
       'Registro Diario de Cotización de Divisas (USD y USDT) en Venezuela',
       `Tasa Oficial Actual: Bs. ${formatVeNumber(this.rates()?.currentUsd || 48.35, 2)} | Tasa USDT: Bs. ${formatVeNumber(this.rates()?.currentUsdt || 54.80, 2)}`,
       headers,
@@ -566,7 +588,7 @@ export class DashboardComponent implements OnDestroy {
       w.status === 'activa' ? 'Activa' : 'Inactiva',
     ]);
 
-    exportToPdf(
+    void exportToPdf(
       'Análisis Semanal de Ventas y Márgenes - PulpaCraft MRP',
       `Moneda: ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'} | Tasa de referencia BCV: Bs. ${formatVeNumber(rate, 2)}`,
       headers,
@@ -638,7 +660,7 @@ export class DashboardComponent implements OnDestroy {
       `$ ${formatVeNumber(t.holdingCost, 2)}`,
     ]);
 
-    exportToPdf(
+    void exportToPdf(
       'Reporte de Rotación de Inventarios (Inventory Turnover) - PulpaCraft',
       'Monitoreo del ciclo de rotación y mitigación de mermas en frutas perecederas y envases',
       headers,
@@ -728,7 +750,7 @@ export class DashboardComponent implements OnDestroy {
       `${formatVeNumber(s.grossMarginPercent, 1)}%`,
     ]);
 
-    exportToPdf(
+    void exportToPdf(
       'Comparativo Mensual de Ventas y Márgenes de Producción - PulpaCraft',
       `Moneda: ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'} | Tasa de referencia BCV: Bs. ${formatVeNumber(rate, 2)}`,
       headers,
@@ -752,7 +774,7 @@ export class DashboardComponent implements OnDestroy {
       ['Unidades Producidas Mes', `${formatVeNumber(m?.unitsProducedMonth || 0, 0)} frascos`, 'Presentaciones pequeña y grande'],
     ];
 
-    exportToPdf(
+    void exportToPdf(
       'Informe Ejecutivo de Rentabilidad y Operaciones PulpaCraft MRP',
       `Moneda: ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'} | Generado: ${new Date().toLocaleDateString('es-VE')}`,
       headers,
@@ -850,7 +872,7 @@ export class DashboardComponent implements OnDestroy {
       isBs ? `Bs. ${formatVeNumber(a.estimatedReplenishCostBs, 2)}` : `$ ${formatVeNumber(a.estimatedReplenishCostUsd, 2)}`,
     ]);
 
-    exportToPdf(
+    void exportToPdf(
       'Auditoría y Alertas de Stock Mínimo e Insumos para Producción - PulpaCraft',
       `Tasa Oficial BCV: Bs. ${formatVeNumber(rate, 2)} | Alertas Críticas: ${this.criticalAlertsCount()} | Bajo Mínimo: ${this.warningAlertsCount()}`,
       headers,

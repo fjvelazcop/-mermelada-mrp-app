@@ -706,24 +706,24 @@ export class SalesComponent {
     window.print();
   }
 
-  public exportCurrentDeliveryNotePdf() {
+  public async exportCurrentDeliveryNotePdf() {
     const note = this.selectedDeliveryNote();
     if (!note) return;
     const rate = this.api.exchangeRates()?.currentUsd || 48.35;
-    downloadDeliveryNotePdf(note, this.fiscalSettings(), rate, this.currencyMode());
+    await downloadDeliveryNotePdf(note, this.fiscalSettings(), rate, this.currencyMode());
     this.api.showToast(`Nota de Entrega ${note.noteNumber} descargada en PDF.`);
   }
 
-  public exportSingleDeliveryNotePdf(note: DeliveryNote) {
+  public async exportSingleDeliveryNotePdf(note: DeliveryNote) {
     const rate = this.api.exchangeRates()?.currentUsd || 48.35;
-    downloadDeliveryNotePdf(note, this.fiscalSettings(), rate, this.currencyMode());
+    await downloadDeliveryNotePdf(note, this.fiscalSettings(), rate, this.currencyMode());
     this.api.showToast(`Nota de Entrega ${note.noteNumber} descargada en PDF.`);
   }
 
-  public emailDeliveryNoteToClient(note: DeliveryNote) {
+  public async emailDeliveryNoteToClient(note: DeliveryNote) {
     const rate = this.api.exchangeRates()?.currentUsd || 48.35;
     // Download official PDF first
-    downloadDeliveryNotePdf(note, this.fiscalSettings(), rate, this.currencyMode());
+    await downloadDeliveryNotePdf(note, this.fiscalSettings(), rate, this.currencyMode());
 
     const cust = this.customers().find(c => c.taxId === note.customerTaxId || c.businessName === note.customerName);
     const toEmail = cust?.email || '';
@@ -885,7 +885,7 @@ RIF: J-40899231-0`
       ];
     });
 
-    exportToPdf({
+    void exportToPdf({
       title: 'Reporte Oficial de Pedidos de Venta',
       subtitle: `Registro comercial expresado en ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'}`,
       exchangeRateUsed: rate,
@@ -1026,7 +1026,7 @@ RIF: J-40899231-0`
       ];
     });
 
-    exportToPdf({
+    void exportToPdf({
       title: 'Reporte de Despacho y Notas de Entrega Emitidas',
       subtitle: `Control de entregas físicas expresado en ${isBs ? 'Bolívares (Bs.)' : 'Dólares (USD)'}`,
       exchangeRateUsed: rate,
