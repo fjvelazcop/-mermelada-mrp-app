@@ -13,6 +13,7 @@ import {PayrollComponent} from './features/payroll/payroll';
 import {ExpensesComponent} from './features/expenses/expenses';
 import {Settings} from './features/settings/settings';
 import {SuppliersComponent} from './features/suppliers/suppliers';
+import {ActivationComponent} from './features/activation/activation';
 import {ArchitectureDocsComponent} from './features/architecture-docs/architecture-docs';
 import {LoginComponent} from './features/auth/login';
 import {AuthService} from './core/services/auth.service';
@@ -28,7 +29,8 @@ export type MainNavigationTab =
   | 'expenses'
   | 'suppliers'
   | 'settings'
-  | 'architecture';
+  | 'architecture'
+  | 'activation';
 
 @Component({
   selector: 'app-root',
@@ -45,6 +47,7 @@ export type MainNavigationTab =
     ExpensesComponent,
     SuppliersComponent,
     Settings,
+    ActivationComponent,
     ArchitectureDocsComponent,
     LoginComponent,
     VeCurrencyPipe,
@@ -74,6 +77,7 @@ export class App implements OnInit {
     suppliers: { label: 'Proveedores', icon: 'local_shipping' },
     settings: { label: 'Config', icon: 'settings' },
     architecture: { label: 'Docs', icon: 'architecture' },
+    activation: { label: 'Pagos', icon: 'payments' },
   };
 
   /**
@@ -81,9 +85,11 @@ export class App implements OnInit {
    * are returned, capped at four so the bar stays readable.
    */
   public mobileQuickTabs = computed(() => {
-    const preferred: MainNavigationTab[] = this.api.isSupervisorPlanta()
-      ? ['dashboard', 'production', 'sales', 'suppliers']
-      : ['dashboard', 'costing', 'production', 'inventory', 'sales', 'suppliers'];
+    const preferred: MainNavigationTab[] = this.api.isMaster()
+      ? ['dashboard', 'activation', 'production', 'inventory']
+      : this.api.isSupervisorPlanta()
+        ? ['dashboard', 'production', 'sales', 'suppliers']
+        : ['dashboard', 'costing', 'production', 'inventory', 'sales', 'suppliers'];
     return preferred
       .filter((tab) => this.api.canViewModule(tab))
       .slice(0, 4)
@@ -120,6 +126,7 @@ export class App implements OnInit {
     'suppliers',
     'settings',
     'architecture',
+    'activation',
   ]);
 
   constructor() {

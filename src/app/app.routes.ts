@@ -20,6 +20,12 @@ export const routes: Routes = [
       {path: 'suppliers', children: []},
       {path: 'settings', children: []},
       {
+        path: 'activation',
+        canActivate: [authGuard],
+        data: {allowedRoles: ['master']},
+        children: [],
+      },
+      {
         path: 'admin',
         canActivate: [authGuard],
         data: {allowedRoles: ['admin', 'supervisor']},

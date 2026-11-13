@@ -40,6 +40,19 @@
           </button>
         }
 
+        @if (api.canViewModule('activation')) {
+          <button
+            (click)="setTab('activation')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+            [class.bg-rose-100]="currentTab() === 'activation'"
+            [class.text-rose-950]="currentTab() === 'activation'"
+            [class.font-semibold]="currentTab() === 'activation'"
+          >
+            <mat-icon class="text-xs text-rose-700">payments</mat-icon>
+            <span>Activación & Pagos</span>
+          </button>
+        }
+
         @if (api.canViewModule('costing')) {
           <button
             (click)="setTab('costing')"
@@ -263,6 +276,12 @@
       @if (api.canViewModule('dashboard')) {
         <button (click)="setTab('dashboard')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors" [class.bg-amber-600]="currentTab() === 'dashboard'" [class.text-white]="currentTab() === 'dashboard'" [class.bg-stone-100]="currentTab() !== 'dashboard'" [class.text-stone-700]="currentTab() !== 'dashboard'">Tablero</button>
       }
+      @if (api.canViewModule('activation')) {
+        <button (click)="setTab('activation')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-rose-700]="currentTab() === 'activation'" [class.text-white]="currentTab() === 'activation'" [class.bg-rose-50]="currentTab() !== 'activation'" [class.text-rose-900]="currentTab() !== 'activation'">
+          <mat-icon class="text-xs">payments</mat-icon>
+          <span>Pagos</span>
+        </button>
+      }
       @if (api.canViewModule('costing')) {
         <button (click)="setTab('costing')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-amber-600]="currentTab() === 'costing'" [class.text-white]="currentTab() === 'costing'" [class.bg-amber-50]="currentTab() !== 'costing'" [class.text-amber-900]="currentTab() !== 'costing'" [class.border]="currentTab() !== 'costing'" [class.border-amber-200]="currentTab() !== 'costing'">
           <mat-icon class="text-xs">calculate</mat-icon>
@@ -373,6 +392,20 @@
             >
               <mat-icon class="text-sm text-stone-500">dashboard</mat-icon>
               <span>Tablero Principal</span>
+            </button>
+          }
+
+          @if (api.canViewModule('activation')) {
+            <button
+              (click)="setTab('activation')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-rose-50]="currentTab() === 'activation'"
+              [class.text-rose-950]="currentTab() === 'activation'"
+              [class.font-semibold]="currentTab() === 'activation'"
+              [class.text-stone-700]="currentTab() !== 'activation'"
+            >
+              <mat-icon class="text-sm text-rose-700">payments</mat-icon>
+              <span>Activación & Control de Pagos</span>
             </button>
           }
 
@@ -707,6 +740,9 @@
         }
         @case ('settings') {
           <app-settings />
+        }
+        @case ('activation') {
+          <app-activation />
         }
         @case ('architecture') {
           <app-architecture-docs />

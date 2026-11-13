@@ -667,9 +667,33 @@ function migrate(db: SqliteDatabase): void {
       sent_at TEXT
     );
 
+    -- ==========================================================
+    -- Activation & payment control (master-only, migration v7)
+    -- ==========================================================
+
+    CREATE TABLE IF NOT EXISTS activation_records (
+      id TEXT PRIMARY KEY,
+      client_name TEXT NOT NULL,
+      client_document TEXT,
+      concept TEXT NOT NULL,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      payment_method TEXT NOT NULL,
+      reference TEXT,
+      payment_date TEXT NOT NULL,
+      period_start TEXT,
+      period_end TEXT,
+      status TEXT NOT NULL DEFAULT 'activo',
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tunnel_sessions_started ON tunnel_sessions(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_notification_recipients_active ON notification_recipients(active);
     CREATE INDEX IF NOT EXISTS idx_notification_log_created ON notification_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_activation_records_payment_date ON activation_records(payment_date DESC);
 
     CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_production_materials_order ON production_order_materials(order_id);
@@ -793,6 +817,12 @@ function migrate(db: SqliteDatabase): void {
       );
     }
     insert.run(6, new Date().toISOString());
+  }
+  if (currentVersion < 7) {
+    // Activation & payment control table and the hidden master role are
+    // created by the schema / role seed. This version only records the
+    // migration for existing databases.
+    insert.run(7, new Date().toISOString());
   }
 }
 

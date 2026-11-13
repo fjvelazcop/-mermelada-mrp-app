@@ -41,6 +41,7 @@ import {
   NotificationRecipient,
   TunnelSessionsResponse,
   NotificationDispatchResult,
+  ActivationRecord,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 import {computed} from '@angular/core';
@@ -70,6 +71,27 @@ export class ErpApiService {
         suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         settings: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         architecture: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+      },
+    },
+    {
+      id: 'master',
+      name: 'Master',
+      description: 'Rol oculto de superusuario con acceso exclusivo al control de activación y pagos',
+      isSystem: true,
+      color: 'rose',
+      permissions: {
+        dashboard: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        inventory: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        production: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        costing: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        sales: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        payroll: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        expenses: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        settings: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        architecture: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        activation: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
       },
     },
     {
@@ -89,6 +111,7 @@ export class ErpApiService {
         suppliers: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
     },
     {
@@ -108,6 +131,7 @@ export class ErpApiService {
         suppliers: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
     },
     {
@@ -127,6 +151,7 @@ export class ErpApiService {
         suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
     },
     {
@@ -146,6 +171,7 @@ export class ErpApiService {
         suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
       },
     },
   ]);
@@ -220,6 +246,9 @@ export class ErpApiService {
 
   public activeUserId = signal<string>('usr-admin');
 
+  /** Master-only activation and payment-control ledger. */
+  public activationRecords = signal<ActivationRecord[]>([]);
+
   /** Set when a real JWT session is active; overrides the demo user list. */
   public authenticatedUser = signal<SystemUser | null>(null);
 
@@ -251,6 +280,15 @@ export class ErpApiService {
     const role = this.currentRoleObject();
     const rId = role?.id || this.currentRole();
     return rId === 'supervisor_planta';
+  });
+
+  /** Hidden superuser role: inherits admin plus the activation ledger. */
+  public isMaster = computed<boolean>(() => {
+    return (
+      this.currentRole() === 'master' ||
+      this.currentRoleObject()?.id === 'master' ||
+      this.currentUser()?.roleId === 'master'
+    );
   });
 
   // Controls whether financial prices, costs, and exchange rate tickers are visible
@@ -288,8 +326,11 @@ export class ErpApiService {
 
   public hasPermission(moduleId: AppModuleId, action: 'canView' | 'canCreate' | 'canEdit' | 'canDelete' | 'canExport' = 'canView'): boolean {
     const role = this.currentRoleObject();
+    // The activation/payment-control module is exclusive to master, even if a
+    // legacy role row still carries a stale permission grant.
+    if (moduleId === 'activation') return this.isMaster();
     if (!role) return true;
-    if (role.id === 'admin') return true;
+    if (role.id === 'admin' || role.id === 'master') return true;
     const modPerm = role.permissions[moduleId];
     if (!modPerm) return false;
     return !!modPerm[action];
@@ -399,12 +440,16 @@ export class ErpApiService {
    * the API is unreachable, so demo mode keeps working offline.
    */
   public async refreshSecurityData(): Promise<void> {
-    // `/api/auth/users` is admin-only. Requesting it with any other role would
-    // produce a 403 in the browser console, so only admins load the directory.
-    const usersRequest =
-      this.currentRole() === 'admin'
-        ? firstValueFrom(this.http.get<SystemUser[]>('/api/auth/users'))
-        : Promise.resolve<SystemUser[] | null>(null);
+    // `/api/auth/users` is admin/master-only. Requesting it with any other role
+    // would produce a 403 in the browser console, so only those roles load the
+    // directory. The API never includes the hidden master account.
+    const privileged =
+      this.currentRole() === 'admin' ||
+      this.currentRole() === 'master' ||
+      this.currentUser()?.roleId === 'master';
+    const usersRequest = privileged
+      ? firstValueFrom(this.http.get<SystemUser[]>('/api/auth/users'))
+      : Promise.resolve<SystemUser[] | null>(null);
 
     const [rolesResult, usersResult] = await Promise.allSettled([
       firstValueFrom(this.http.get<SystemRole[]>('/api/auth/roles')),
@@ -494,6 +539,57 @@ export class ErpApiService {
         this.setActiveUser('usr-admin');
       }
       this.showToast('Usuario eliminado del sistema.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  // --- ACTIVATION & PAYMENT CONTROL (MASTER ONLY) ---
+  public async addActivation(
+    data: Omit<ActivationRecord, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>
+  ): Promise<ActivationRecord> {
+    try {
+      const created = await firstValueFrom(
+        this.http.post<ActivationRecord>('/api/activations', data)
+      );
+      this.activationRecords.update((list) => [created, ...list]);
+      this.showToast(`Activación de "${created.clientName}" registrada.`);
+      return created;
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async updateActivation(
+    id: string,
+    data: Partial<
+      Omit<ActivationRecord, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>
+    >
+  ): Promise<ActivationRecord> {
+    try {
+      const updated = await firstValueFrom(
+        this.http.put<ActivationRecord>(`/api/activations/${id}`, data)
+      );
+      this.activationRecords.update((list) =>
+        list.map((record) => (record.id === id ? updated : record))
+      );
+      this.showToast('Registro de activación actualizado.');
+      return updated;
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async deleteActivation(id: string): Promise<void> {
+    try {
+      await firstValueFrom(this.http.delete(`/api/activations/${id}`));
+      this.activationRecords.update((list) =>
+        list.filter((record) => record.id !== id)
+      );
+      this.showToast('Registro de activación eliminado.');
     } catch (err) {
       this.showToast(this.apiErrorMessage(err), 'error');
       throw err;
@@ -956,6 +1052,7 @@ export class ErpApiService {
         dash,
         rates,
         audit,
+        activations,
       ] = await Promise.all([
         firstValueFrom(this.http.get<RawMaterial[]>('/api/inventory/raw-materials')),
         firstValueFrom(this.http.get<InventoryMovement[]>('/api/inventory/movements')),
@@ -978,6 +1075,11 @@ export class ErpApiService {
         firstValueFrom(this.http.get<any>('/api/reports/dashboard')),
         firstValueFrom(this.http.get<DailyExchangeRates>('/api/exchange-rates')).catch(() => null),
         firstValueFrom(this.http.get<AuditLogEntry[]>('/api/audit-logs')).catch(() => []),
+        this.isMaster()
+          ? firstValueFrom(this.http.get<ActivationRecord[]>('/api/activations')).catch(
+              () => [] as ActivationRecord[]
+            )
+          : Promise.resolve<ActivationRecord[]>([]),
       ]);
 
       this.rawMaterials.set(materials);
@@ -1005,6 +1107,7 @@ export class ErpApiService {
       if (audit && Array.isArray(audit)) {
         this.auditLogs.set(audit);
       }
+      this.activationRecords.set(activations || []);
     } catch (err: unknown) {
       console.warn('Network sync notice - ensuring local store state:', err);
     } finally {

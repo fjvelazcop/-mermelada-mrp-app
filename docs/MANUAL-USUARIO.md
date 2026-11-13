@@ -66,10 +66,16 @@ automáticamente a la pantalla de login. Cerrar sesión también regresa al logi
 | Rol | Uso típico | Acceso general |
 |---|---|---|
 | **Administrador** | Dirección / sistemas | Todos los módulos, usuarios, roles, configuración y auditoría. |
+| **Master** | Superusuario oculto | Todo lo del administrador más el módulo exclusivo de activación y control de pagos. |
 | **Supervisor de planta** | Jefe de producción | Producción, inventario, costos, reportes y parte de la administración. |
 | **Operador** | Personal de planta | Producción e inventario operativo. |
 | **Analista de costos** | Costos y precios | Costeo, recetas, precios y reportes financieros. |
 | **Almacenista** | Almacén | Inventario, entradas, salidas y ajustes. |
+
+El rol **Master** es una cuenta raíz oculta: no aparece en la lista de usuarios,
+solo un Master puede verlo o asignarlo, no puede restringirse ni eliminarse y es
+el único con acceso al módulo **Activación & Control de Pagos**. El resto de los
+roles, incluido el administrador, no ve ese módulo.
 
 Los permisos son por módulo y por acción (**ver, crear, editar, eliminar,
 exportar**). Si un módulo no aparece en el menú, su rol no tiene permiso de
@@ -215,7 +221,7 @@ Importante:
 
 ### 4.9. Configuración y permisología
 
-Disponible para administradores:
+Disponible para administradores y Master:
 
 - **Usuarios:** crear, editar, desactivar y asignar roles.
 - **Roles:** matriz de permisos por módulo y acción.
@@ -259,6 +265,22 @@ impuesto.
 la configuración fiscal para eludirla. Informe al administrador para que revise
 los datos maestros y, si corresponde, consulte al contador. No edite ni elimine
 una factura emitida; solicite al administrador la corrección documentada.
+
+### 4.12. Activación & control de pagos (solo Master)
+
+Módulo exclusivo del rol **Master** para llevar el libro de activaciones y pagos
+de clientes:
+
+1. Abra **Activación & Pagos** en la navegación. Solo aparece con una sesión
+   Master.
+2. Use **Nueva Activación** para registrar cliente, cédula/RIF, concepto, monto,
+   moneda (USD o Bs.), método de pago, referencia, fecha de pago, vigencia y
+   estado.
+3. Consulte los totales por estado y moneda, y filtre por texto o estado.
+4. Edite con el icono de lápiz o elimine con el icono de papelera. Cada cambio
+   pide confirmación cuando corresponde y queda reflejado en el libro.
+5. El sistema no permite que otros roles vean, creen, editen o eliminen estos
+   registros, ni desde la interfaz ni desde la API.
 
 ---
 

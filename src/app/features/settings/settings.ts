@@ -36,7 +36,10 @@ export class Settings {
   public activeSection = signal<SettingsSection>('users');
 
   /** Only administrators can see and edit the fiscal configuration. */
-  public isAdmin = computed(() => this.api.currentRole() === 'admin');
+  public isAdmin = computed(() => {
+    const role = this.api.currentRole();
+    return role === 'admin' || role === 'master' || this.api.isMaster();
+  });
 
   public fiscalSaving = signal<boolean>(false);
   public fiscalSaved = signal<boolean>(false);
@@ -599,6 +602,7 @@ export class Settings {
       suppliers: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       settings: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       architecture: {canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false},
+      activation: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
     };
 
     try {
@@ -615,11 +619,15 @@ export class Settings {
     }
   }
 
+  public isRootRole(roleId: string): boolean {
+    return roleId === 'admin' || roleId === 'master';
+  }
+
   public togglePermission(roleId: string, moduleId: AppModuleId, action: keyof ModulePermissions) {
     const role = this.api.systemRoles().find(r => r.id === roleId);
     if (!role) return;
-    if (role.id === 'admin') {
-      this.api.showToast('El rol Administrador General tiene permisos absolutos y no puede ser restringido.', 'info');
+    if (this.isRootRole(role.id)) {
+      this.api.showToast('Los roles Administrador General y Master tienen permisos absolutos y no pueden ser restringidos.', 'info');
       return;
     }
     const currentPerm = role.permissions[moduleId] || {
@@ -649,7 +657,7 @@ export class Settings {
 
   public toggleAllModulePermissions(roleId: string, moduleId: AppModuleId, enable: boolean) {
     const role = this.api.systemRoles().find(r => r.id === roleId);
-    if (!role || role.id === 'admin') return;
+    if (!role || this.isRootRole(role.id)) return;
 
     void this.api.updateRolePermissions(roleId, moduleId, {
       canView: enable,

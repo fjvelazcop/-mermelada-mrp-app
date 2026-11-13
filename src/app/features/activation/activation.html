@@ -1,0 +1,376 @@
+<div class="space-y-8">
+  <!-- Module Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200 pb-5">
+    <div>
+      <div class="flex items-center gap-2">
+        <span class="w-8 h-8 rounded-lg bg-rose-700 text-white flex items-center justify-center">
+          <mat-icon class="text-base">payments</mat-icon>
+        </span>
+        <h1 class="text-2xl font-bold text-stone-900 tracking-tight">Activación & Control de Pagos</h1>
+      </div>
+      <p class="text-sm text-stone-500 mt-1">
+        Registro exclusivo del rol Master para controlar activaciones, pagos, vigencias y referencias.
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-[11px] font-semibold text-rose-900">
+        <mat-icon class="text-sm">lock</mat-icon>
+        Acceso restringido a Master
+      </span>
+      <button
+        type="button"
+        (click)="openCreate()"
+        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white text-sm font-semibold transition-colors min-h-[44px]"
+      >
+        <mat-icon class="text-base">add_card</mat-icon>
+        <span>Nueva Activación</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI Summary -->
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Registros</span>
+      <div class="text-2xl font-bold text-stone-900 mt-1">{{ totals().count }}</div>
+      <span class="text-[11px] text-stone-400">en el libro de control</span>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Activos</span>
+      <div class="text-2xl font-bold text-emerald-700 mt-1">{{ totals().active }}</div>
+      <span class="text-[11px] text-stone-400">con pago vigente</span>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Por cobrar</span>
+      <div class="text-2xl font-bold text-amber-700 mt-1">{{ totals().pending }}</div>
+      <span class="text-[11px] text-stone-400">pendientes o vencidos</span>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Total USD</span>
+      <div class="text-xl font-bold text-stone-900 mt-1">{{ formatUsd(totals().usd) }}</div>
+      <span class="text-[11px] text-stone-400">pagos en divisas</span>
+    </div>
+    <div class="bg-white border border-stone-200 rounded-xl p-4">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Total Bs.</span>
+      <div class="text-xl font-bold text-stone-900 mt-1">{{ formatBs(totals().bs) }}</div>
+      <span class="text-[11px] text-stone-400">pagos en bolívares</span>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex flex-col sm:flex-row gap-3">
+    <div class="relative flex-1">
+      <mat-icon class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-base">search</mat-icon>
+      <input
+        type="text"
+        [value]="searchQuery()"
+        (input)="searchQuery.set($any($event.target).value)"
+        placeholder="Buscar por cliente, cédula/RIF, concepto o referencia…"
+        class="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+      />
+    </div>
+    <select
+      [value]="statusFilter()"
+      (change)="statusFilter.set($any($event.target).value)"
+      class="px-3 py-2.5 rounded-xl border border-stone-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px] sm:w-56"
+    >
+      <option value="all">Todos los estados</option>
+      @for (status of statuses; track status.value) {
+        <option [value]="status.value">{{ status.label }}</option>
+      }
+    </select>
+  </div>
+
+  <!-- Ledger -->
+  <div class="bg-white border border-stone-200 rounded-2xl overflow-hidden shadow-xs">
+    <div class="px-4 sm:px-5 py-3.5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <h2 class="text-sm font-bold text-stone-900 flex items-center gap-2">
+        <mat-icon class="text-base text-rose-700">receipt_long</mat-icon>
+        Libro de activaciones
+      </h2>
+      <span class="text-[11px] text-stone-500">
+        {{ filteredRecords().length }} de {{ api.activationRecords().length }} registro(s)
+      </span>
+    </div>
+
+    @if (filteredRecords().length === 0) {
+      <div class="p-10 text-center">
+        <div class="w-12 h-12 rounded-2xl bg-stone-100 text-stone-400 flex items-center justify-center mx-auto mb-3">
+          <mat-icon class="text-2xl">payments</mat-icon>
+        </div>
+        <h3 class="text-sm font-bold text-stone-900">Sin registros de activación</h3>
+        <p class="text-xs text-stone-500 mt-1 max-w-md mx-auto">
+          @if (api.activationRecords().length === 0) {
+            Aún no hay pagos ni activaciones registradas. Use “Nueva Activación” para crear el primero.
+          } @else {
+            Ningún registro coincide con la búsqueda o el filtro seleccionado.
+          }
+        </p>
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[960px] text-left text-xs">
+          <thead class="bg-stone-50 border-b border-stone-200 text-stone-600 uppercase font-semibold text-[10px] tracking-wide">
+            <tr>
+              <th class="py-3 px-4">Cliente</th>
+              <th class="py-3 px-3">Concepto</th>
+              <th class="py-3 px-3 text-right">Monto</th>
+              <th class="py-3 px-3">Método / Ref.</th>
+              <th class="py-3 px-3">Pago</th>
+              <th class="py-3 px-3">Vigencia</th>
+              <th class="py-3 px-3 text-center">Estado</th>
+              <th class="py-3 px-4 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (record of filteredRecords(); track record.id) {
+              <tr class="hover:bg-stone-50/60 transition-colors align-top">
+                <td class="py-3 px-4">
+                  <div class="font-bold text-stone-900">{{ record.clientName }}</div>
+                  @if (record.clientDocument) {
+                    <div class="text-[11px] text-stone-500 font-mono mt-0.5">{{ record.clientDocument }}</div>
+                  }
+                </td>
+                <td class="py-3 px-3">
+                  <div class="text-stone-800 max-w-[240px]">{{ record.concept }}</div>
+                  @if (record.notes) {
+                    <div class="text-[11px] text-stone-400 mt-0.5 max-w-[240px] line-clamp-2">{{ record.notes }}</div>
+                  }
+                </td>
+                <td class="py-3 px-3 text-right whitespace-nowrap">
+                  <div class="font-mono font-bold text-stone-900">{{ formatAmount(record) }}</div>
+                  <div class="text-[10px] text-stone-400">{{ record.currency }}</div>
+                </td>
+                <td class="py-3 px-3">
+                  <div class="text-stone-800">{{ paymentMethodLabel(record.paymentMethod) }}</div>
+                  @if (record.reference) {
+                    <div class="text-[11px] text-stone-500 font-mono mt-0.5">{{ record.reference }}</div>
+                  }
+                </td>
+                <td class="py-3 px-3 whitespace-nowrap font-mono text-[11px] text-stone-700">
+                  {{ record.paymentDate }}
+                </td>
+                <td class="py-3 px-3 whitespace-nowrap text-[11px] text-stone-600">
+                  @if (record.periodStart || record.periodEnd) {
+                    <span>{{ record.periodStart || '—' }}</span>
+                    <span class="text-stone-400"> → </span>
+                    <span>{{ record.periodEnd || '—' }}</span>
+                  } @else {
+                    <span class="text-stone-400">—</span>
+                  }
+                </td>
+                <td class="py-3 px-3 text-center">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-semibold" [class]="statusClasses(record.status)">
+                    {{ statusLabel(record.status) }}
+                  </span>
+                </td>
+                <td class="py-3 px-4 text-right whitespace-nowrap">
+                  <button
+                    type="button"
+                    (click)="openEdit(record)"
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+                    title="Editar registro"
+                    aria-label="Editar registro"
+                  >
+                    <mat-icon class="text-base">edit</mat-icon>
+                  </button>
+                  <button
+                    type="button"
+                    (click)="remove(record)"
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                    title="Eliminar registro"
+                    aria-label="Eliminar registro"
+                  >
+                    <mat-icon class="text-base">delete</mat-icon>
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+
+  <!-- Create / Edit Modal -->
+  @if (isModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-xl border border-stone-200 overflow-hidden">
+        <div class="flex items-start justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-stone-100 shrink-0">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-9 h-9 rounded-lg bg-rose-700 flex items-center justify-center shrink-0">
+              <mat-icon class="text-white text-lg">{{ editingId() ? 'edit' : 'add_card' }}</mat-icon>
+            </span>
+            <div class="min-w-0">
+              <h3 class="text-sm sm:text-base font-bold text-stone-900 leading-tight truncate">
+                {{ editingId() ? 'Editar activación' : 'Nueva activación / pago' }}
+              </h3>
+              <p class="text-[11px] text-stone-500 truncate">
+                El registro queda disponible solo para el rol Master.
+              </p>
+            </div>
+          </div>
+          <button type="button" (click)="closeModal()" class="text-stone-400 hover:text-stone-700 shrink-0" aria-label="Cerrar">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="activationForm" (ngSubmit)="save()" class="flex flex-col min-h-0 flex-1">
+          <div class="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 text-xs">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Cliente *</label>
+                <input
+                  type="text"
+                  formControlName="clientName"
+                  placeholder="Nombre o razón social"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                />
+                @if (activationForm.controls.clientName.touched && activationForm.controls.clientName.invalid) {
+                  <p class="text-[11px] text-rose-700 mt-1">Indique el nombre del cliente.</p>
+                }
+              </div>
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Cédula / RIF</label>
+                <input
+                  type="text"
+                  formControlName="clientDocument"
+                  placeholder="V-12345678 / J-123456789"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Concepto *</label>
+              <input
+                type="text"
+                formControlName="concept"
+                placeholder="Activación mensual, renovación, pago de servicio…"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+              />
+              @if (activationForm.controls.concept.touched && activationForm.controls.concept.invalid) {
+                <p class="text-[11px] text-rose-700 mt-1">Indique el concepto del pago.</p>
+              }
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Monto *</label>
+                <input
+                  type="number"
+                  formControlName="amount"
+                  min="0.01"
+                  step="0.01"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px] font-mono"
+                />
+                @if (activationForm.controls.amount.touched && activationForm.controls.amount.invalid) {
+                  <p class="text-[11px] text-rose-700 mt-1">El monto debe ser mayor que cero.</p>
+                }
+              </div>
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Moneda *</label>
+                <select
+                  formControlName="currency"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                >
+                  <option value="USD">USD — Dólares</option>
+                  <option value="Bs">Bs. — Bolívares</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Estado *</label>
+                <select
+                  formControlName="status"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                >
+                  @for (status of statuses; track status.value) {
+                    <option [value]="status.value">{{ status.label }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Método de pago *</label>
+                <select
+                  formControlName="paymentMethod"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                >
+                  @for (method of paymentMethods; track method.value) {
+                    <option [value]="method.value">{{ method.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Referencia</label>
+                <input
+                  type="text"
+                  formControlName="reference"
+                  placeholder="Nro. de transferencia, recibo, lote…"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Fecha de pago *</label>
+                <input
+                  type="date"
+                  formControlName="paymentDate"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                />
+              </div>
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Vigencia desde</label>
+                <input
+                  type="date"
+                  formControlName="periodStart"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                />
+              </div>
+              <div>
+                <label class="block font-semibold text-stone-700 mb-1">Vigencia hasta</label>
+                <input
+                  type="date"
+                  formControlName="periodEnd"
+                  class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-semibold text-stone-700 mb-1">Notas</label>
+              <textarea
+                formControlName="notes"
+                rows="3"
+                placeholder="Observaciones, condiciones o datos de seguimiento…"
+                class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 border-t border-stone-100 shrink-0">
+            <button
+              type="button"
+              (click)="closeModal()"
+              class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="isSaving() || activationForm.invalid"
+              class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-rose-700 text-white rounded-lg hover:bg-rose-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <mat-icon class="text-base">save</mat-icon>
+              {{ isSaving() ? 'Guardando…' : (editingId() ? 'Guardar cambios' : 'Registrar activación') }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+</div>

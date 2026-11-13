@@ -720,6 +720,7 @@ export const authModuleSchema = z.enum([
   'suppliers',
   'settings',
   'architecture',
+  'activation',
 ]);
 
 export const rolePermissionFlagsSchema = z
@@ -787,6 +788,31 @@ export const notificationRecipientUpdateSchema =
 export const idParamsSchema = z.object({
   id: z.string().trim().min(1).max(200),
 });
+
+const activationCurrencySchema = z.enum(['USD', 'Bs']);
+const activationStatusSchema = z.enum([
+  'activo',
+  'pendiente',
+  'vencido',
+  'suspendido',
+]);
+
+export const activationCreateSchema = z.object({
+  clientName: z.string().trim().min(2).max(200),
+  clientDocument: z.string().trim().max(60).optional(),
+  concept: z.string().trim().min(2).max(300),
+  amount: z.number().positive().max(1_000_000_000),
+  currency: activationCurrencySchema.optional(),
+  paymentMethod: z.string().trim().min(2).max(80),
+  reference: z.string().trim().max(120).optional(),
+  paymentDate: z.string().trim().min(4).max(40),
+  periodStart: z.string().trim().max(40).optional(),
+  periodEnd: z.string().trim().max(40).optional(),
+  status: activationStatusSchema.optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+export const activationUpdateSchema = activationCreateSchema.partial();
 
 function toApiError(error: ZodError): ApiError {
   return new ApiError(422, 'Datos de entrada inválidos', 'VALIDATION_ERROR', {

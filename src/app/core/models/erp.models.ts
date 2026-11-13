@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'operator' | 'operador_produccion' | string;
+export type UserRole = 'admin' | 'master' | 'operator' | 'operador_produccion' | string;
 
 export type AppModuleId =
   | 'dashboard'
@@ -10,7 +10,8 @@ export type AppModuleId =
   | 'expenses'
   | 'suppliers'
   | 'settings'
-  | 'architecture';
+  | 'architecture'
+  | 'activation';
 
 export type SettingsSection = 'users' | 'roles' | 'simulator' | 'fiscal' | 'notifications';
 
@@ -79,6 +80,34 @@ export interface SystemUser {
   status: 'activo' | 'inactivo';
   avatarBg?: string;
   createdAt: string;
+}
+
+export type ActivationCurrency = 'USD' | 'Bs';
+
+export type ActivationStatus =
+  | 'activo'
+  | 'pendiente'
+  | 'vencido'
+  | 'suspendido';
+
+/** Master-only record for activation and payment control. */
+export interface ActivationRecord {
+  id: string;
+  clientName: string;
+  clientDocument?: string;
+  concept: string;
+  amount: number;
+  currency: ActivationCurrency;
+  paymentMethod: string;
+  reference?: string;
+  paymentDate: string;
+  periodStart?: string;
+  periodEnd?: string;
+  status: ActivationStatus;
+  notes?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type UnitOfMeasure = 'kg' | 'g' | 'l' | 'ml' | 'unidades' | 'cajas' | 'paquetes';

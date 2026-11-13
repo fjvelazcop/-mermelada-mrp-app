@@ -130,9 +130,10 @@ describe('password hashing and tokens', () => {
     const row = getDb()
       .prepare('SELECT COUNT(*) AS count FROM auth_users')
       .get() as { count: number };
-    expect(row.count).toBe(5);
+    expect(row.count).toBe(6);
 
     expect(auth.findUserByUsername('admin')?.role_id).toBe('admin');
+    expect(auth.findUserByUsername('fjvelazco')?.role_id).toBe('master');
     expect(auth.findUserById('usr-operador')?.username).toBe('operador');
     expect(auth.findUserByUsername('missing')).toBeUndefined();
     expect(auth.findUserById('missing')).toBeUndefined();
@@ -440,6 +441,7 @@ describe('database-backed roles and permissions', () => {
       'operator',
       'analista_costos',
       'almacenista',
+      'master',
     ]);
 
     const operator = auth.getRolePermissions('operator');
@@ -482,10 +484,22 @@ describe('database-backed roles and permissions', () => {
       export: false,
     });
 
+    const almacenista = auth.getRolePermissions('almacenista');
+    expect(almacenista?.['activation'].view).toBe(false);
+
+    const master = auth.getRolePermissions('master');
+    expect(master?.['activation']).toEqual({
+      view: true,
+      create: true,
+      edit: true,
+      delete: true,
+      export: true,
+    });
+
     const rows = getDb()
       .prepare('SELECT COUNT(*) AS count FROM auth_role_permissions')
       .get() as { count: number };
-    expect(rows.count).toBe(50);
+    expect(rows.count).toBe(66);
     expect(auth.getRolePermissions('does-not-exist')).toBeNull();
   });
 

@@ -17,6 +17,12 @@ const swaggerUi = require('swagger-ui-express') as typeof swaggerUiType;
 import { dbInstance } from './erp-database.js';
 import { getDb, getDbPath } from './database/persistence.js';
 import {
+  createActivation,
+  deleteActivation,
+  listActivations,
+  updateActivation,
+} from './activation.js';
+import {
   authenticate,
   authorizeRequest,
   changePasswordHandler,
@@ -62,6 +68,8 @@ import {
 } from './tunnel.js';
 import {
   auditLogSchema,
+  activationCreateSchema,
+  activationUpdateSchema,
   changePasswordSchema,
   costingSimulationSchema,
   customerSchema,
@@ -361,6 +369,49 @@ export function createApiApp(): express.Express {
     requireAdmin,
     validateParams(idParamsSchema),
     mutation(deleteUserHandler)
+  );
+
+  // --- ACTIVATION & PAYMENT CONTROL (HIDDEN MASTER ROLE ONLY) ---
+  app.get(
+    '/api/activations',
+    requireRole('master'),
+    query((_req, res) => {
+      res.json(listActivations());
+    })
+  );
+  app.post(
+    '/api/activations',
+    requireRole('master'),
+    validateBody(activationCreateSchema),
+    mutation((req, res) => {
+      const actor = auditActor(req);
+      res.status(201).json(createActivation(req.body, actor.userName));
+    })
+  );
+  app.put(
+    '/api/activations/:id',
+    requireRole('master'),
+    validateParams(idParamsSchema),
+    validateBody(activationUpdateSchema),
+    mutation((req, res) => {
+      const updated = updateActivation(routeId(req), req.body);
+      if (!updated) {
+        throw new ApiError(404, 'Registro de activación no encontrado');
+      }
+      res.json(updated);
+    })
+  );
+  app.delete(
+    '/api/activations/:id',
+    requireRole('master'),
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const deleted = deleteActivation(routeId(req));
+      if (!deleted) {
+        throw new ApiError(404, 'Registro de activación no encontrado');
+      }
+      res.json({ success: true, message: 'Registro de activación eliminado' });
+    })
   );
 
   // --- TUNNEL URL REGISTRY AND EMAIL NOTIFICATIONS ---

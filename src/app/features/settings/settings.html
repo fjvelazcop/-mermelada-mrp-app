@@ -364,10 +364,13 @@
               [class.text-stone-700]="selectedRoleIdForMatrix() !== role.id"
               [class.border-stone-200]="selectedRoleIdForMatrix() !== role.id"
             >
-              <mat-icon class="text-xs">{{ role.id === 'admin' ? 'admin_panel_settings' : 'shield' }}</mat-icon>
+              <mat-icon class="text-xs">{{ isRootRole(role.id) ? 'admin_panel_settings' : 'shield' }}</mat-icon>
               <span>{{ role.name }}</span>
               @if (role.id === 'admin') {
                 <span class="text-[9px] px-1 py-0.2 bg-white/20 rounded font-mono">ROOT</span>
+              }
+              @if (role.id === 'master') {
+                <span class="text-[9px] px-1 py-0.2 bg-white/20 rounded font-mono">MASTER</span>
               }
             </button>
           }
@@ -380,13 +383,13 @@
             <div>
               <div class="font-bold text-stone-900 flex items-center gap-2">
                 <span>{{ curRole.name }}</span>
-                @if (curRole.id === 'admin') {
+                @if (isRootRole(curRole.id)) {
                   <span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Acceso Completo Sin Restricciones</span>
                 }
               </div>
               <div class="text-stone-500 mt-0.5">{{ curRole.description }}</div>
             </div>
-            @if (curRole.id === 'admin') {
+            @if (isRootRole(curRole.id)) {
               <div class="text-[11px] text-stone-400 italic">
                 * Las reglas de superusuario no pueden revocarse para garantizar la continuidad del sistema.
               </div>
@@ -450,7 +453,7 @@
               <tbody class="divide-y divide-stone-100">
                 @for (mod of modulesList; track mod.id) {
                   @let p = targetRole.permissions[mod.id] || { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false };
-                  <tr class="hover:bg-stone-50/50 transition-colors" [class.opacity-60]="!p.canView && targetRole.id !== 'admin'">
+                  <tr class="hover:bg-stone-50/50 transition-colors" [class.opacity-60]="!p.canView && !isRootRole(targetRole.id)">
                     <!-- Module name & info -->
                     <td class="py-3.5 px-4">
                       <div class="flex items-center gap-3">
@@ -470,8 +473,8 @@
                         <input
                           type="checkbox"
                           class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
-                          [checked]="p.canView || targetRole.id === 'admin'"
-                          [disabled]="targetRole.id === 'admin'"
+                          [checked]="p.canView || isRootRole(targetRole.id)"
+                          [disabled]="isRootRole(targetRole.id)"
                           (change)="togglePermission(targetRole.id, mod.id, 'canView')"
                         />
                       </label>
@@ -483,8 +486,8 @@
                         <input
                           type="checkbox"
                           class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
-                          [checked]="p.canCreate || targetRole.id === 'admin'"
-                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          [checked]="p.canCreate || isRootRole(targetRole.id)"
+                          [disabled]="isRootRole(targetRole.id) || (!p.canView && !isRootRole(targetRole.id))"
                           (change)="togglePermission(targetRole.id, mod.id, 'canCreate')"
                         />
                       </label>
@@ -496,8 +499,8 @@
                         <input
                           type="checkbox"
                           class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
-                          [checked]="p.canEdit || targetRole.id === 'admin'"
-                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          [checked]="p.canEdit || isRootRole(targetRole.id)"
+                          [disabled]="isRootRole(targetRole.id) || (!p.canView && !isRootRole(targetRole.id))"
                           (change)="togglePermission(targetRole.id, mod.id, 'canEdit')"
                         />
                       </label>
@@ -509,8 +512,8 @@
                         <input
                           type="checkbox"
                           class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
-                          [checked]="p.canDelete || targetRole.id === 'admin'"
-                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          [checked]="p.canDelete || isRootRole(targetRole.id)"
+                          [disabled]="isRootRole(targetRole.id) || (!p.canView && !isRootRole(targetRole.id))"
                           (change)="togglePermission(targetRole.id, mod.id, 'canDelete')"
                         />
                       </label>
@@ -522,8 +525,8 @@
                         <input
                           type="checkbox"
                           class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
-                          [checked]="p.canExport || targetRole.id === 'admin'"
-                          [disabled]="targetRole.id === 'admin' || (!p.canView && targetRole.id !== 'admin')"
+                          [checked]="p.canExport || isRootRole(targetRole.id)"
+                          [disabled]="isRootRole(targetRole.id) || (!p.canView && !isRootRole(targetRole.id))"
                           (change)="togglePermission(targetRole.id, mod.id, 'canExport')"
                         />
                       </label>
@@ -531,7 +534,7 @@
 
                     <!-- Quick Enable / Disable All for this module -->
                     <td class="py-3.5 px-4 text-right">
-                      @if (targetRole.id !== 'admin') {
+                      @if (!isRootRole(targetRole.id)) {
                         <div class="inline-flex items-center gap-1">
                           <button
                             (click)="toggleAllModulePermissions(targetRole.id, mod.id, true)"
