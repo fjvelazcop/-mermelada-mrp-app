@@ -1,4 +1,4 @@
-import {ChangeDetectionStrategy, Component, computed, inject, signal} from '@angular/core';
+import {ChangeDetectionStrategy, Component, computed, inject, OnInit, signal} from '@angular/core';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
@@ -6,6 +6,8 @@ import {
   ActivationCurrency,
   ActivationRecord,
   ActivationStatus,
+  LicenseEvent,
+  LicenseAlert,
 } from '../../core/models/erp.models';
 
 export interface ActivationPayload {
@@ -29,7 +31,7 @@ export interface ActivationPayload {
   imports: [MatIconModule, ReactiveFormsModule],
   templateUrl: './activation.html',
 })
-export class ActivationComponent {
+export class ActivationComponent implements OnInit {
   public api = inject(ErpApiService);
 
   public searchQuery = signal<string>('');
@@ -37,6 +39,11 @@ export class ActivationComponent {
   public isModalOpen = signal<boolean>(false);
   public editingId = signal<string | null>(null);
   public isSaving = signal<boolean>(false);
+  public isLicenseBusy = signal<boolean>(false);
+
+  /** License history (master-only, populated on init). */
+  public licenseEvents = signal<LicenseEvent[]>([]);
+  public licenseAlerts = signal<LicenseAlert[]>([]);
 
   public readonly paymentMethods = [
     {value: 'transferencia', label: 'Transferencia bancaria'},
@@ -259,6 +266,133 @@ export class ActivationComponent {
       default:
         return 'bg-stone-100 text-stone-700 border-stone-200';
     }
+  }
+
+  public ngOnInit(): void {
+    this.api.refreshLicense().catch(() => {/* non-blocking */});
+    this.api.refreshLicenseAdminData().catch(() => {/* non-blocking */});
+  }
+
+  public readonly applyToken = signal<string>('');
+
+  public readonly licenceExpiresDisplay = computed(() => {
+    const lic = this.api.systemLicense();
+    if (!lic) return '—';
+    return new Date(lic.expiresAt).toLocaleDateString('es-VE', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  });
+
+  public licenseModeClass(mode: string): string {
+    switch (mode) {
+      case 'normal':
+        return 'bg-emerald-50 text-emerald-800';
+      case 'aviso':
+        return 'bg-amber-50 text-amber-800';
+      case 'gracia':
+        return 'bg-rose-50 text-rose-800';
+      default:
+        return 'bg-stone-100 text-stone-700';
+    }
+  }
+
+  public async applyLicense(): Promise<void> {
+    const token = this.applyToken().trim();
+    if (!token) {
+      this.api.showToast('Ingrese un token de licencia', 'error');
+      return;
+    }
+    this.isSaving.set(true);
+    try {
+      await this.api.applyLicenseToken(token);
+      this.applyToken.set('');
+    } catch {
+      // The API service already surfaced the failure reason.
+    } finally {
+      this.isSaving.set(false);
+    }
+  }
+
+  public copySshCommand(): void {
+    const command = `ssh mermelada-erp 'cd /opt/mermelada && node scripts/license.mjs apply "<TOKEN_FIRMADO>"'`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(command)
+        .then(() => this.api.showToast('Comando SSH copiado al portapapeles'))
+        .catch(() => this.api.showToast('No se pudo copiar el comando', 'error'));
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = command;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    this.api.showToast('Comando SSH copiado al portapapeles');
+  }
+
+  public async suspendLicense(): Promise<void> {
+    if (!confirm('¿Suspender la licencia global? El sistema quedará en modo solo lectura.')) {
+      return;
+    }
+    this.isLicenseBusy.set(true);
+    try {
+      await this.api.suspendLicense('Suspendida desde el panel Master');
+    } catch {
+      // The API service already surfaced the failure reason.
+    } finally {
+      this.isLicenseBusy.set(false);
+    }
+  }
+
+  public async sendLicenseTestEmail(): Promise<void> {
+    this.isLicenseBusy.set(true);
+    try {
+      await this.api.sendLicenseTestEmail();
+    } catch {
+      // The API service already surfaced the failure reason.
+    } finally {
+      this.isLicenseBusy.set(false);
+    }
+  }
+
+  public async runLicenseAlertCheck(): Promise<void> {
+    this.isLicenseBusy.set(true);
+    try {
+      await this.api.runLicenseAlertCheck();
+    } catch {
+      // The API service already surfaced the failure reason.
+    } finally {
+      this.isLicenseBusy.set(false);
+    }
+  }
+
+  public licenseEventLabel(action: string): string {
+    const labels: Record<string, string> = {
+      issue: 'Emitida',
+      apply: 'Aplicada',
+      suspend: 'Suspendida',
+      reactivate: 'Reactivada',
+      alert: 'Alerta enviada',
+      check: 'Revisión',
+    };
+    return labels[action] || action;
+  }
+
+  public licenseAlertClasses(status: string): string {
+    return status === 'sent' || status === 'enviado'
+      ? 'bg-emerald-50 text-emerald-800'
+      : status === 'error' || status === 'failed'
+        ? 'bg-rose-50 text-rose-800'
+        : 'bg-stone-100 text-stone-700';
+  }
+
+  public formatLicenseDate(value: string): string {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? value
+      : date.toLocaleString('es-VE', {dateStyle: 'short', timeStyle: 'short'});
   }
 
   private today(): string {

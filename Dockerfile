@@ -43,6 +43,10 @@ COPY --from=build --chown=mermelada:mermelada /app/node_modules ./node_modules
 COPY --from=build --chown=mermelada:mermelada /app/dist ./dist
 COPY --from=build --chown=mermelada:mermelada /app/scripts ./scripts
 COPY --chown=mermelada:mermelada package.json ./
+# Only the PUBLIC license key is deployed to the server (see LICENSE_*
+# variables). The private signing key stays with the licensor and is never
+# part of the build context or the image.
+COPY --chown=mermelada:mermelada keys/license-public.pem ./keys/license-public.pem
 
 RUN mkdir -p /app/data /app/backups \
   && chown -R mermelada:mermelada /app/data /app/backups

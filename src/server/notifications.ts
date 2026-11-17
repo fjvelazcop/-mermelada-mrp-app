@@ -797,6 +797,152 @@ export async function resendTunnelNotification(
   });
 }
 
+export interface SystemEmailOptions {
+  /** Stable log kind, for example `license-expiry`. */
+  kind: string;
+  subject: string;
+  text: string;
+  html: string;
+  /** Override the active recipients (used by tests and the CLI). */
+  recipients?: string[];
+  transport?: MailTransport;
+  retryDelayMs?: number;
+}
+
+/**
+ * Send a generic operational email to the active notification recipients.
+ * Shares the SMTP configuration, retries and `notification_log` with the
+ * tunnel notification, so the license alerts behave consistently.
+ */
+export async function sendSystemEmail(
+  options: SystemEmailOptions
+): Promise<NotificationResult> {
+  const recipients =
+    options.recipients ??
+    listNotificationRecipients()
+      .filter((recipient) => recipient.active)
+      .map((recipient) => recipient.email);
+  const config = readSmtpConfig();
+  const bcc = config?.bcc ?? [];
+
+  if (recipients.length === 0) {
+    const logId = createLog(
+      options.kind,
+      recipients,
+      bcc,
+      options.subject,
+      'omitido',
+      'no_recipients'
+    );
+    return {
+      status: 'skipped',
+      reason: 'no_recipients',
+      recipients,
+      bcc,
+      attempts: 0,
+      logId,
+    };
+  }
+
+  if (!config) {
+    const logId = createLog(
+      options.kind,
+      recipients,
+      bcc,
+      options.subject,
+      'omitido',
+      'smtp_not_configured'
+    );
+    return {
+      status: 'skipped',
+      reason: 'smtp_not_configured',
+      recipients,
+      bcc,
+      attempts: 0,
+      logId,
+    };
+  }
+
+  const logId = createLog(
+    options.kind,
+    recipients,
+    bcc,
+    options.subject,
+    'pendiente'
+  );
+  const message: MailMessage = {
+    from: formatFrom(config),
+    to: recipients.join(', '),
+    bcc: bcc.length > 0 ? bcc.join(', ') : undefined,
+    subject: options.subject,
+    text: options.text,
+    html: options.html,
+  };
+
+  const transport =
+    options.transport ??
+    (transportFactory ?? defaultTransportFactory)(config);
+  const retryDelayMs =
+    options.retryDelayMs ??
+    Math.max(0, Number(process.env['SMTP_RETRY_DELAY_MS'] || 1000));
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt += 1) {
+    try {
+      const info = await transport.sendMail(message);
+      const accepted = acceptedEmailAddresses(info);
+      if (accepted.length === 0) {
+        throw new Error('El servidor SMTP no confirmó ningún destinatario');
+      }
+      const expected = [...recipients, ...bcc];
+      const acceptedSet = new Set(accepted);
+      const rejected = expected.filter((email) => !acceptedSet.has(email));
+      if (rejected.length > 0) {
+        const errorMessage =
+          `El servidor SMTP aceptó ${expected.length - rejected.length} de ` +
+          `${expected.length} destinatarios; no aceptó: ${rejected.join(', ')}`;
+        updateLog(logId, 'parcial', attempt, errorMessage);
+        return {
+          status: 'partial',
+          recipients,
+          bcc,
+          accepted: expected.filter((email) => acceptedSet.has(email)),
+          rejected,
+          attempts: attempt,
+          logId,
+          error: errorMessage,
+        };
+      }
+      updateLog(logId, 'enviado', attempt);
+      return {
+        status: 'sent',
+        recipients,
+        bcc,
+        accepted: expected,
+        rejected: [],
+        attempts: attempt,
+        logId,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      updateLog(logId, 'reintentando', attempt, lastError);
+      if (attempt < MAX_SEND_ATTEMPTS) {
+        await sleep(retryDelayMs * attempt);
+      }
+    }
+  }
+
+  updateLog(logId, 'fallido', MAX_SEND_ATTEMPTS, lastError);
+  return {
+    status: 'failed',
+    recipients,
+    bcc,
+    attempts: MAX_SEND_ATTEMPTS,
+    logId,
+    error: lastError,
+  };
+}
+
 // --- Express handlers -------------------------------------------------------
 
 export function listNotificationRecipientsHandler(

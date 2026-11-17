@@ -57,6 +57,185 @@
     </div>
   </div>
 
+  <!-- License System -->
+  <div class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-6 mb-4">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-bold text-stone-900">Licencia del sistema</h2>
+        <p class="text-[11px] text-stone-500">Estado global del ERP. El sistema pasa a solo lectura si la licencia expira o se suspende.</p>
+      </div>
+      @if (api.systemLicense(); as license) {
+        @if (license.status === 'activa') {
+          <span class="inline-flex items-center px-2 py-1 rounded bg-emerald-50 text-emerald-800 text-[10px] font-semibold">
+            <mat-icon class="text-xs">check_circle</mat-icon>
+            activa
+          </span>
+        } @else {
+          <span class="inline-flex items-center px-2 py-1 rounded bg-rose-50 text-rose-800 text-[10px] font-semibold">
+            <mat-icon class="text-xs">warning</mat-icon>
+            {{ license.status }}
+          </span>
+        }
+      } @else {
+        <span class="inline-flex items-center px-2 py-1 rounded bg-stone-100 text-stone-600 text-[10px] font-semibold">cargando...</span>
+      }
+    </div>
+    @if (api.systemLicense(); as license) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+        <div>
+          <span class="text-[10px] text-stone-500">Titular</span>
+          <p class="text-sm font-medium text-stone-900 mt-0.5">{{ license.holder || '—' }}</p>
+        </div>
+        <div>
+          <span class="text-[10px] text-stone-500">Vence</span>
+          <p class="text-sm font-medium text-stone-900 mt-0.5">{{ licenceExpiresDisplay() }}</p>
+        </div>
+        <div>
+          <span class="text-[10px] text-stone-500">Días restantes</span>
+          <p class="text-sm font-medium text-stone-900 mt-0.5">{{ license.daysRemaining }}</p>
+        </div>
+        <div>
+          <span class="text-[10px] text-stone-500">Modo</span>
+          <p class="inline-block px-2 py-0.5 rounded text-sm font-medium mt-0.5" [class]="licenseModeClass(license.mode)">{{ license.mode }}</p>
+        </div>
+        <div>
+          <span class="text-[10px] text-stone-500">Gracia</span>
+          <p class="text-sm font-medium text-stone-900 mt-0.5">{{ license.graceDays }} día(s)</p>
+        </div>
+      </div>
+      @if (license.mode !== 'solo_lectura') {
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div>
+            <label class="block text-[10px] text-stone-700 mb-1">Token de activación</label>
+            <input
+              type="text"
+              [value]="applyToken()"
+              (input)="applyToken.set($any($event.target).value)"
+              placeholder="Pegue aquí el token firmado..."
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-rose-500 min-h-[44px] font-mono text-[11px]"
+            />
+            <button
+              type="button"
+              (click)="applyLicense()"
+              class="mt-2 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-rose-700 text-white rounded-lg hover:bg-rose-800 transition-colors disabled:opacity-50"
+              [disabled]="isSaving()"
+            >
+              <mat-icon class="text-base">login</mat-icon>
+              {{ isSaving() ? 'Aplicando…' : 'Aplicar token' }}
+            </button>
+          </div>
+          <div>
+            <span class="block text-[10px] text-stone-700 mb-1">Activación por SSH</span>
+            <button
+              type="button"
+              (click)="copySshCommand()"
+              class="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-stone-50 text-stone-700 rounded-lg hover:bg-stone-100 transition-colors"
+              title="Copiar plantilla de comando SSH"
+            >
+              <mat-icon class="text-base">terminal</mat-icon>
+              Copiar comando SSH
+            </button>
+            <p class="text-[10px] text-stone-400 mt-1.5">La emisión del token requiere la clave privada del licenciante.</p>
+          </div>
+        </div>
+      }
+    }
+  </div>
+
+  <!-- License admin & history -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+    <div class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <h2 class="text-sm font-bold text-stone-900">Acciones de licencia</h2>
+        <span class="text-[10px] text-stone-400">solo Master</span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button
+          type="button"
+          (click)="runLicenseAlertCheck()"
+          [disabled]="isLicenseBusy()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+        >
+          <mat-icon class="text-base">notification_active</mat-icon>
+          Revisar alertas
+        </button>
+        <button
+          type="button"
+          (click)="sendLicenseTestEmail()"
+          [disabled]="isLicenseBusy()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-stone-300 text-xs font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+        >
+          <mat-icon class="text-base">mail</mat-icon>
+          Correo de prueba
+        </button>
+        <button
+          type="button"
+          (click)="suspendLicense()"
+          [disabled]="isLicenseBusy() || !api.systemLicense() || api.systemLicense()?.mode === 'solo_lectura'"
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-rose-200 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+        >
+          <mat-icon class="text-base">lock</mat-icon>
+          Suspender licencia
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5">
+      <h2 class="text-sm font-bold text-stone-900 mb-3">Eventos recientes</h2>
+      @if (licenseEvents().length === 0) {
+        <p class="text-[11px] text-stone-400">Sin eventos registrados.</p>
+      } @else {
+        <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
+          @for (event of licenseEvents(); track event.id) {
+            <div class="flex items-start justify-between gap-2 text-[11px] border-b border-stone-100 pb-1.5 last:border-0">
+              <div class="min-w-0">
+                <span class="font-semibold text-stone-800">{{ licenseEventLabel(event.action) }}</span>
+                @if (event.detail) {
+                  <span class="text-stone-500"> · {{ event.detail }}</span>
+                }
+                <div class="text-stone-400 truncate">{{ event.source }}@if (event.actor) { · {{ event.actor }} }</div>
+              </div>
+              <span class="text-stone-400 whitespace-nowrap">{{ formatLicenseDate(event.createdAt) }}</span>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  @if (licenseAlerts().length > 0) {
+    <div class="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5 mb-4">
+      <h2 class="text-sm font-bold text-stone-900 mb-3">Alertas de vencimiento</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-[11px]">
+          <thead class="bg-stone-50 border-b border-stone-200 text-stone-600 uppercase font-semibold text-[10px] tracking-wide">
+            <tr>
+              <th class="py-2 px-3">Fecha</th>
+              <th class="py-2 px-3">Días restantes</th>
+              <th class="py-2 px-3">Destinatarios</th>
+              <th class="py-2 px-3">Estado</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (alert of licenseAlerts(); track alert.id) {
+              <tr>
+                <td class="py-2 px-3 font-mono">{{ alert.alertDate }}</td>
+                <td class="py-2 px-3">{{ alert.daysRemaining }}</td>
+                <td class="py-2 px-3 text-stone-500">{{ alert.recipients.join(', ') || '—' }}</td>
+                <td class="py-2 px-3">
+                  <span class="inline-block px-2 py-0.5 rounded font-semibold" [class]="licenseAlertClasses(alert.status)">{{ alert.status }}</span>
+                  @if (alert.error) {
+                    <span class="block text-[10px] text-rose-700 mt-0.5">{{ alert.error }}</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
   <!-- Filters -->
   <div class="flex flex-col sm:flex-row gap-3">
     <div class="relative flex-1">

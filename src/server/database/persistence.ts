@@ -690,10 +690,58 @@ function migrate(db: SqliteDatabase): void {
       updated_at TEXT NOT NULL
     );
 
+    -- ==========================================================
+    -- Global system license (migration v8)
+    -- ==========================================================
+
+    CREATE TABLE IF NOT EXISTS system_license (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      license_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'prueba',
+      holder TEXT,
+      issued_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      grace_days INTEGER NOT NULL DEFAULT 7,
+      token_id TEXT,
+      last_seen_at TEXT,
+      max_seen_at TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS license_events (
+      id TEXT PRIMARY KEY,
+      license_id TEXT,
+      action TEXT NOT NULL,
+      status TEXT,
+      expires_at TEXT,
+      grace_days INTEGER,
+      actor TEXT,
+      source TEXT NOT NULL,
+      token_id TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS license_alerts (
+      id TEXT PRIMARY KEY,
+      license_id TEXT NOT NULL,
+      alert_date TEXT NOT NULL,
+      days_remaining INTEGER NOT NULL,
+      recipients TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      sent_at TEXT,
+      UNIQUE(license_id, alert_date)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tunnel_sessions_started ON tunnel_sessions(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_notification_recipients_active ON notification_recipients(active);
     CREATE INDEX IF NOT EXISTS idx_notification_log_created ON notification_log(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_activation_records_payment_date ON activation_records(payment_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_license_events_created ON license_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_license_alerts_created ON license_alerts(created_at DESC);
 
     CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
     CREATE INDEX IF NOT EXISTS idx_production_materials_order ON production_order_materials(order_id);
@@ -823,6 +871,12 @@ function migrate(db: SqliteDatabase): void {
     // created by the schema / role seed. This version only records the
     // migration for existing databases.
     insert.run(7, new Date().toISOString());
+  }
+  if (currentVersion < 8) {
+    // Global system license, its event log and the daily alert deduplication
+    // table. The singleton row is seeded lazily by ensureSystemLicense() so the
+    // initial period can be configured through LICENSE_INITIAL_DAYS.
+    insert.run(8, new Date().toISOString());
   }
 }
 

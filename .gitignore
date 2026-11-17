@@ -10,6 +10,11 @@
 # Google Drive service account JSON and other mounted secrets
 /secrets
 
+# System-license signing keys: only the PUBLIC key may be committed.
+# The private key must stay with the licensor, never on the ERP server.
+keys/*private*.pem
+license-private.pem
+
 # Compiled output
 /dist
 /tmp

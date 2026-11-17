@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { createApiApp } from './server/api.js';
 import { closeDb } from './server/database/persistence.js';
 import { installGracefulShutdown } from './server/lifecycle.js';
+import { startLicenseAlertScheduler } from './server/license-alerts.js';
 import { uiAuthMiddleware } from './server/ui-auth.js';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
@@ -117,7 +118,14 @@ if (isMainModule(import.meta.url) || process.env['pm_id']) {
 
   // Docker, systemd and PM2 stop/restart the process with SIGTERM. Drain the
   // HTTP server and close SQLite cleanly so the supervisor can restart safely.
-  installGracefulShutdown({ server, onClose: closeDb });
+  const stopLicenseAlerts = startLicenseAlertScheduler();
+  installGracefulShutdown({
+    server,
+    onClose: () => {
+      stopLicenseAlerts();
+      closeDb();
+    },
+  });
 }
 
 /**

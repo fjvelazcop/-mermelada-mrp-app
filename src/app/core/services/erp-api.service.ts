@@ -42,6 +42,9 @@ import {
   TunnelSessionsResponse,
   NotificationDispatchResult,
   ActivationRecord,
+  SystemLicense,
+  LicenseEvent,
+  LicenseAlert,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
 import {computed} from '@angular/core';
@@ -248,6 +251,13 @@ export class ErpApiService {
 
   /** Master-only activation and payment-control ledger. */
   public activationRecords = signal<ActivationRecord[]>([]);
+
+  /** Global system license status (visible to every authenticated user). */
+  public systemLicense = signal<SystemLicense | null>(null);
+
+  /** Master-only license audit trail and daily alert history. */
+  public licenseEvents = signal<LicenseEvent[]>([]);
+  public licenseAlerts = signal<LicenseAlert[]>([]);
 
   /** Set when a real JWT session is active; overrides the demo user list. */
   public authenticatedUser = signal<SystemUser | null>(null);
@@ -590,6 +600,93 @@ export class ErpApiService {
         list.filter((record) => record.id !== id)
       );
       this.showToast('Registro de activación eliminado.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  // --- GLOBAL SYSTEM LICENSE ---
+  public async refreshLicense(): Promise<void> {
+    try {
+      const license = await firstValueFrom(
+        this.http.get<SystemLicense>('/api/system/license')
+      );
+      this.systemLicense.set(license);
+    } catch {
+      // A missing license endpoint must not break the rest of the boot.
+    }
+  }
+
+  public async refreshLicenseAdminData(): Promise<void> {
+    if (!this.isMaster()) return;
+    const [events, alerts] = await Promise.all([
+      firstValueFrom(
+        this.http.get<LicenseEvent[]>('/api/system/license/events?limit=30')
+      ).catch(() => [] as LicenseEvent[]),
+      firstValueFrom(
+        this.http.get<LicenseAlert[]>('/api/system/license/alerts?limit=30')
+      ).catch(() => [] as LicenseAlert[]),
+    ]);
+    this.licenseEvents.set(events || []);
+    this.licenseAlerts.set(alerts || []);
+  }
+
+  public async applyLicenseToken(token: string): Promise<SystemLicense> {
+    try {
+      const response = await firstValueFrom(
+        this.http.post<{ license: SystemLicense }>(
+          '/api/system/license/apply',
+          { token }
+        )
+      );
+      this.systemLicense.set(response.license);
+      await this.refreshLicenseAdminData();
+      this.showToast('Licencia aplicada correctamente.');
+      return response.license;
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async suspendLicense(reason?: string): Promise<SystemLicense> {
+    try {
+      const response = await firstValueFrom(
+        this.http.post<{ license: SystemLicense }>(
+          '/api/system/license/suspend',
+          { reason }
+        )
+      );
+      this.systemLicense.set(response.license);
+      await this.refreshLicenseAdminData();
+      this.showToast('Licencia suspendida: el sistema quedó en solo lectura.');
+      return response.license;
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async sendLicenseTestEmail(): Promise<void> {
+    try {
+      await firstValueFrom(
+        this.http.post('/api/system/license/alerts/test', {})
+      );
+      this.showToast('Correo de prueba enviado.');
+    } catch (err) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async runLicenseAlertCheck(): Promise<void> {
+    try {
+      await firstValueFrom(
+        this.http.post('/api/system/license/alerts/check', {})
+      );
+      await this.refreshLicenseAdminData();
+      this.showToast('Revisión de alertas ejecutada.');
     } catch (err) {
       this.showToast(this.apiErrorMessage(err), 'error');
       throw err;

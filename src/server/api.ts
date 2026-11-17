@@ -22,6 +22,19 @@ import {
   listActivations,
   updateActivation,
 } from './activation.js';
+import { licenseGuard } from './license-guard.js';
+import {
+  applyLicenseToken,
+  ensureSystemLicense,
+  getLicenseSnapshot,
+  listLicenseAlerts,
+  listLicenseEvents,
+  suspendLicense,
+} from './license.js';
+import {
+  runLicenseAlertCheck,
+  sendLicenseTestEmail,
+} from './license-alerts.js';
 import {
   authenticate,
   authorizeRequest,
@@ -70,6 +83,8 @@ import {
   auditLogSchema,
   activationCreateSchema,
   activationUpdateSchema,
+  licenseApplySchema,
+  licenseSuspendSchema,
   changePasswordSchema,
   costingSimulationSchema,
   customerSchema,
@@ -256,9 +271,14 @@ export function createApiApp(): express.Express {
   // Authentication / RBAC middleware. Both are no-ops unless AUTH_ENABLED=true.
   app.use(authenticate);
   app.use(authorizeRequest);
+  // Global license enforcement. It runs after authentication so the master can
+  // still reach the license endpoints, and it keeps the API read-only once the
+  // license has fully expired.
+  app.use(licenseGuard());
 
   ensureSeedUsers();
   ensureSeedNotificationRecipients();
+  ensureSystemLicense();
 
   // --- HEALTH CHECK ---
   app.get(
@@ -411,6 +431,93 @@ export function createApiApp(): express.Express {
         throw new ApiError(404, 'Registro de activación no encontrado');
       }
       res.json({ success: true, message: 'Registro de activación eliminado' });
+    })
+  );
+
+  // --- GLOBAL SYSTEM LICENSE (SIGNED TOKEN, MASTER-ONLY WRITES) ---
+  app.get(
+    '/api/system/license',
+    query((_req, res) => {
+      res.json(getLicenseSnapshot());
+    })
+  );
+
+  app.get(
+    '/api/system/license/events',
+    requireRole('master'),
+    query((req, res) => {
+      const limit = Number(req.query['limit'] || 20);
+      res.json(listLicenseEvents(limit));
+    })
+  );
+
+  app.get(
+    '/api/system/license/alerts',
+    requireRole('master'),
+    query((req, res) => {
+      const limit = Number(req.query['limit'] || 20);
+      res.json(listLicenseAlerts(limit));
+    })
+  );
+
+  app.post(
+    '/api/system/license/apply',
+    requireRole('master'),
+    validateBody(licenseApplySchema),
+    mutation((req, res) => {
+      const actor = auditActor(req);
+      try {
+        const result = applyLicenseToken(
+          req.body.token,
+          actor.userName,
+          'api'
+        );
+        res.json({
+          success: true,
+          message: 'Licencia aplicada correctamente',
+          license: result.snapshot,
+          tokenId: result.tokenId,
+        });
+      } catch (error) {
+        throw new ApiError(
+          400,
+          error instanceof Error ? error.message : String(error),
+          'LICENSE_TOKEN_INVALID'
+        );
+      }
+    })
+  );
+
+  app.post(
+    '/api/system/license/suspend',
+    requireRole('master'),
+    validateBody(licenseSuspendSchema),
+    mutation((req, res) => {
+      const actor = auditActor(req);
+      const snapshot = suspendLicense(req.body.reason, actor.userName, 'api');
+      res.json({
+        success: true,
+        message: 'Licencia suspendida. El sistema quedó en solo lectura.',
+        license: snapshot,
+      });
+    })
+  );
+
+  app.post(
+    '/api/system/license/alerts/test',
+    requireRole('master'),
+    mutation(async (_req, res) => {
+      const result = await sendLicenseTestEmail();
+      res.json({ success: true, result });
+    })
+  );
+
+  app.post(
+    '/api/system/license/alerts/check',
+    requireRole('master'),
+    mutation(async (_req, res) => {
+      const result = await runLicenseAlertCheck();
+      res.json({ success: true, result });
     })
   );
 

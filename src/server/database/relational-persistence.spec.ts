@@ -87,7 +87,7 @@ describe('normalized SQLite schema', () => {
         .all() as { version: number }[]
     ).map((row) => row.version);
 
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
   it('writes the seed data into the relational tables', () => {

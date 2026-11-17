@@ -110,8 +110,54 @@ export interface ActivationRecord {
   updatedAt: string;
 }
 
-export type UnitOfMeasure = 'kg' | 'g' | 'l' | 'ml' | 'unidades' | 'cajas' | 'paquetes';
+/** Global system license shared by every user. */
+export type LicenseStatus = 'activa' | 'prueba' | 'suspendida';
+export type LicenseMode = 'normal' | 'aviso' | 'gracia' | 'solo_lectura';
 
+export interface SystemLicense {
+  enabled: boolean;
+  licenseId: string;
+  status: LicenseStatus;
+  holder?: string;
+  issuedAt: string;
+  expiresAt: string;
+  graceDays: number;
+  daysRemaining: number;
+  mode: LicenseMode;
+  readOnly: boolean;
+  maxDays: number;
+  alertDays: number;
+  clockTampered: boolean;
+  updatedAt: string;
+}
+
+export interface LicenseEvent {
+  id: string;
+  licenseId?: string;
+  action: string;
+  status?: string;
+  expiresAt?: string;
+  graceDays?: number;
+  actor?: string;
+  source: string;
+  tokenId?: string;
+  detail?: string;
+  createdAt: string;
+}
+
+export interface LicenseAlert {
+  id: string;
+  licenseId: string;
+  alertDate: string;
+  daysRemaining: number;
+  recipients: string[];
+  status: string;
+  error?: string;
+  createdAt: string;
+  sentAt?: string;
+}
+
+export type UnitOfMeasure = 'kg' | 'g' | 'l' | 'ml' | 'unidades' | 'cajas' | 'paquetes';
 export type MaterialCategory = 'fruta' | 'aditivo' | 'empaque' | 'quimico';
 
 export type PresentationType =

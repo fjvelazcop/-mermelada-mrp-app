@@ -14,6 +14,9 @@ coverage
 .env
 .env.*
 !.env.production.example
+# System-license signing keys: only the public key may enter the image.
+keys/*private*.pem
+license-private.pem
 npm-debug.log*
 yarn-error.log*
 Dockerfile

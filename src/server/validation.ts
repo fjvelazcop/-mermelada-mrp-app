@@ -814,6 +814,16 @@ export const activationCreateSchema = z.object({
 
 export const activationUpdateSchema = activationCreateSchema.partial();
 
+/** Signed license token pasted by the master user. */
+export const licenseApplySchema = z.object({
+  token: z.string().trim().min(20).max(4000),
+});
+
+/** Optional reason recorded when suspending the system license. */
+export const licenseSuspendSchema = z.object({
+  reason: z.string().trim().max(300).optional(),
+});
+
 function toApiError(error: ZodError): ApiError {
   return new ApiError(422, 'Datos de entrada inválidos', 'VALIDATION_ERROR', {
     issues: error.issues.map((issue) => ({
