@@ -7,6 +7,7 @@
 | [Manual de licencia](./MANUAL-LICENCIA.md) | Licenciante y responsable técnico | Licencia global Ed25519, emisión/aplicación/rotación de tokens, roles master, modos, alertas, API/CLI y solución de problemas. |
 | [Plan issue #11](./PLAN-ISSUE11.md) | Dirección, contabilidad y desarrollo | Requisitos SENIAT, libros, brechas, fases, módulos ocultables y criterios de aceptación. |
 | [DEPLOYMENT.md](../DEPLOYMENT.md) | DevOps | Docker, systemd, PM2, túnel y backups en producción. |
+| [Despliegue paso a paso](./DESPLIEGUE-PASO-A-PASO.md) | DevOps | Mapa de carpetas, comandos copiar/pegar para PM2 y Docker, verificación y rollback del estado actual. |
 | [README.md](../README.md) | Desarrollo | Arquitectura, API, agentes, variables y pruebas. |
 
 ## Estado fiscal
