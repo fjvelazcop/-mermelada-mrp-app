@@ -696,7 +696,6 @@
                   @for (row of sheetMarmitas.controls; track $index; let i = $index) {
                     <tr
                       [formGroupName]="i"
-                      [id]="'sheet-marmita-row-' + (i + 1)"
                       class="border-t border-stone-100 transition-colors hover:bg-amber-50/30"
                       [class.bg-amber-50]="activeSheetMarmita() === i + 1"
                     >

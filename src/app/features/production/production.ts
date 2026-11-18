@@ -555,12 +555,9 @@ export class ProductionComponent {
     );
   });
 
-  /** Marks one marmita as active in the sheet and scrolls its main row into view. */
+  /** Marks one marmita as active in both the matrix and the main table. */
   public setActiveSheetMarmita(number: number): void {
     this.activeSheetMarmita.set(number);
-    if (typeof document === 'undefined') return;
-    const row = document.getElementById(`sheet-marmita-row-${number}`);
-    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   /** Units of one presentation for a marmita, used by the editable summary. */
