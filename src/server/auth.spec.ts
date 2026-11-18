@@ -168,6 +168,24 @@ describe('POST /api/auth/login', () => {
     expect(unknown.status).toBe(401);
   });
 
+  it('accepts the account email as the identifier', async () => {
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'ADMIN@pulpacraft.local',
+        password: 'test-password',
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      token: string;
+      user: { username: string };
+    };
+    expect(body.token).toBeTruthy();
+    expect(body.user.username).toBe('admin');
+  });
+
   it('validates the login payload', async () => {
     const response = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',

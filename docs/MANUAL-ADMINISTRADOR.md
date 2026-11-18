@@ -309,6 +309,11 @@ lista de destinatarios de alertas. El enlace usa el fragmento
 `Referer`, y también incluye el código manual. El enlace y el código vencen en
 `AUTH_RESET_TTL_SECONDS` (30 minutos por defecto) y son de un solo uso.
 
+El campo de acceso acepta **usuario o correo** (`fjvelazco` o
+`fjvelazco@gmail.com`); el correo se compara sin distinguir mayúsculas. Tras 10
+intentos fallidos para el mismo usuario e IP, el login se bloquea 15 minutos
+(`RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW_MS`).
+
 Requisitos:
 
 - `SMTP_HOST`, `SMTP_FROM` y credenciales válidas.

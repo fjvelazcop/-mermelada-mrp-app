@@ -753,6 +753,38 @@ describe('authentication handlers', () => {
     expect(bodyOf(captured)['token']).toBeTypeOf('string');
   });
 
+  it('accepts the account email as the login identifier', () => {
+    const byEmail = captureResponse();
+    auth.loginHandler(
+      makeRequest({
+        body: { username: 'admin@pulpacraft.local', password: 'test-password' },
+      }),
+      byEmail.res
+    );
+    expect(byEmail.captured.statusCode).toBe(200);
+    expect(
+      (bodyOf(byEmail.captured)['user'] as { username?: string }).username
+    ).toBe('admin');
+
+    const upperCase = captureResponse();
+    auth.loginHandler(
+      makeRequest({
+        body: { username: 'ADMIN@PULPACRAFT.LOCAL', password: 'test-password' },
+      }),
+      upperCase.res
+    );
+    expect(upperCase.captured.statusCode).toBe(200);
+
+    const wrongPassword = captureResponse();
+    auth.loginHandler(
+      makeRequest({
+        body: { username: 'admin@pulpacraft.local', password: 'wrong-password' },
+      }),
+      wrongPassword.res
+    );
+    expect(wrongPassword.captured.statusCode).toBe(401);
+  });
+
   it('handles /me and logout with and without an authenticated session', () => {
     const anonymous = captureResponse();
     auth.meHandler(makeRequest(), anonymous.res);

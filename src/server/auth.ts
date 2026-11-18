@@ -1578,11 +1578,13 @@ export function authorizeRequest(
 
 /** POST /api/auth/login handler. */
 export function loginHandler(req: Request, res: Response): void {
-  const username =
+  const identifier =
     typeof req.body?.username === 'string' ? req.body.username.trim() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
-  const record = username ? findUserByUsername(username) : undefined;
+  // The form labels this field "Usuario o correo": accept both. Email matching
+  // is case-insensitive, matching the password-recovery flow.
+  const record = identifier ? findUserByIdentifier(identifier) : undefined;
   if (!record || record.status !== 'activo' || !verifyPassword(password, record.password_hash)) {
     unauthorized(res, 'Usuario o contraseña incorrectos');
     return;
