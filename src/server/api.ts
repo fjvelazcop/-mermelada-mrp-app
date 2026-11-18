@@ -743,7 +743,7 @@ export function createApiApp(): express.Express {
 
   app.post(
     '/api/production-orders/manual/sheet',
-    requireRole('admin', 'supervisor_planta'),
+    requireRole('admin', 'master', 'supervisor_planta'),
     validateBody(manualProductionSheetOrderSchema),
     mutation((req, res) => {
       const created = dbInstance.createManualSheetProductionOrder(

@@ -447,6 +447,25 @@ describe('manual production sheet (physical Lote 72 format)', () => {
     expect(after).toEqual(before);
   });
 
+  it('lets the master role register a manual sheet (parity with admin)', async () => {
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-MASTER',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) => sheetRow(n)),
+        packaging: { presentationKg: 20, cunetes: 1, cajas: 0 },
+        processImmediately: false,
+      },
+      { 'X-Demo-Role': 'master' }
+    );
+
+    expect(response.status).toBe(201);
+    expect(body['status']).toBe('borrador');
+    expect(body['mode']).toBe('manual');
+  });
+
   it('derives obtained units from kilos totales when the client omits them', async () => {
     const { response, body } = await request(
       '/api/production-orders/manual/sheet',

@@ -261,3 +261,131 @@ export function calculatePresentationsEstimate(
     };
   });
 }
+
+/** One editable cell of the marmita × presentation matrix. */
+export interface SheetMatrixCellTotals {
+  presentationId: string;
+  units: number;
+  assignedKg: number;
+}
+
+/** Units and kilos of a marmita across every configured presentation. */
+export interface SheetMarmitaTotals {
+  number: number;
+  units: number;
+  assignedKg: number;
+  estimatedKg: number;
+  differenceKg: number;
+  missingKg: number;
+  excessKg: number;
+  cells: SheetMatrixCellTotals[];
+}
+
+/** Totals of one presentation column across every marmita. */
+export interface SheetPresentationTotals {
+  id: string;
+  units: number;
+  assignedKg: number;
+  unitsByMarmita: { number: number; units: number }[];
+}
+
+/** Totals of the whole marmita × presentation matrix. */
+export interface SheetMatrixTotals {
+  marmitas: SheetMarmitaTotals[];
+  presentations: SheetPresentationTotals[];
+  totalUnits: number;
+  assignedKg: number;
+}
+
+/** Marmita row as captured by the manual sheet (subset used by the matrix). */
+export interface SheetMatrixMarmitaInput {
+  number: number;
+  totalKg: number;
+  obtainedUnits?: number;
+  presentationUnits?: PresentationUnitAssignment[];
+}
+
+/**
+ * Totals of the marmita × presentation matrix: one row per marmita, one column
+ * per presentation and a grand total.
+ *
+ * Legacy single-presentation sheets may not persist `presentationUnits`; in
+ * that case the derived units of the marmita row are used for the only column.
+ */
+export function calculateSheetMatrixTotals(
+  marmitas: SheetMatrixMarmitaInput[],
+  presentations: PresentationWeight[]
+): SheetMatrixTotals {
+  const columns = presentations.map((line) => ({
+    id: line.id,
+    presentationKg: nonNegative(line.presentationKg),
+  }));
+  const presentationTotals: SheetPresentationTotals[] = columns.map((line) => ({
+    id: line.id,
+    units: 0,
+    assignedKg: 0,
+    unitsByMarmita: [],
+  }));
+
+  let totalUnits = 0;
+  let assignedKg = 0;
+
+  const marmitaTotals = marmitas.map((row) => {
+    const stored = new Map<string, number>();
+    for (const item of row.presentationUnits || []) {
+      if (!item?.presentationId) continue;
+      stored.set(item.presentationId, nonNegative(item.units));
+    }
+    if (columns.length === 1 && !stored.has(columns[0].id)) {
+      const fallback = nonNegative(row.obtainedUnits);
+      if (fallback > 0) stored.set(columns[0].id, fallback);
+    }
+
+    let units = 0;
+    let rowKg = 0;
+    const cells = columns.map((column, index) => {
+      const cellUnits = stored.get(column.id) ?? 0;
+      const cellKg = roundSheetValue(cellUnits * column.presentationKg);
+      units = roundSheetValue(units + cellUnits);
+      rowKg = roundSheetValue(rowKg + cellKg);
+      presentationTotals[index].units = roundSheetValue(
+        presentationTotals[index].units + cellUnits
+      );
+      presentationTotals[index].assignedKg = roundSheetValue(
+        presentationTotals[index].assignedKg + cellKg
+      );
+      presentationTotals[index].unitsByMarmita.push({
+        number: row.number,
+        units: cellUnits,
+      });
+      return {
+        presentationId: column.id,
+        units: cellUnits,
+        assignedKg: cellKg,
+      };
+    });
+
+    const estimatedKg = nonNegative(row.totalKg);
+    const differenceKg = roundSheetValue(rowKg - estimatedKg);
+    totalUnits = roundSheetValue(totalUnits + units);
+    assignedKg = roundSheetValue(assignedKg + rowKg);
+
+    return {
+      number: row.number,
+      units,
+      assignedKg: rowKg,
+      estimatedKg,
+      differenceKg,
+      missingKg: differenceKg < 0 ? roundSheetValue(-differenceKg) : 0,
+      excessKg: differenceKg > 0 ? differenceKg : 0,
+      cells,
+    };
+  });
+
+  return {
+    marmitas: marmitaTotals,
+    presentations: presentationTotals,
+    totalUnits,
+    assignedKg,
+  };
+}

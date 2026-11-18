@@ -6,6 +6,7 @@ import {
   calculateObtainedUnitsFromIngredients,
   calculatePackagingEstimate,
   calculatePresentationsEstimate,
+  calculateSheetMatrixTotals,
   calculateTotalKgFromIngredients,
   normalizePresentationUnits,
   requiresManualPresentationUnits,
@@ -202,6 +203,122 @@ describe('manual sheet calculations', () => {
       expect(estimate.reduce((sum, line) => sum + line.assignedKg, 0)).toBe(20);
       expect(estimate[0].estimatedUnits).toBe(80);
       expect(estimate[0].missingUnits).toBe(40);
+    });
+  });
+
+  describe('marmita × presentation matrix', () => {
+    it('totals every marmita, presentation column and the whole sheet', () => {
+      const totals = calculateSheetMatrixTotals(
+        [
+          {
+            number: 1,
+            totalKg: 200,
+            presentationUnits: [
+              { presentationId: 'cunete', units: 10 },
+              { presentationId: 'p250', units: 0 },
+            ],
+          },
+          {
+            number: 2,
+            totalKg: 10,
+            presentationUnits: [
+              { presentationId: 'cunete', units: 0 },
+              { presentationId: 'p250', units: 40 },
+            ],
+          },
+          {
+            number: 3,
+            totalKg: 0,
+            presentationUnits: [
+              { presentationId: 'cunete', units: 0 },
+              { presentationId: 'p250', units: 0 },
+            ],
+          },
+        ],
+        [
+          { id: 'cunete', presentationKg: 20 },
+          { id: 'p250', presentationKg: 0.25 },
+        ]
+      );
+
+      expect(totals.marmitas).toHaveLength(3);
+      expect(totals.marmitas[0].units).toBe(10);
+      expect(totals.marmitas[0].assignedKg).toBe(200);
+      expect(totals.marmitas[0].differenceKg).toBe(0);
+      expect(totals.marmitas[1].units).toBe(40);
+      expect(totals.marmitas[1].assignedKg).toBe(10);
+      expect(totals.marmitas[1].cells[1].assignedKg).toBe(10);
+      expect(totals.presentations[0].units).toBe(10);
+      expect(totals.presentations[0].assignedKg).toBe(200);
+      expect(totals.presentations[1].units).toBe(40);
+      expect(totals.presentations[1].assignedKg).toBe(10);
+      expect(totals.presentations[1].unitsByMarmita).toEqual([
+        { number: 1, units: 0 },
+        { number: 2, units: 40 },
+        { number: 3, units: 0 },
+      ]);
+      expect(totals.totalUnits).toBe(50);
+      expect(totals.assignedKg).toBe(210);
+    });
+
+    it('reports missing and excess kilos per marmita', () => {
+      const totals = calculateSheetMatrixTotals(
+        [
+          {
+            number: 1,
+            totalKg: 100,
+            presentationUnits: [{ presentationId: 'p250', units: 200 }],
+          },
+          {
+            number: 2,
+            totalKg: 100,
+            presentationUnits: [{ presentationId: 'p250', units: 800 }],
+          },
+        ],
+        [{ id: 'p250', presentationKg: 0.25 }]
+      );
+
+      expect(totals.marmitas[0].assignedKg).toBe(50);
+      expect(totals.marmitas[0].missingKg).toBe(50);
+      expect(totals.marmitas[0].excessKg).toBe(0);
+      expect(totals.marmitas[1].assignedKg).toBe(200);
+      expect(totals.marmitas[1].excessKg).toBe(100);
+      expect(totals.marmitas[1].missingKg).toBe(0);
+    });
+
+    it('falls back to the derived units on legacy single-presentation rows', () => {
+      const totals = calculateSheetMatrixTotals(
+        [{ number: 1, totalKg: 100, obtainedUnits: 5 }],
+        [{ id: 'cunete', presentationKg: 20 }]
+      );
+
+      expect(totals.marmitas[0].units).toBe(5);
+      expect(totals.marmitas[0].assignedKg).toBe(100);
+      expect(totals.presentations[0].units).toBe(5);
+      expect(totals.totalUnits).toBe(5);
+      expect(totals.assignedKg).toBe(100);
+    });
+
+    it('ignores unknown presentation ids and negative units', () => {
+      const totals = calculateSheetMatrixTotals(
+        [
+          {
+            number: 1,
+            totalKg: 0,
+            presentationUnits: [
+              { presentationId: 'unknown', units: 9 },
+              { presentationId: 'cunete', units: -3 },
+            ],
+          },
+        ],
+        [{ id: 'cunete', presentationKg: 20 }]
+      );
+
+      expect(totals.marmitas[0].units).toBe(0);
+      expect(totals.marmitas[0].cells).toEqual([
+        { presentationId: 'cunete', units: 0, assignedKg: 0 },
+      ]);
+      expect(totals.totalUnits).toBe(0);
     });
   });
 });

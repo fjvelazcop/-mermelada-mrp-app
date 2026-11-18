@@ -17,6 +17,7 @@ import {
   calculateObtainedUnits,
   calculatePackagingEstimate,
   calculatePresentationsEstimate,
+  calculateSheetMatrixTotals,
   calculateTotalKgFromIngredients,
   requiresManualPresentationUnits,
   sumPresentationUnits,
@@ -42,6 +43,8 @@ export class ProductionComponent {
   public selectedManualSheetOrder = signal<ProductionOrder | null>(null);
   public isSavingManualSheet = signal<boolean>(false);
   public sheetRevision = signal<number>(0);
+  /** Marmita highlighted in the sheet matrix (1..6). */
+  public activeSheetMarmita = signal<number>(1);
   public editingManualOrderId = signal<string | null>(null);
   public isRecipeDetailModalOpen = signal<boolean>(false);
   public selectedRecipe = signal<RecipeBOM | null>(null);
@@ -174,9 +177,13 @@ export class ProductionComponent {
     this.productionOrders().filter((order) => order.mode !== 'manual')
   );
   public isAdmin = computed(() => this.api.currentRole() === 'admin');
-  /** Admin and plant supervisor may register LOTE 72 manual sheets. */
+  /** Master inherits every administrative production action. */
+  public isAdminOrMaster = computed(
+    () => this.isAdmin() || this.api.isMaster()
+  );
+  /** Admin, master and plant supervisor may register LOTE 72 manual sheets. */
   public canCreateManualSheet = computed(
-    () => this.isAdmin() || this.api.isSupervisorPlanta()
+    () => this.isAdminOrMaster() || this.api.isSupervisorPlanta()
   );
   public pendingSalesOrders = computed(() => {
     return this.api.salesOrders().filter(s => s.status === 'pendiente' || s.status === 'en_produccion');
@@ -530,6 +537,57 @@ export class ProductionComponent {
       };
     });
   });
+
+  /**
+   * Matrix totals: one row per marmita, one column per presentation, plus the
+   * per-marmita kilos balance and the grand total.
+   */
+  public sheetMatrix = computed(() => {
+    this.sheetRevision();
+    return calculateSheetMatrixTotals(
+      this.sheetMarmitas.getRawValue().map((row) => ({
+        number: Number(row.number),
+        totalKg: this.positive(row.totalKg),
+        obtainedUnits: this.positive(row.obtainedUnits),
+        presentationUnits: row.presentationUnits,
+      })),
+      this.sheetPresentationLines()
+    );
+  });
+
+  /** Marks one marmita as active in the sheet and scrolls its main row into view. */
+  public setActiveSheetMarmita(number: number): void {
+    this.activeSheetMarmita.set(number);
+    if (typeof document === 'undefined') return;
+    const row = document.getElementById(`sheet-marmita-row-${number}`);
+    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  /** Units of one presentation for a marmita, used by the editable summary. */
+  public sheetCellUnits(marmitaNumber: number, presentationIndex: number): number {
+    const row = this.sheetMarmitas.controls.find(
+      (control) => control.controls.number.value === marmitaNumber
+    );
+    return this.positive(
+      row?.controls.presentationUnits.at(presentationIndex)?.controls.units.value
+    );
+  }
+
+  /** Edits the units of one presentation for the active marmita. */
+  public setSheetCellUnits(
+    marmitaNumber: number,
+    presentationIndex: number,
+    value: unknown
+  ): void {
+    const row = this.sheetMarmitas.controls.find(
+      (control) => control.controls.number.value === marmitaNumber
+    );
+    const control = row?.controls.presentationUnits.at(presentationIndex)?.controls
+      .units;
+    if (!control) return;
+    control.setValue(this.positive(value));
+    control.markAsDirty();
+  }
 
   public sheetCosts = computed(() => {
     this.sheetRevision();
@@ -908,6 +966,16 @@ export class ProductionComponent {
       // and the legacy packaging counters derived from it.
       if (this.hasMultiplePresentations()) {
         this.recalculateObtainedUnits(group.controls.number.value, true);
+      } else {
+        // With a single presentation the matrix cell and "Cant. obtenida" are
+        // the same value, so keep both controls aligned.
+        const units = this.positive(
+          group.controls.presentationUnits.at(0)?.controls.units.value
+        );
+        this.manualUnitsOverrides.add(group.controls.number.value);
+        if (group.controls.obtainedUnits.value !== units) {
+          group.controls.obtainedUnits.setValue(units, { emitEvent: false });
+        }
       }
       this.syncLegacyPackaging();
       this.sheetRevision.update((value) => value + 1);
@@ -934,6 +1002,7 @@ export class ProductionComponent {
   private resetManualSheetForm() {
     this.manualUnitsOverrides.clear();
     this.manualTotalKgOverrides.clear();
+    this.activeSheetMarmita.set(1);
     this.sheetMarmitas.clear();
     for (let index = 1; index <= 6; index += 1) {
       this.sheetMarmitas.push(this.buildMarmitaGroup(index));
@@ -970,9 +1039,9 @@ export class ProductionComponent {
   }
 
   public openNewManualSheetOrder() {
-    if (!this.isAdmin() && !this.api.isSupervisorPlanta()) {
+    if (!this.canCreateManualSheet()) {
       this.api.showToast(
-        'Solo el Administrador puede crear planillas manuales.',
+        'Solo el Administrador, el Master o el Supervisor de Planta puede crear planillas manuales.',
         'error'
       );
       return;
@@ -1055,9 +1124,9 @@ export class ProductionComponent {
         },
         commitmentReference: value.commitmentReference || undefined,
         operatorNotes: value.operatorNotes || undefined,
-        // Only the administrator may consume stock. Supervisors register the
-        // sheet and leave it in draft for later processing.
-        processImmediately: this.isAdmin(),
+        // Only admin/master may consume stock. Supervisors register the sheet
+        // and leave it in draft for later processing.
+        processImmediately: this.isAdminOrMaster(),
       });
       this.closeManualSheetModal();
     } catch {
@@ -1151,8 +1220,8 @@ export class ProductionComponent {
   }
 
   public openEditManualOrder(order: ProductionOrder) {
-    if (!this.isAdmin()) {
-      this.api.showToast('Solo el Administrador puede editar órdenes manuales.', 'error');
+    if (!this.isAdminOrMaster()) {
+      this.api.showToast('Solo el Administrador o el Master puede editar órdenes manuales.', 'error');
       return;
     }
     if (order.status !== 'borrador') {
@@ -1220,8 +1289,8 @@ export class ProductionComponent {
   }
 
   public async submitManualOrder() {
-    if (!this.isAdmin()) {
-      this.api.showToast('Solo el Administrador puede gestionar órdenes manuales.', 'error');
+    if (!this.isAdminOrMaster()) {
+      this.api.showToast('Solo el Administrador o el Master puede gestionar órdenes manuales.', 'error');
       return;
     }
     if (this.manualFormulas.length === 0) {
@@ -1260,8 +1329,8 @@ export class ProductionComponent {
   }
 
   public async deleteManualOrder(order: ProductionOrder) {
-    if (!this.isAdmin()) {
-      this.api.showToast('Solo el Administrador puede eliminar órdenes manuales.', 'error');
+    if (!this.isAdminOrMaster()) {
+      this.api.showToast('Solo el Administrador o el Master puede eliminar órdenes manuales.', 'error');
       return;
     }
     if (
@@ -1274,8 +1343,8 @@ export class ProductionComponent {
   }
 
   public async processManualOrder(order: ProductionOrder) {
-    if (!this.isAdmin()) {
-      this.api.showToast('Solo el Administrador puede procesar órdenes manuales.', 'error');
+    if (!this.isAdminOrMaster()) {
+      this.api.showToast('Solo el Administrador o el Master puede procesar órdenes manuales.', 'error');
       return;
     }
     if (
@@ -1288,8 +1357,8 @@ export class ProductionComponent {
   }
 
   public async annulManualOrder(order: ProductionOrder) {
-    if (!this.isAdmin()) {
-      this.api.showToast('Solo el Administrador puede anular órdenes manuales.', 'error');
+    if (!this.isAdminOrMaster()) {
+      this.api.showToast('Solo el Administrador o el Master puede anular órdenes manuales.', 'error');
       return;
     }
     if (

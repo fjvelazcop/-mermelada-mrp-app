@@ -119,8 +119,10 @@ la tasa de cambio.
 Estados habituales: pendiente → en proceso → completada. Una orden puede
 anularse; la anulación queda auditada y no borra el historial.
 
-**Planilla manual de marmitas (formato físico Lote 72).** Solo el Administrador
-puede registrarla desde *Producción → Órdenes Manuales de Producción*:
+**Planilla manual de marmitas (formato físico Lote 72).** El Administrador, el
+Master y el Supervisor de Planta pueden registrarla desde *Producción → Órdenes
+Manuales de Producción*. Solo el Administrador y el Master pueden editarla,
+procesarla, anularla o eliminarla:
 
 1. Pulse **Planilla de marmitas** e indique lote, fecha de producción y
    referencia de compromiso.
@@ -131,15 +133,23 @@ puede registrarla desde *Producción → Órdenes Manuales de Producción*:
    suma masa. **Cant. obtenida** se calcula como *kilos totales ÷ peso por
    envase*. Ambos valores pueden corregirse manualmente y se recalculan cuando
    cambia una base relevante.
-3. Registre la presentación (peso por envase), cuñetes, cajas y el rendimiento
-   (%). El sistema calcula en tiempo real los totales, el costo de insumos y
-   empaques, el valor de producción con las tarifas vigentes y compara las
-   unidades estimadas por kilos contra las asignadas a cuñetes y cajas, por
-   producto.
-4. Guarde la planilla. La orden se procesa en la misma operación y descuenta
-   guayaba, azúcar, almidón, químicos, ácidos, agua/gasoil, cuñetes y cajas; las
-   unidades producidas quedan en inventario comprometido.
-5. Use el icono de ojo junto al número de orden o **Ver detalle** para consultar
+3. Registre cada presentación (peso por envase) y el rendimiento (%). La
+   **matriz de unidades por marmita y presentación** permite capturar las
+   unidades de cada presentación en cada marmita; una marmita puede tener varias
+   presentaciones y una presentación puede producirse en varias marmitas. El
+   icono de check al final de cada fila marca la **marmita activa** y resalta su
+   fila en la tabla principal. La columna **Unidades** de cada presentación y la
+   tabla principal quedan sincronizadas: editar en cualquiera actualiza la otra.
+4. El sistema calcula en tiempo real los totales por marmita, por presentación y
+   el total general (unidades y kilos), el costo de insumos y empaques, el valor
+   de producción con las tarifas vigentes y avisa si los kilos asignados a una
+   marmita no cuadran con sus kilos estimados.
+5. Guarde la planilla. Si la registra el Administrador o el Master, la orden se
+   procesa en la misma operación y descuenta guayaba, azúcar, almidón, químicos,
+   ácidos, agua/gasoil, cuñetes y cajas; las unidades producidas quedan en
+   inventario comprometido. Si la registra el Supervisor de Planta, queda en
+   borrador para revisión.
+6. Use el icono de ojo junto al número de orden o **Ver detalle** para consultar
    por lote las seis marmitas, los totales, los costos y la regla de valoración
    aplicada. En las órdenes automáticas, el mismo icono abre el detalle de
    ejecución con fórmulas, materiales consumidos y costos del lote.
