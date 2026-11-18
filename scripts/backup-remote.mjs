@@ -255,7 +255,7 @@ async function uploadToS3(filePath, name, config, module) {
   return { location: `s3://${config.bucket}/${key}`, key, name };
 }
 
-async function pruneS3(config, module, retentionDays) {
+async function pruneS3(config, module, retentionDays, now = Date.now()) {
   const client = createS3Client(module.S3Client, config);
   const prefix = normalizePrefix(config.prefix);
   const keyPrefix = prefix ? `${prefix}/` : '';
@@ -280,7 +280,7 @@ async function pruneS3(config, module, retentionDays) {
         : undefined;
   } while (continuationToken);
 
-  const expired = selectExpired(files, retentionDays);
+  const expired = selectExpired(files, retentionDays, now);
   for (const file of expired) {
     await client.send(
       new module.DeleteObjectCommand({
@@ -424,10 +424,10 @@ async function listGdriveFiles(config, token, fetchImpl) {
   return files;
 }
 
-async function pruneGdrive(config, fetchImpl, nowSeconds, retentionDays) {
-  const token = await getDriveToken(config, fetchImpl, nowSeconds);
+async function pruneGdrive(config, fetchImpl, now, retentionDays) {
+  const token = await getDriveToken(config, fetchImpl, Math.floor(now / 1000));
   const files = await listGdriveFiles(config, token, fetchImpl);
-  const expired = selectExpired(files, retentionDays);
+  const expired = selectExpired(files, retentionDays, now);
 
   for (const file of expired) {
     await driveRequest(
@@ -480,11 +480,11 @@ export async function uploadBackup(filePath, config, deps = {}) {
  */
 export async function pruneRemoteBackups(config, deps = {}) {
   if (config.mode === 'none' || !(config.retentionDays > 0)) return 0;
-  const nowSeconds = Math.floor((deps.now ?? Date.now()) / 1000);
+  const now = deps.now ?? Date.now();
 
   if (config.mode === 's3') {
     const module = deps.s3 ?? (await loadS3Module());
-    return pruneS3(config.s3, module, config.retentionDays);
+    return pruneS3(config.s3, module, config.retentionDays, now);
   }
 
   if (config.mode === 'gdrive') {
@@ -495,7 +495,7 @@ export async function pruneRemoteBackups(config, deps = {}) {
     return pruneGdrive(
       config.gdrive,
       fetchImpl,
-      nowSeconds,
+      now,
       config.retentionDays
     );
   }
