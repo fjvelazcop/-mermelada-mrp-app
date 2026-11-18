@@ -1666,18 +1666,18 @@ export async function resetPasswordHandler(
 
   if (!result) return;
 
-  const email = buildPasswordResetEmail({
-    user: {
-      username: result.user.username,
-      fullName: result.user.full_name,
-      email: result.user.email,
-    },
-    token: result.token,
-    ttlSeconds: getResetTtlSeconds(),
-    appUrl: resolvePublicAppUrl({ requestOrigin: requestOrigin(req) }),
-  });
-
   try {
+    const email = buildPasswordResetEmail({
+      user: {
+        username: result.user.username,
+        fullName: result.user.full_name,
+        email: result.user.email,
+      },
+      token: result.token,
+      ttlSeconds: getResetTtlSeconds(),
+      appUrl: resolvePublicAppUrl({ requestOrigin: requestOrigin(req) }),
+    });
+
     const delivery = await sendSystemEmail({
       kind: 'password-reset',
       ...email,
@@ -1771,15 +1771,15 @@ export async function changePasswordHandler(
     requiresLogin: true,
   });
 
-  const email = buildPasswordChangedEmail({
-    user: {
-      username: user.username,
-      fullName: user.fullName,
-      email: user.email,
-    },
-  });
-
   try {
+    const email = buildPasswordChangedEmail({
+      user: {
+        username: user.username,
+        fullName: user.fullName,
+        email: user.email,
+      },
+    });
+
     const delivery = await sendSystemEmail({
       kind: 'password-changed',
       ...email,

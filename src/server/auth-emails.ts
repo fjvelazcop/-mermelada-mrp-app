@@ -81,7 +81,7 @@ function escapeHtml(value: string): string {
 }
 
 function displayName(user: EmailUser): string {
-  return user.fullName.trim() || user.username;
+  return (user.fullName ?? '').trim() || user.username;
 }
 
 function ttlMinutes(ttlSeconds: number): number {
