@@ -1,10 +1,15 @@
 import {
   DEFAULT_SHEET_YIELD_PERCENT,
   calculateIngredientMassKg,
+  calculateMarmitaPresentationUnits,
   calculateObtainedUnits,
   calculateObtainedUnitsFromIngredients,
   calculatePackagingEstimate,
+  calculatePresentationsEstimate,
   calculateTotalKgFromIngredients,
+  normalizePresentationUnits,
+  requiresManualPresentationUnits,
+  sumPresentationUnits,
 } from './manual-sheet-calculations';
 
 describe('manual sheet calculations', () => {
@@ -133,6 +138,70 @@ describe('manual sheet calculations', () => {
       expect(estimate.estimatedUnits).toBe(0);
       expect(estimate.assignedUnits).toBe(5);
       expect(estimate.excessUnits).toBe(5);
+    });
+  });
+
+  describe('multiple presentations', () => {
+    const lines = [
+      { id: 'p250', presentationKg: 0.25 },
+      { id: 'g5', presentationKg: 5 },
+    ];
+
+    it('requires manual units only when more than one presentation exists', () => {
+      expect(requiresManualPresentationUnits([lines[0]])).toBe(false);
+      expect(requiresManualPresentationUnits(lines)).toBe(true);
+      expect(requiresManualPresentationUnits([])).toBe(false);
+    });
+
+    it('calculates a single presentation automatically from kilos', () => {
+      expect(
+        calculateMarmitaPresentationUnits(10, [lines[0]], [
+          { presentationId: 'p250', units: 999 },
+        ])
+      ).toEqual([{ presentationId: 'p250', units: 40 }]);
+    });
+
+    it('keeps the manual distribution for several presentations', () => {
+      const units = calculateMarmitaPresentationUnits(10, lines, [
+        { presentationId: 'p250', units: 12 },
+        { presentationId: 'g5', units: 1.4 },
+      ]);
+
+      expect(units).toEqual([
+        { presentationId: 'p250', units: 12 },
+        { presentationId: 'g5', units: 1.4 },
+      ]);
+      expect(sumPresentationUnits(units)).toBe(13.4);
+    });
+
+    it('fills missing presentations with zero and discards unknown ids', () => {
+      expect(
+        normalizePresentationUnits(
+          [
+            { presentationId: 'g5', units: 2 },
+            { presentationId: 'unknown', units: 7 },
+            { presentationId: 'g5', units: -1 },
+          ],
+          lines
+        )
+      ).toEqual([
+        { presentationId: 'p250', units: 0 },
+        { presentationId: 'g5', units: 0 },
+      ]);
+    });
+
+    it('summarises assigned kilos per presentation against captured kilos', () => {
+      const estimate = calculatePresentationsEstimate(20, [
+        { id: 'p250', presentationKg: 0.25, units: 40 },
+        { id: 'g5', presentationKg: 5, units: 2 },
+      ]);
+
+      expect(estimate).toHaveLength(2);
+      expect(estimate[0].assignedKg).toBe(10);
+      expect(estimate[1].assignedKg).toBe(10);
+      expect(estimate.reduce((sum, line) => sum + line.assignedKg, 0)).toBe(20);
+      expect(estimate[0].estimatedUnits).toBe(80);
+      expect(estimate[0].missingUnits).toBe(40);
     });
   });
 });

@@ -657,6 +657,81 @@ describe('manual production sheet (physical Lote 72 format)', () => {
     expect(response.status).toBe(422);
   });
 
+  it('accepts several presentations with manual units per marmita', async () => {
+    const { response, body } = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-MULTI-PRESENTATION',
+        productionDate: '2026-11-03',
+        marmitas: [1, 2, 3, 4, 5, 6].map((n) =>
+          sheetRow(n, {
+            totalKg: 20,
+            obtainedUnits: 2.5,
+            presentationUnits: [
+              { presentationId: 'p250', units: 2 },
+              { presentationId: 'g5', units: 0.5 },
+            ],
+          })
+        ),
+        packaging: {
+          presentationKg: 20,
+          cunetes: 0,
+          cajas: 0,
+          presentations: [
+            {
+              id: 'p250',
+              label: 'Pequeña 250 g',
+              presentation: 'pequena_250g',
+              presentationKg: 0.25,
+            },
+            {
+              id: 'g5',
+              label: 'Galón 5 kg',
+              presentation: 'galon_5kg',
+              presentationKg: 5,
+            },
+          ],
+        },
+        processImmediately: false,
+      },
+      { 'X-Demo-Role': 'supervisor_planta' }
+    );
+
+    expect(response.status).toBe(201);
+    expect(body['targetUnits']).toBe(15);
+    const sheet = body['manualSheet'] as unknown as {
+      marmitas: {
+        obtainedUnits: number;
+        presentationUnits: { presentationId: string; units: number }[];
+      }[];
+      packaging: {
+        presentations: { id: string; units: number; unitRate: number }[];
+      };
+      costs: {
+        presentations: {
+          id: string;
+          productionValue: number;
+          packagingUnitCost: number;
+        }[];
+      };
+      totals: { obtainedUnits: number; estimatedUnits: number };
+    };
+    expect(sheet.marmitas[0].presentationUnits).toEqual([
+      { presentationId: 'p250', units: 2 },
+      { presentationId: 'g5', units: 0.5 },
+    ]);
+    expect(sheet.marmitas[0].obtainedUnits).toBe(2.5);
+    expect(sheet.packaging.presentations).toHaveLength(2);
+    expect(sheet.packaging.presentations[0].units).toBe(12);
+    expect(sheet.packaging.presentations[1].units).toBe(3);
+    expect(sheet.packaging.presentations[0].unitRate).toBeGreaterThan(0);
+    expect(sheet.costs.presentations[0].packagingUnitCost).toBeGreaterThan(0);
+    expect(sheet.costs.presentations[0].productionValue).toBeGreaterThan(0);
+    expect(sheet.totals.obtainedUnits).toBe(15);
+    expect(sheet.totals.estimatedUnits).toBe(15);
+  });
+
   it('saves the sheet and deducts inputs, packaging and produced units once', async () => {
     rawMaterialsBefore = (
       await request('/api/inventory/raw-materials')
@@ -857,6 +932,120 @@ describe('manual production sheet (physical Lote 72 format)', () => {
     expect(
       after.find((material) => material.id === 'rm-17')?.currentStock
     ).toBe(rawMaterialsBefore.find((material) => material.id === 'rm-17')?.currentStock);
+  });
+
+  it('processes and annuls several presentations in the same sheet', async () => {
+    interface FinishedRow {
+      flavor: string;
+      presentation: string;
+      reservedUnits: number;
+    }
+    const beforeFinished = (await request('/api/inventory/finished-goods'))
+      .body as unknown as FinishedRow[];
+    const reserved = (rows: FinishedRow[], presentation: string) =>
+      rows.find(
+        (good) =>
+          good.flavor === 'Guayaba Criolla' &&
+          good.presentation === presentation
+      )?.reservedUnits ?? 0;
+
+    const emptyRow = (n: number) =>
+      sheetRow(n, {
+        guavaKg: 0,
+        sugarKg: 0,
+        starchKg: 0,
+        chemicalG: 0,
+        acidG: 0,
+        waterGasOil: 0,
+        totalKg: 0,
+        obtainedUnits: 0,
+        presentationUnits: [
+          { presentationId: 'g1000', units: 0 },
+          { presentationId: 'g5', units: 0 },
+        ],
+      });
+
+    const created = await request(
+      '/api/production-orders/manual/sheet',
+      'POST',
+      {
+        lotNumber: 'L-TEST-SHEET-MULTI-PROCESS',
+        productionDate: '2026-11-03',
+        marmitas: [
+          sheetRow(1, {
+            guavaKg: 1,
+            sugarKg: 1,
+            starchKg: 0,
+            chemicalG: 0,
+            acidG: 0,
+            waterGasOil: 0,
+            totalKg: 2.2,
+            obtainedUnits: 2.2,
+            presentationUnits: [
+              { presentationId: 'g1000', units: 2 },
+              { presentationId: 'g5', units: 0.2 },
+            ],
+          }),
+          emptyRow(2),
+          emptyRow(3),
+          emptyRow(4),
+          emptyRow(5),
+          emptyRow(6),
+        ],
+        packaging: {
+          presentationKg: 1,
+          cunetes: 0,
+          cajas: 0,
+          presentations: [
+            {
+              id: 'g1000',
+              label: 'Frasco 1000 g',
+              presentation: 'grande_1000g',
+              presentationKg: 1,
+            },
+            {
+              id: 'g5',
+              label: 'Galón 5 kg',
+              presentation: 'galon_5kg',
+              presentationKg: 5,
+            },
+          ],
+        },
+        processImmediately: true,
+      }
+    );
+
+    expect(created.response.status).toBe(201);
+    expect(created.body['status']).toBe('completada');
+    expect(created.body['targetUnits']).toBe(2.2);
+
+    const afterFinished = (await request('/api/inventory/finished-goods'))
+      .body as unknown as FinishedRow[];
+    expect(
+      reserved(afterFinished, 'grande_1000g') -
+        reserved(beforeFinished, 'grande_1000g')
+    ).toBe(2);
+    expect(
+      reserved(afterFinished, 'galon_5kg') -
+        reserved(beforeFinished, 'galon_5kg')
+    ).toBeCloseTo(0.2, 6);
+
+    const annulled = await request(
+      `/api/production-orders/manual/${created.body['id']}/annul`,
+      'POST',
+      {}
+    );
+    expect(annulled.response.status).toBe(200);
+    const reverted = (await request('/api/inventory/finished-goods'))
+      .body as unknown as FinishedRow[];
+    expect(reserved(reverted, 'grande_1000g')).toBeCloseTo(
+      reserved(beforeFinished, 'grande_1000g'),
+      6
+    );
+    expect(reserved(reverted, 'galon_5kg')).toBeCloseTo(
+      reserved(beforeFinished, 'galon_5kg'),
+      6
+    );
   });
 });
 

@@ -100,7 +100,10 @@ export class ExpensesComponent {
   public expenseForm = new FormGroup({
     concept: new FormControl<string>('', {nonNullable: true, validators: [Validators.required, Validators.minLength(4)]}),
     category: new FormControl<string>('alquiler_instalaciones', {nonNullable: true, validators: [Validators.required]}),
-    amountUsd: new FormControl<number>(150.00, {nonNullable: true, validators: [Validators.required, Validators.min(0.01)]}),
+    // The operator captures the expense in bolívares; USD is derived with the
+    // local rate so both amounts always stay coherent.
+    amountBs: new FormControl<number>(0, {nonNullable: true, validators: [Validators.required, Validators.min(0.01)]}),
+    amountUsd: new FormControl<number>(0, {nonNullable: true}),
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     supplierOrBeneficiary: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
     taxId: new FormControl<string>('', {nonNullable: true}),
@@ -117,6 +120,20 @@ export class ExpensesComponent {
     date: new FormControl<string>(new Date().toISOString().slice(0, 10), {nonNullable: true, validators: [Validators.required]}),
     notes: new FormControl<string>('', {nonNullable: true}),
   });
+
+  constructor() {
+    const syncUsd = () => {
+      const bs = Number(this.expenseForm.controls.amountBs.value) || 0;
+      const rate =
+        Number(this.expenseForm.controls.exchangeRateUsed.value) || 48.35;
+      const usd = Number((bs / rate).toFixed(2));
+      if (this.expenseForm.controls.amountUsd.value !== usd) {
+        this.expenseForm.controls.amountUsd.setValue(usd, {emitEvent: false});
+      }
+    };
+    this.expenseForm.controls.amountBs.valueChanges.subscribe(syncUsd);
+    this.expenseForm.controls.exchangeRateUsed.valueChanges.subscribe(syncUsd);
+  }
 
   // Reactive Form: Custom Category Definition
   public categoryForm = new FormGroup({
@@ -395,6 +412,7 @@ export class ExpensesComponent {
     this.expenseForm.reset({
       concept: '',
       category: defaultCat,
+      amountBs: Number((150 * activeRate).toFixed(2)),
       amountUsd: 150.00,
       exchangeRateUsed: activeRate,
       supplierOrBeneficiary: '',
@@ -533,19 +551,20 @@ export class ExpensesComponent {
     }
     const bank = v.issuingBankCode ? findBank(v.issuingBankCode) : undefined;
     const rate = Number(v.exchangeRateUsed) || 48.35;
-    const amountUsd = Number(v.amountUsd) || 0;
-    const amountBs = Number((amountUsd * rate).toFixed(2));
+    // Bolívares is the source of truth: USD is derived from the local rate.
+    const amountBs = Number(v.amountBs) || 0;
+    const amountUsd = Number((amountBs / rate).toFixed(2));
 
     const catMeta = this.api.expenseCategories().find(c => c.id === v.category);
     const categoryLabel = catMeta ? catMeta.name : 'Gasto General';
 
-    // Tax calculation
+    // Tax calculation on the gross amount captured in bolívares.
     let taxAmountUsd: number | undefined = undefined;
     let taxAmountBs: number | undefined = undefined;
     if (v.taxCategory === 'con_factura_iva' && v.taxRatePercent) {
-      const base = amountUsd / (1 + (v.taxRatePercent / 100));
-      taxAmountUsd = Number((amountUsd - base).toFixed(2));
-      taxAmountBs = Number((taxAmountUsd * rate).toFixed(2));
+      const baseBs = amountBs / (1 + (v.taxRatePercent / 100));
+      taxAmountBs = Number((amountBs - baseBs).toFixed(2));
+      taxAmountUsd = Number((taxAmountBs / rate).toFixed(2));
     }
 
     const payload: Omit<Expense, 'id' | 'expenseNumber'> = {

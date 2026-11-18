@@ -215,6 +215,21 @@ const timeOfDay = z.union([
   z.string().trim().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
 ]);
 
+export const manualProductionSheetPresentationUnitsSchema = z.object({
+  presentationId: z.string().trim().min(1).max(80),
+  units: money,
+});
+
+export const manualProductionSheetPresentationSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(120).optional(),
+  presentation: presentationSchema,
+  presentationKg: positive,
+  units: money.optional(),
+  unitRate: money.optional(),
+  packagingUnitCost: money.optional(),
+});
+
 export const manualProductionSheetRowSchema = z.object({
   number: z.coerce.number().int().min(1).max(6),
   basketsBase: money,
@@ -228,6 +243,11 @@ export const manualProductionSheetRowSchema = z.object({
   obtainedUnits: money,
   totalKg: money,
   reprocess: z.boolean(),
+  // Manual unit distribution when the sheet handles several presentations.
+  presentationUnits: z
+    .array(manualProductionSheetPresentationUnitsSchema)
+    .max(20)
+    .optional(),
 });
 
 export const manualProductionSheetOrderSchema = z.object({
@@ -241,6 +261,12 @@ export const manualProductionSheetOrderSchema = z.object({
     // Optional for backward compatibility: older clients omit it and the
     // server falls back to the BOM default.
     rendimiento: z.coerce.number().finite().gt(0).max(100).optional(),
+    // Optional multi-presentation extension. Legacy clients omit it.
+    presentations: z
+      .array(manualProductionSheetPresentationSchema)
+      .min(1)
+      .max(20)
+      .optional(),
   }),
   commitmentReference: z.string().trim().max(200).optional(),
   operatorNotes: z.string().max(2000).optional(),
@@ -477,7 +503,9 @@ export const expenseSchema = z
     concept: z.string().trim().min(1).max(300),
     category: z.string().trim().min(1).max(120),
     categoryLabel: z.string().trim().min(1).max(200),
-    amountUsd: positive,
+    // Either amount may be sent; the server derives the other one. New clients
+    // capture bolívares as the primary amount.
+    amountUsd: positive.optional(),
     exchangeRateUsed: positive.optional(),
     amountBs: money.optional(),
     supplierOrBeneficiary: z.string().trim().min(1).max(300),
@@ -499,6 +527,15 @@ export const expenseSchema = z
     fiscalBookEligible: z.boolean(),
   })
   .superRefine((data, ctx) => {
+    const hasUsd = typeof data.amountUsd === 'number' && data.amountUsd > 0;
+    const hasBs = typeof data.amountBs === 'number' && data.amountBs > 0;
+    if (!hasUsd && !hasBs) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['amountBs'],
+        message: 'Registre el monto del egreso en bolívares',
+      });
+    }
     if (!BANK_PAYMENT_METHODS.includes(data.paymentMethod as (typeof BANK_PAYMENT_METHODS)[number])) {
       return;
     }

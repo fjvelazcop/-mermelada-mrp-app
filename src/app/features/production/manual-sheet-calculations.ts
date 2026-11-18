@@ -149,3 +149,115 @@ export function calculatePackagingEstimate(
     cajasKg: roundSheetValue(cajasValue * presentation),
   };
 }
+
+/** Minimal presentation shape needed by the unit helpers. */
+export interface PresentationWeight {
+  id: string;
+  presentationKg: number;
+}
+
+/** Units of one presentation produced by a marmita. */
+export interface PresentationUnitAssignment {
+  presentationId: string;
+  units: number;
+}
+
+/** True when the operator must capture units per presentation manually. */
+export function requiresManualPresentationUnits(
+  presentations: PresentationWeight[]
+): boolean {
+  return presentations.length > 1;
+}
+
+/** Total units across all presentation lines of a marmita. */
+export function sumPresentationUnits(
+  units: PresentationUnitAssignment[]
+): number {
+  return roundSheetValue(
+    (units || []).reduce((sum, item) => sum + nonNegative(item.units), 0)
+  );
+}
+
+/**
+ * Normalise the manual distribution of one marmita so every presentation is
+ * present exactly once and invalid values become zero.
+ */
+export function normalizePresentationUnits(
+  units: PresentationUnitAssignment[] | undefined,
+  presentations: PresentationWeight[]
+): PresentationUnitAssignment[] {
+  const byId = new Map<string, number>();
+  for (const item of units || []) {
+    if (!item?.presentationId) continue;
+    byId.set(item.presentationId, nonNegative(item.units));
+  }
+  return presentations.map((line) => ({
+    presentationId: line.id,
+    units: byId.get(line.id) ?? 0,
+  }));
+}
+
+/**
+ * Units produced by a marmita for the configured presentations.
+ *
+ * - One presentation: automatic (kilos totales ÷ peso por envase).
+ * - Several presentations: the operator-provided manual distribution wins.
+ */
+export function calculateMarmitaPresentationUnits(
+  totalKg: number,
+  presentations: PresentationWeight[],
+  manualUnits?: PresentationUnitAssignment[]
+): PresentationUnitAssignment[] {
+  if (presentations.length === 0) return [];
+  if (requiresManualPresentationUnits(presentations)) {
+    return normalizePresentationUnits(manualUnits, presentations);
+  }
+  const line = presentations[0];
+  return [
+    {
+      presentationId: line.id,
+      units: calculateObtainedUnits(totalKg, line.presentationKg),
+    },
+  ];
+}
+
+/** Units represented by kilos totales for a given presentation. */
+export interface PresentationKilosEstimate {
+  id: string;
+  presentationKg: number;
+  units: number;
+  estimatedUnits: number;
+  difference: number;
+  missingUnits: number;
+  excessUnits: number;
+  assignedKg: number;
+}
+
+/**
+ * Compares each presentation's assigned units against the units represented
+ * by the captured kilos. Used by the multi-presentation summary.
+ */
+export function calculatePresentationsEstimate(
+  totalKg: number,
+  presentations: { id: string; presentationKg: number; units: number }[]
+): PresentationKilosEstimate[] {
+  return presentations.map((line) => {
+    const presentationKg = nonNegative(line.presentationKg);
+    const units = nonNegative(line.units);
+    const estimatedUnits =
+      presentationKg > 0
+        ? roundSheetValue(nonNegative(totalKg) / presentationKg)
+        : 0;
+    const difference = roundSheetValue(units - estimatedUnits);
+    return {
+      id: line.id,
+      presentationKg,
+      units,
+      estimatedUnits,
+      difference,
+      missingUnits: difference < 0 ? roundSheetValue(-difference) : 0,
+      excessUnits: difference > 0 ? difference : 0,
+      assignedKg: roundSheetValue(units * presentationKg),
+    };
+  });
+}

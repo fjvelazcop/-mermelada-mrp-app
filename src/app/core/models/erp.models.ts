@@ -264,6 +264,34 @@ export interface ProductionOrderFormula {
   unitCost: number;
 }
 
+/** Units of one presentation produced by a single marmita. */
+export interface ProductionSheetPresentationUnits {
+  presentationId: string;
+  units: number;
+}
+
+/**
+ * One presentation handled by the manual sheet. A sheet with a single line
+ * calculates units automatically; a sheet with several lines captures them
+ * manually per marmita.
+ */
+export interface ProductionSheetPresentationLine {
+  id: string;
+  label: string;
+  presentation: PresentationType;
+  presentationKg: number;
+  /** Total units of this presentation across the six marmitas. */
+  units: number;
+  /** Unit valuation rate in force when the order was saved (USD). */
+  unitRate?: number;
+  /** Packaging material cost per unit in force when the order was saved (USD). */
+  packagingUnitCost?: number;
+  /** Units × unitRate (USD). */
+  productionValue?: number;
+  /** Units × packagingUnitCost (USD). */
+  packagingCost?: number;
+}
+
 /** One of the six fixed marmitas on the physical plant production sheet. */
 export interface ProductionMarmitaSheetRow {
   number: number; // 1..6
@@ -278,6 +306,8 @@ export interface ProductionMarmitaSheetRow {
   obtainedUnits: number; // cantidad obtenida
   totalKg: number; // kilos totales
   reprocess: boolean;
+  /** Manual distribution when the sheet handles more than one presentation. */
+  presentationUnits?: ProductionSheetPresentationUnits[];
 }
 
 export interface ProductionSheetPackaging {
@@ -292,6 +322,8 @@ export interface ProductionSheetPackaging {
   /** Packaging material cost per unit in force when the order was saved (USD). */
   cunetePackagingUnitCost: number;
   cajaPackagingUnitCost: number;
+  /** Presentation lines. Omitted on legacy single-presentation sheets. */
+  presentations?: ProductionSheetPresentationLine[];
 }
 
 export interface ProductionSheetTotals {
@@ -307,6 +339,18 @@ export interface ProductionSheetTotals {
   estimatedUnits?: number;
 }
 
+export interface ProductionSheetPresentationCost {
+  id: string;
+  label: string;
+  presentation: PresentationType;
+  units: number;
+  presentationKg: number;
+  unitRate: number;
+  packagingUnitCost: number;
+  productionValue: number;
+  packagingCost: number;
+}
+
 export interface ProductionSheetCosts {
   materialsCost: number; // insumos (guayaba, azúcar, almidón, químicos, ácidos, agua/gasoil)
   packagingCost: number; // envases (cuñetes + cajas)
@@ -315,6 +359,8 @@ export interface ProductionSheetCosts {
   cajaValue: number;
   productionValue: number; // valor total de producción según tarifa vigente
   valuationRule: string;
+  /** Per-presentation valuation when the sheet handles several lines. */
+  presentations?: ProductionSheetPresentationCost[];
 }
 
 /** Detail captured by the manual production sheet (physical Lote 72 format). */

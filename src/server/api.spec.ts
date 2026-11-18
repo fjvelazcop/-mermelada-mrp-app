@@ -1142,6 +1142,31 @@ describe('mutating endpoints', () => {
     expect(missing.response.status).toBe(404);
   });
 
+  it('derives the USD amount from bolívares using the local rate', async () => {
+    const expense = await jsonRequest('/api/expenses', 'POST', {
+      date: '2026-10-26',
+      concept: 'Gasto capturado en bolívares',
+      category: 'otros',
+      categoryLabel: 'Otros',
+      amountBs: 5000,
+      amountUsd: 999,
+      exchangeRateUsed: 50,
+      supplierOrBeneficiary: 'Proveedor de prueba',
+      documentType: 'recibo_pago',
+      paymentMethod: 'efectivo_bs',
+      registeredBy: 'Test',
+      taxCategory: 'no_sujeto',
+      fiscalBookEligible: false,
+    });
+
+    expect(expense.response.status).toBe(201);
+    expect(expense.body['amountBs']).toBe(5000);
+    expect(expense.body['amountUsd']).toBe(100);
+    expect(expense.body['exchangeRateUsed']).toBe(50);
+
+    await jsonRequest(`/api/expenses/${expense.body['id']}`, 'DELETE');
+  });
+
   it('creates, updates and deletes an expense category', async () => {
     const created = await jsonRequest('/api/expenses/categories', 'POST', {
       name: 'Categoría de prueba',

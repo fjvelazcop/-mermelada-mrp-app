@@ -10,6 +10,9 @@ import {
   ProductionMarmitaSheetRow,
   ProductionSheetTotals,
   ProductionSheetCosts,
+  ProductionSheetPresentationLine,
+  ProductionSheetPresentationCost,
+  PresentationType,
   Customer,
   SalesOrder,
   SalesTaxCategory,
@@ -2439,21 +2442,24 @@ export class ErpDatabase {
     >();
     if (order.manualSheet) {
       const sheet = order.manualSheet;
-      if (sheet.packaging.cunetes > 0) {
-        outputs.set(`Guayaba Criolla|pote_20kg`, {
-          flavor: 'Guayaba Criolla',
-          presentation: 'pote_20kg',
-          units: sheet.packaging.cunetes,
-          totalCost: sheet.costs.cuneteValue,
-        });
-      }
-      if (sheet.packaging.cajas > 0) {
-        outputs.set(`Guayaba Criolla|caja_20kg`, {
-          flavor: 'Guayaba Criolla',
-          presentation: 'caja_20kg',
-          units: sheet.packaging.cajas,
-          totalCost: sheet.costs.cajaValue,
-        });
+      for (const line of this.manualSheetPresentationLines(sheet)) {
+        if (line.units <= 0) continue;
+        const key = `Guayaba Criolla|${line.presentation}`;
+        const totalCost = this.manualSheetPresentationValue(sheet, line);
+        const current = outputs.get(key);
+        if (current) {
+          current.units += line.units;
+          current.totalCost = Number(
+            (current.totalCost + totalCost).toFixed(2)
+          );
+        } else {
+          outputs.set(key, {
+            flavor: 'Guayaba Criolla',
+            presentation: line.presentation,
+            units: line.units,
+            totalCost,
+          });
+        }
       }
     } else {
       for (const formula of order.formulas || []) {
@@ -2603,19 +2609,19 @@ export class ErpDatabase {
     >();
     if (order.manualSheet) {
       const sheet = order.manualSheet;
-      if (sheet.packaging.cunetes > 0) {
-        outputs.set('Guayaba Criolla|pote_20kg', {
-          flavor: 'Guayaba Criolla',
-          presentation: 'pote_20kg',
-          units: sheet.packaging.cunetes,
-        });
-      }
-      if (sheet.packaging.cajas > 0) {
-        outputs.set('Guayaba Criolla|caja_20kg', {
-          flavor: 'Guayaba Criolla',
-          presentation: 'caja_20kg',
-          units: sheet.packaging.cajas,
-        });
+      for (const line of this.manualSheetPresentationLines(sheet)) {
+        if (line.units <= 0) continue;
+        const key = `Guayaba Criolla|${line.presentation}`;
+        const current = outputs.get(key);
+        if (current) {
+          current.units += line.units;
+        } else {
+          outputs.set(key, {
+            flavor: 'Guayaba Criolla',
+            presentation: line.presentation,
+            units: line.units,
+          });
+        }
       }
     } else {
       for (const formula of order.formulas || []) {
@@ -2746,15 +2752,129 @@ export class ErpDatabase {
     );
   }
 
-  private presentationUnitRate(
-    presentation: 'pote_20kg' | 'caja_20kg'
-  ): number {
+  private presentationUnitRate(presentation: PresentationType): number {
     const finishedGood = this.state.finishedGoods.find(
       (good) =>
         good.presentation === presentation &&
         good.flavor === 'Guayaba Criolla'
     );
     return this.round(finishedGood?.baseCost || 0, 4);
+  }
+
+  /**
+   * Packaging raw material used by a presentation. Returns undefined for
+   * custom presentations that do not consume a known packaging material.
+   */
+  private manualSheetPackagingSpec(
+    presentation: PresentationType
+  ): { ids: string[]; codes: string[]; pattern: RegExp } | undefined {
+    switch (presentation) {
+      case 'pote_20kg':
+        return {
+          ids: ['rm-17'],
+          codes: ['MP-EMP-12'],
+          pattern: /(cu[nñ]ete|pote).*20\s*kg/i,
+        };
+      case 'caja_20kg':
+        return {
+          ids: ['rm-18'],
+          codes: ['MP-EMP-13'],
+          pattern: /caja.*20\s*kg/i,
+        };
+      case 'pequena_250g':
+        return {
+          ids: ['rm-6'],
+          codes: ['MP-EMP-01'],
+          pattern: /frasco.*250|envase.*250/i,
+        };
+      case 'grande_1000g':
+        return {
+          ids: ['rm-8'],
+          codes: ['MP-EMP-03'],
+          pattern: /frasco.*1000|frasco.*1\s*kg|envase.*1000/i,
+        };
+      case 'galon_5kg':
+        return { ids: ['rm-13'], codes: ['MP-EMP-08'], pattern: /gal[oó]n.*5/i };
+      case 'balde_15kg':
+        return { ids: ['rm-15'], codes: ['MP-EMP-10'], pattern: /balde.*15/i };
+      default:
+        return undefined;
+    }
+  }
+
+  /**
+   * Legacy sheets only carry a weight plus the cuñetes/cajas counters. Map
+   * them to presentation lines so the rest of the pipeline is shared.
+   */
+  private legacyManualSheetPresentationLines(packaging: {
+    presentationKg: number;
+    cunetes: number;
+    cajas: number;
+  }): ProductionSheetPresentationLine[] {
+    const presentationKg = this.round(packaging.presentationKg, 4);
+    if (!Number.isFinite(presentationKg) || presentationKg <= 0) {
+      throw new Error('La presentación debe ser mayor que cero');
+    }
+    const cunetes = this.round(packaging.cunetes, 4);
+    const cajas = this.round(packaging.cajas, 4);
+    if (cunetes < 0 || cajas < 0) {
+      throw new Error(
+        'Las cantidades de empaque deben ser mayores o iguales a cero'
+      );
+    }
+    const lines: ProductionSheetPresentationLine[] = [];
+    if (cunetes > 0) {
+      lines.push({
+        id: 'legacy-cunete',
+        label: 'Cuñete / Pote 20 kg',
+        presentation: 'pote_20kg',
+        presentationKg,
+        units: cunetes,
+      });
+    }
+    if (cajas > 0) {
+      lines.push({
+        id: 'legacy-caja',
+        label: 'Caja 20 kg',
+        presentation: 'caja_20kg',
+        presentationKg,
+        units: cajas,
+      });
+    }
+    return lines;
+  }
+
+  /** Presentation lines of a saved sheet, falling back to its legacy counters. */
+  private manualSheetPresentationLines(
+    sheet: NonNullable<ProductionOrder['manualSheet']>
+  ): ProductionSheetPresentationLine[] {
+    if (sheet.packaging.presentations?.length) {
+      return sheet.packaging.presentations;
+    }
+    return this.legacyManualSheetPresentationLines(sheet.packaging);
+  }
+
+  /** Production value of a saved presentation line in USD. */
+  private manualSheetPresentationValue(
+    sheet: NonNullable<ProductionOrder['manualSheet']>,
+    line: ProductionSheetPresentationLine
+  ): number {
+    const persisted = sheet.costs.presentations?.find(
+      (entry) => entry.id === line.id
+    );
+    if (persisted) return persisted.productionValue;
+    if (line.productionValue !== undefined) return line.productionValue;
+    const legacyRate =
+      line.presentation === 'pote_20kg'
+        ? sheet.packaging.cuneteUnitRate
+        : line.presentation === 'caja_20kg'
+          ? sheet.packaging.cajaUnitRate
+          : 0;
+    const rate =
+      line.unitRate ||
+      legacyRate ||
+      this.presentationUnitRate(line.presentation);
+    return this.round(rate * line.units, 2);
   }
 
   /**
@@ -2772,6 +2892,7 @@ export class ErpDatabase {
         cunetes: number;
         cajas: number;
         rendimiento?: number;
+        presentations?: ProductionSheetPresentationLine[];
       };
       commitmentReference?: string;
       operatorNotes?: string;
@@ -2782,10 +2903,49 @@ export class ErpDatabase {
       throw new Error('La planilla manual debe contener exactamente seis marmitas');
     }
 
-    const presentationKg = this.round(input.packaging.presentationKg, 4);
-    if (!Number.isFinite(presentationKg) || presentationKg <= 0) {
-      throw new Error('La presentación debe ser mayor que cero');
+    const hasPresentationLines = Boolean(
+      input.packaging.presentations?.length
+    );
+    const suppliedPresentationLines: ProductionSheetPresentationLine[] =
+      hasPresentationLines
+        ? [...(input.packaging.presentations || [])]
+        : this.legacyManualSheetPresentationLines(input.packaging);
+    if (suppliedPresentationLines.length === 0) {
+      throw new Error(
+        'Registre al menos un cuñete o una caja como cantidad obtenida'
+      );
     }
+
+    const presentationDefs = suppliedPresentationLines.map((line, index) => {
+      const presentationKg = this.round(line.presentationKg, 4);
+      if (!Number.isFinite(presentationKg) || presentationKg <= 0) {
+        throw new Error(
+          `La presentación ${index + 1} debe tener un peso mayor que cero`
+        );
+      }
+      return {
+        id: line.id || `pres-${index + 1}`,
+        label: line.label || this.presentationLabel(line.presentation),
+        presentation: line.presentation,
+        presentationKg,
+        suppliedUnits: Math.max(0, this.round(line.units ?? 0, 4)),
+        suppliedUnitRate: Math.max(0, this.round(line.unitRate ?? 0, 4)),
+        suppliedPackagingUnitCost: Math.max(
+          0,
+          this.round(line.packagingUnitCost ?? 0, 4)
+        ),
+      };
+    });
+    // Guarantee unique ids so the per-marmita distribution is unambiguous.
+    const usedIds = new Set<string>();
+    for (const [index, def] of presentationDefs.entries()) {
+      if (usedIds.has(def.id)) {
+        def.id = `${def.id}-${index + 1}`;
+      }
+      usedIds.add(def.id);
+    }
+    const multiPresentation = presentationDefs.length > 1;
+    const presentationKg = presentationDefs[0].presentationKg;
 
     const yieldPercent = this.round(input.packaging.rendimiento ?? 88.6, 2);
     if (
@@ -2819,6 +2979,47 @@ export class ErpDatabase {
             : ingredientMassKg > 0
               ? this.round(ingredientMassKg * yieldRate, 2)
               : 0;
+        if (hasPresentationLines) {
+          const provided = new Map(
+            (row.presentationUnits || []).map((item) => [
+              item.presentationId,
+              Math.max(0, this.round(item.units, 4)),
+            ])
+          );
+          const unitsByLine = presentationDefs.map((def) => {
+            const supplied = provided.get(def.id);
+            if (supplied !== undefined) return supplied;
+            // A single presentation is derived from kilos when the client
+            // omits the manual distribution.
+            if (!multiPresentation && totalKg > 0) {
+              return this.round(totalKg / def.presentationKg, 2);
+            }
+            return 0;
+          });
+          const obtainedUnits = this.round(
+            unitsByLine.reduce((sum, value) => sum + value, 0),
+            4
+          );
+          return {
+            number: row.number,
+            basketsBase: this.round(row.basketsBase, 4),
+            guavaKg,
+            sugarKg,
+            starchKg,
+            chemicalG,
+            acidG,
+            waterGasOil: this.round(row.waterGasOil, 4),
+            finishedAt: row.finishedAt || '',
+            obtainedUnits,
+            totalKg,
+            reprocess: Boolean(row.reprocess),
+            presentationUnits: presentationDefs.map((def, index) => ({
+              presentationId: def.id,
+              units: unitsByLine[index],
+            })),
+          };
+        }
+
         const suppliedUnits = this.round(row.obtainedUnits, 4);
         // Same rule for units: derive from kilos totales when they are omitted.
         const obtainedUnits =
@@ -2860,15 +3061,6 @@ export class ErpDatabase {
       );
     }
 
-    const cunetes = this.round(input.packaging.cunetes, 4);
-    const cajas = this.round(input.packaging.cajas, 4);
-    if (cunetes < 0 || cajas < 0) {
-      throw new Error('Las cantidades de empaque deben ser mayores o iguales a cero');
-    }
-    if (cunetes + cajas <= 0) {
-      throw new Error('Registre al menos un cuñete o una caja como cantidad obtenida');
-    }
-
     const duplicate = this.state.productionOrders.find(
       (order) =>
         order.mode === 'manual' &&
@@ -2902,6 +3094,57 @@ export class ErpDatabase {
         obtainedUnits: 0,
         totalKg: 0,
       }
+    );
+
+    const presentationUnitTotals = presentationDefs.map((def, index) => {
+      if (!hasPresentationLines) {
+        return { def, units: def.suppliedUnits };
+      }
+      const fromRows = this.round(
+        marmitas.reduce(
+          (sum, row) => sum + (row.presentationUnits?.[index]?.units ?? 0),
+          0
+        ),
+        4
+      );
+      return { def, units: fromRows > 0 ? fromRows : def.suppliedUnits };
+    });
+    if (
+      hasPresentationLines &&
+      !multiPresentation &&
+      presentationUnitTotals[0].units <= 0 &&
+      totals.totalKg > 0
+    ) {
+      presentationUnitTotals[0].units = this.round(
+        totals.totalKg / presentationUnitTotals[0].def.presentationKg,
+        2
+      );
+    }
+    const totalUnits = this.round(
+      presentationUnitTotals.reduce((sum, line) => sum + line.units, 0),
+      4
+    );
+    if (totalUnits <= 0) {
+      throw new Error(
+        hasPresentationLines
+          ? 'Registre al menos una unidad producida en las presentaciones'
+          : 'Registre al menos un cuñete o una caja como cantidad obtenida'
+      );
+    }
+    if (hasPresentationLines) {
+      totals.obtainedUnits = totalUnits;
+    }
+    const cunetes = this.round(
+      presentationUnitTotals
+        .filter((line) => line.def.presentation === 'pote_20kg')
+        .reduce((sum, line) => sum + line.units, 0),
+      4
+    );
+    const cajas = this.round(
+      presentationUnitTotals
+        .filter((line) => line.def.presentation === 'caja_20kg')
+        .reduce((sum, line) => sum + line.units, 0),
+      4
     );
 
     type ConsumedItem = ProductionOrder['consumedMaterials'][number];
@@ -3004,76 +3247,105 @@ export class ErpDatabase {
     let packagingCost = 0;
     let cunetePackagingUnitCost = 0;
     let cajaPackagingUnitCost = 0;
+    const packagingUnitCosts = new Map<string, number>();
 
-    if (cunetes > 0) {
-      const material = this.findSheetRawMaterial(
-        ['rm-17'],
-        ['MP-EMP-12'],
-        /(cu[nñ]ete|pote).*20\s*kg/i
-      );
-      if (!material) {
-        throw new Error(
-          'No se encontró el empaque de cuñete 20kg. Regístrelo en inventario antes de guardar la planilla.'
+    // Consume the packaging material of every presentation line. Legacy sheets
+    // only produce pote/caja lines, so this path stays equivalent for them.
+    for (const line of presentationUnitTotals) {
+      const def = line.def;
+      const units = line.units;
+      let packagingUnitCost = def.suppliedPackagingUnitCost;
+      const spec = this.manualSheetPackagingSpec(def.presentation);
+      if (spec) {
+        const material = this.findSheetRawMaterial(
+          spec.ids,
+          spec.codes,
+          spec.pattern
         );
+        if (!material) {
+          const label =
+            def.presentation === 'pote_20kg'
+              ? 'cuñete 20kg'
+              : def.presentation === 'caja_20kg'
+                ? 'caja 20kg'
+                : def.label;
+          throw new Error(
+            `No se encontró el empaque de ${label}. Regístrelo en inventario antes de guardar la planilla.`
+          );
+        }
+        packagingUnitCost = material.costPerUnit;
+        if (units > 0) {
+          const totalCost = this.round(units * material.costPerUnit, 2);
+          packagingCost = this.round(packagingCost + totalCost, 2);
+          consumed.set(`${material.id}::${def.id}`, {
+            materialId: material.id,
+            materialName: material.name,
+            quantityConsumed: units,
+            unit: material.unit,
+            unitCost: material.costPerUnit,
+            totalCost,
+          });
+        }
       }
-      cunetePackagingUnitCost = material.costPerUnit;
-      const totalCost = this.round(cunetes * material.costPerUnit, 2);
-      packagingCost = this.round(packagingCost + totalCost, 2);
-      consumed.set(`${material.id}::cunete`, {
-        materialId: material.id,
-        materialName: material.name,
-        quantityConsumed: cunetes,
-        unit: material.unit,
-        unitCost: material.costPerUnit,
-        totalCost,
-      });
-    }
-
-    if (cajas > 0) {
-      const material = this.findSheetRawMaterial(
-        ['rm-18'],
-        ['MP-EMP-13'],
-        /caja.*20\s*kg/i
-      );
-      if (!material) {
-        throw new Error(
-          'No se encontró el empaque de caja 20kg. Regístrelo en inventario antes de guardar la planilla.'
-        );
+      packagingUnitCosts.set(def.id, packagingUnitCost);
+      if (def.presentation === 'pote_20kg') {
+        cunetePackagingUnitCost = packagingUnitCost;
       }
-      cajaPackagingUnitCost = material.costPerUnit;
-      const totalCost = this.round(cajas * material.costPerUnit, 2);
-      packagingCost = this.round(packagingCost + totalCost, 2);
-      consumed.set(`${material.id}::caja`, {
-        materialId: material.id,
-        materialName: material.name,
-        quantityConsumed: cajas,
-        unit: material.unit,
-        unitCost: material.costPerUnit,
-        totalCost,
-      });
+      if (def.presentation === 'caja_20kg') {
+        cajaPackagingUnitCost = packagingUnitCost;
+      }
     }
 
     const totalInputKg = totals.totalKg;
     const inputCostPerKg =
       totalInputKg > 0 ? materialsCost / totalInputKg : 0;
-    let cuneteUnitRate = this.presentationUnitRate('pote_20kg');
-    let cajaUnitRate = this.presentationUnitRate('caja_20kg');
-    if (cuneteUnitRate <= 0) {
-      cuneteUnitRate = this.round(
-        inputCostPerKg * presentationKg + cunetePackagingUnitCost,
-        2
-      );
-    }
-    if (cajaUnitRate <= 0) {
-      cajaUnitRate = this.round(
-        inputCostPerKg * presentationKg + cajaPackagingUnitCost,
-        2
-      );
-    }
-
-    const cuneteValue = this.round(cunetes * cuneteUnitRate, 2);
-    const cajaValue = this.round(cajas * cajaUnitRate, 2);
-    const productionValue = this.round(cuneteValue + cajaValue, 2);
+    const presentationCosts: ProductionSheetPresentationCost[] =
+      presentationUnitTotals.map(({ def, units }) => {
+        const packagingUnitCost = packagingUnitCosts.get(def.id) ?? 0;
+        let unitRate =
+          def.suppliedUnitRate > 0
+            ? def.suppliedUnitRate
+            : this.presentationUnitRate(def.presentation);
+        if (unitRate <= 0) {
+          unitRate = this.round(
+            inputCostPerKg * def.presentationKg + packagingUnitCost,
+            2
+          );
+        }
+        return {
+          id: def.id,
+          label: def.label,
+          presentation: def.presentation,
+          units,
+          presentationKg: def.presentationKg,
+          unitRate,
+          packagingUnitCost,
+          productionValue: this.round(units * unitRate, 2),
+          packagingCost: this.round(units * packagingUnitCost, 2),
+        };
+      });
+    const cuneteUnitRate =
+      presentationCosts.find((line) => line.presentation === 'pote_20kg')
+        ?.unitRate ?? this.presentationUnitRate('pote_20kg');
+    const cajaUnitRate =
+      presentationCosts.find((line) => line.presentation === 'caja_20kg')
+        ?.unitRate ?? this.presentationUnitRate('caja_20kg');
+    const cuneteValue = this.round(
+      presentationCosts
+        .filter((line) => line.presentation === 'pote_20kg')
+        .reduce((sum, line) => sum + line.productionValue, 0),
+      2
+    );
+    const cajaValue = this.round(
+      presentationCosts
+        .filter((line) => line.presentation === 'caja_20kg')
+        .reduce((sum, line) => sum + line.productionValue, 0),
+      2
+    );
+    const productionValue = this.round(
+      presentationCosts.reduce((sum, line) => sum + line.productionValue, 0),
+      2
+    );
     const totalCost = this.round(materialsCost + packagingCost, 2);
     const costs: ProductionSheetCosts = {
       materialsCost,
@@ -3083,7 +3355,8 @@ export class ErpDatabase {
       cajaValue,
       productionValue,
       valuationRule:
-        'Valoración a costo unitario vigente del producto terminado (PT Guayaba 20 kg cuñete/caja) al momento de guardar; los insumos y empaques se costean a su costo promedio vigente.',
+        'Valoración a costo unitario vigente del producto terminado al momento de guardar; los insumos y empaques se costean a su costo promedio vigente.',
+      presentations: presentationCosts,
     };
 
     const missing = [...consumed.values()].filter((item) => {
@@ -3104,7 +3377,9 @@ export class ErpDatabase {
       throw new Error(`Stock insuficiente para la planilla manual. ${detail}`);
     }
 
-    const totalUnits = this.round(cunetes + cajas, 4);
+    const dominantPresentation =
+      presentationCosts.find((line) => line.units > 0) ?? presentationCosts[0];
+    const orderPresentation = dominantPresentation?.presentation ?? 'pote_20kg';
     const orderNumber = this.nextManualOrderNumber();
     const rate = this.state.exchangeRates.currentUsd || 48.35;
 
@@ -3114,7 +3389,7 @@ export class ErpDatabase {
       recipeId: 'manual-sheet',
       recipeName: 'Planilla manual de marmitas',
       flavor: 'Guayaba Criolla',
-      presentation: cunetes > 0 ? 'pote_20kg' : 'caja_20kg',
+      presentation: orderPresentation,
       targetUnits: totalUnits,
       batchCount: 1,
       lotNumber: input.lotNumber,
@@ -3132,11 +3407,23 @@ export class ErpDatabase {
           cajaUnitRate,
           cunetePackagingUnitCost,
           cajaPackagingUnitCost,
+          presentations: presentationCosts.map((line) => ({
+            id: line.id,
+            label: line.label,
+            presentation: line.presentation,
+            presentationKg: line.presentationKg,
+            units: line.units,
+            unitRate: line.unitRate,
+            packagingUnitCost: line.packagingUnitCost,
+            productionValue: line.productionValue,
+            packagingCost: line.packagingCost,
+          })),
         },
         totals: {
           ...totals,
-          estimatedUnits:
-            presentationKg > 0
+          estimatedUnits: multiPresentation
+            ? totalUnits
+            : presentationKg > 0
               ? this.round(totals.totalKg / presentationKg, 2)
               : 0,
         },
@@ -3177,6 +3464,7 @@ export class ErpDatabase {
         cunetes: number;
         cajas: number;
         rendimiento?: number;
+        presentations?: ProductionSheetPresentationLine[];
       };
       commitmentReference?: string;
       operatorNotes?: string;
@@ -5225,15 +5513,37 @@ export class ErpDatabase {
     const count = this.state.expenses.length + 1;
     const nextNum = 'GTO-2026-00' + (count < 10 ? '0' + count : count);
     const rate = data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
-    const amountBs = data.amountBs || Number((data.amountUsd * rate).toFixed(2));
-    const taxAmountBs = data.taxAmountUsd ? Number((data.taxAmountUsd * rate).toFixed(2)) : undefined;
+    // Bolívares is the primary amount: when present, USD is derived from it so
+    // an inverted conversion can never be persisted.
+    const amountBs =
+      data.amountBs && data.amountBs > 0
+        ? Number(data.amountBs.toFixed(2))
+        : Number((data.amountUsd * rate).toFixed(2));
+    const amountUsd =
+      data.amountBs && data.amountBs > 0
+        ? Number((data.amountBs / rate).toFixed(2))
+        : Number(data.amountUsd.toFixed(2));
+    const taxAmountUsd =
+      data.taxAmountUsd !== undefined
+        ? Number(data.taxAmountUsd.toFixed(2))
+        : data.taxAmountBs !== undefined
+          ? Number((data.taxAmountBs / rate).toFixed(2))
+          : undefined;
+    const taxAmountBs =
+      data.taxAmountBs !== undefined
+        ? Number(data.taxAmountBs.toFixed(2))
+        : taxAmountUsd !== undefined
+          ? Number((taxAmountUsd * rate).toFixed(2))
+          : undefined;
 
     const newExpense: Expense = {
       ...data,
       id: 'gto-' + Date.now(),
       expenseNumber: nextNum,
       exchangeRateUsed: rate,
+      amountUsd,
       amountBs,
+      taxAmountUsd,
       taxAmountBs,
     };
 

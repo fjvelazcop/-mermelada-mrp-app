@@ -8,6 +8,7 @@ import {
   RecipeBOM,
   ProductionOrder,
   ProductionMarmitaSheetRow,
+  ProductionSheetPresentationLine,
   Customer,
   SalesOrder,
   DeliveryNote,
@@ -1506,6 +1507,15 @@ export class ErpApiService {
       cunetes: number;
       cajas: number;
       rendimiento?: number;
+      presentations?: {
+        id: string;
+        label?: string;
+        presentation: ProductionSheetPresentationLine['presentation'];
+        presentationKg: number;
+        units?: number;
+        unitRate?: number;
+        packagingUnitCost?: number;
+      }[];
     };
     commitmentReference?: string;
     operatorNotes?: string;

@@ -3,14 +3,23 @@ import {ReactiveFormsModule, FormGroup, FormControl, FormArray, Validators} from
 import {DecimalPipe} from '@angular/common';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {RecipeBOM, ProductionOrder} from '../../core/models/erp.models';
+import {
+  RecipeBOM,
+  ProductionOrder,
+  ProductionSheetPresentationLine,
+  PresentationType,
+} from '../../core/models/erp.models';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
 import {
   DEFAULT_SHEET_YIELD_PERCENT,
+  PresentationWeight,
   calculateObtainedUnits,
   calculatePackagingEstimate,
+  calculatePresentationsEstimate,
   calculateTotalKgFromIngredients,
+  requiresManualPresentationUnits,
+  sumPresentationUnits,
 } from './manual-sheet-calculations';
 
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
@@ -99,9 +108,24 @@ export class ProductionComponent {
         obtainedUnits: FormControl<number>;
         totalKg: FormControl<number>;
         reprocess: FormControl<boolean>;
+        presentationUnits: FormArray<
+          FormGroup<{
+            presentationId: FormControl<string>;
+            units: FormControl<number>;
+          }>
+        >;
       }>
     >([]),
     packaging: new FormGroup({
+      presentations: new FormArray<
+        FormGroup<{
+          id: FormControl<string>;
+          label: FormControl<string>;
+          presentation: FormControl<PresentationType>;
+          presentationKg: FormControl<number>;
+        }>
+      >([]),
+      // Legacy fields kept in sync for older consumers and server schemas.
       presentationKg: new FormControl<number>(20, {
         nonNullable: true,
         validators: [Validators.required, Validators.min(0.01)],
@@ -129,8 +153,12 @@ export class ProductionComponent {
     this.manualSheetForm.valueChanges.subscribe(() => {
       this.sheetRevision.update((value) => value + 1);
     });
-    this.manualSheetForm.controls.packaging.controls.presentationKg.valueChanges.subscribe(
-      () => this.recalculateAllObtainedUnits()
+    this.manualSheetForm.controls.packaging.controls.presentations.valueChanges.subscribe(
+      () => {
+        this.syncPresentationUnits();
+        this.syncLegacyPackaging();
+        this.recalculateAllObtainedUnits();
+      }
     );
     this.manualSheetForm.controls.packaging.controls.rendimiento.valueChanges.subscribe(
       () => this.recalculateAllTotalKg()
@@ -158,8 +186,211 @@ export class ProductionComponent {
     return this.manualOrderForm.controls.formulas;
   }
 
+  /** Presentation types available to the manual sheet. */
+  public readonly presentationOptions: {
+    value: PresentationType;
+    label: string;
+    kg: number;
+  }[] = [
+    { value: 'pote_20kg', label: 'Cuñete / Pote 20 kg', kg: 20 },
+    { value: 'caja_20kg', label: 'Caja 20 kg', kg: 20 },
+    { value: 'pequena_250g', label: 'Frasco 250 g', kg: 0.25 },
+    { value: 'grande_1000g', label: 'Frasco 1000 g', kg: 1 },
+    { value: 'galon_5kg', label: 'Galón 5 kg', kg: 5 },
+    { value: 'balde_15kg', label: 'Balde 15 kg', kg: 15 },
+    { value: 'otra', label: 'Otra presentación', kg: 1 },
+  ];
+
   public get sheetMarmitas() {
     return this.manualSheetForm.controls.marmitas;
+  }
+
+  public get sheetPresentations() {
+    return this.manualSheetForm.controls.packaging.controls.presentations;
+  }
+
+  /** Presentation lines currently configured in the sheet. */
+  public sheetPresentationLines = computed<PresentationWeight[]>(() => {
+    this.sheetRevision();
+    return this.sheetPresentations.getRawValue().map((line) => ({
+      id: line.id,
+      presentationKg: this.positive(line.presentationKg),
+    }));
+  });
+
+  /** True when the operator must capture units per presentation manually. */
+  public hasMultiplePresentations = computed(() =>
+    requiresManualPresentationUnits(this.sheetPresentationLines())
+  );
+
+  public presentationLabel(line: { label?: string; presentation?: PresentationType }): string {
+    return (
+      line.label ||
+      this.presentationOptions.find((option) => option.value === line.presentation)
+        ?.label ||
+      'Presentación'
+    );
+  }
+
+  /** Row of the presentation summary for a configured line. */
+  public presentationRowFor(id: string) {
+    return this.sheetPresentationRows().find((line) => line.id === id);
+  }
+
+  /** Display label of a persisted presentation line. */
+  public sheetPresentationName(
+    presentations: ProductionSheetPresentationLine[] | undefined,
+    id: string
+  ): string {
+    const line = presentations?.find((item) => item.id === id);
+    return line ? this.presentationLabel(line) : id;
+  }
+
+  private newPresentationId(): string {
+    return `pres-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
+  }
+
+  private buildPresentationGroup(data: {
+    id: string;
+    label: string;
+    presentation: PresentationType;
+    presentationKg: number;
+  }) {
+    const group = new FormGroup({
+      id: new FormControl<string>(data.id, { nonNullable: true }),
+      label: new FormControl<string>(data.label, { nonNullable: true }),
+      presentation: new FormControl<PresentationType>(data.presentation, {
+        nonNullable: true,
+        validators: [Validators.required],
+      }),
+      presentationKg: new FormControl<number>(data.presentationKg, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0.01)],
+      }),
+    });
+    group.controls.presentation.valueChanges.subscribe((value) => {
+      const option = this.presentationOptions.find((item) => item.value === value);
+      if (!option) return;
+      group.controls.label.setValue(option.label, { emitEvent: false });
+      group.controls.presentationKg.setValue(option.kg, { emitEvent: false });
+      this.syncLegacyPackaging();
+      this.recalculateAllObtainedUnits();
+      this.sheetRevision.update((revision) => revision + 1);
+    });
+    group.controls.presentationKg.valueChanges.subscribe(() => {
+      this.syncLegacyPackaging();
+      this.recalculateAllObtainedUnits();
+      this.sheetRevision.update((revision) => revision + 1);
+    });
+    return group;
+  }
+
+  /** Adds another presentation to the sheet. */
+  public addSheetPresentation(): void {
+    if (this.sheetPresentations.length >= 20) {
+      this.api.showToast(
+        'La planilla admite como máximo 20 presentaciones.',
+        'error'
+      );
+      return;
+    }
+    const used = new Set(
+      this.sheetPresentations.getRawValue().map((line) => line.presentation)
+    );
+    const option =
+      this.presentationOptions.find((item) => !used.has(item.value)) ??
+      this.presentationOptions[0];
+    this.sheetPresentations.push(
+      this.buildPresentationGroup({
+        id: this.newPresentationId(),
+        label: option.label,
+        presentation: option.value,
+        presentationKg: option.kg,
+      })
+    );
+    this.syncPresentationUnits();
+    this.syncLegacyPackaging();
+    this.sheetRevision.update((value) => value + 1);
+  }
+
+  /** Removes a presentation, keeping at least one line on the sheet. */
+  public removeSheetPresentation(index: number): void {
+    if (this.sheetPresentations.length <= 1) {
+      this.api.showToast(
+        'La planilla debe conservar al menos una presentación.',
+        'error'
+      );
+      return;
+    }
+    this.sheetPresentations.removeAt(index);
+    this.syncPresentationUnits();
+    this.syncLegacyPackaging();
+    this.recalculateAllObtainedUnits();
+    this.sheetRevision.update((value) => value + 1);
+  }
+
+  /** Keeps every marmita's manual unit distribution aligned with the lines. */
+  private syncPresentationUnits(): void {
+    const lines = this.sheetPresentations.getRawValue();
+    for (const row of this.sheetMarmitas.controls) {
+      const array = row.controls.presentationUnits;
+      const current = new Map(
+        array.getRawValue().map((item) => [item.presentationId, item.units])
+      );
+      array.clear({ emitEvent: false });
+      for (const line of lines) {
+        array.push(
+          new FormGroup({
+            presentationId: new FormControl<string>(line.id, {
+              nonNullable: true,
+            }),
+            units: new FormControl<number>(this.positive(current.get(line.id)), {
+              nonNullable: true,
+              validators: [Validators.min(0)],
+            }),
+          }),
+          { emitEvent: false }
+        );
+      }
+    }
+    this.sheetRevision.update((value) => value + 1);
+  }
+
+  /** Keeps the legacy single-presentation fields coherent with the lines. */
+  private syncLegacyPackaging(): void {
+    const lines = this.sheetPresentations.getRawValue();
+    const rows = this.sheetMarmitas.getRawValue();
+    const unitsFor = (presentation: PresentationType) => {
+      const ids = lines
+        .filter((line) => line.presentation === presentation)
+        .map((line) => line.id);
+      return rows.reduce(
+        (sum, row) =>
+          sum +
+          ids.reduce(
+            (lineSum, id) =>
+              lineSum +
+              this.positive(
+                row.presentationUnits?.find(
+                  (item) => item.presentationId === id
+                )?.units
+              ),
+            0
+          ),
+        0
+      );
+    };
+    const first = lines[0];
+    this.manualSheetForm.controls.packaging.patchValue(
+      {
+        presentationKg: first ? this.positive(first.presentationKg) : 20,
+        cunetes: this.round(unitsFor('pote_20kg'), 2),
+        cajas: this.round(unitsFor('caja_20kg'), 2),
+      },
+      { emitEvent: false }
+    );
   }
 
   private positive(value: unknown): number {
@@ -181,6 +412,7 @@ export class ProductionComponent {
   public sheetTotals = computed(() => {
     this.sheetRevision();
     const rows = this.sheetMarmitas.getRawValue();
+    const multi = this.hasMultiplePresentations();
     return rows.reduce(
       (acc, row) => ({
         guavaKg: acc.guavaKg + this.positive(row.guavaKg),
@@ -189,7 +421,11 @@ export class ProductionComponent {
         chemicalG: acc.chemicalG + this.positive(row.chemicalG),
         acidG: acc.acidG + this.positive(row.acidG),
         waterGasOil: acc.waterGasOil + this.positive(row.waterGasOil),
-        obtainedUnits: acc.obtainedUnits + this.positive(row.obtainedUnits),
+        obtainedUnits:
+          acc.obtainedUnits +
+          (multi
+            ? sumPresentationUnits(row.presentationUnits || [])
+            : this.positive(row.obtainedUnits)),
         totalKg: acc.totalKg + this.positive(row.totalKg),
       }),
       {
@@ -205,25 +441,51 @@ export class ProductionComponent {
     );
   });
 
-  public sheetUnitRates = computed(() => {
-    const goods = this.api.finishedGoods();
-    const guava = goods.filter((item) => item.flavor === 'Guayaba Criolla');
-    return {
-      cunete:
-        guava.find((item) => item.presentation === 'pote_20kg')?.baseCost ?? 0,
-      caja:
-        guava.find((item) => item.presentation === 'caja_20kg')?.baseCost ?? 0,
-    };
-  });
+  private round(value: number, decimals = 2): number {
+    return Number.isFinite(value) ? Number(value.toFixed(decimals)) : 0;
+  }
 
-  public sheetCosts = computed(() => {
+  /** Unit valuation rate (USD) of a finished good for the given presentation. */
+  public sheetUnitRateFor(presentation: PresentationType): number {
+    const guava = this.api
+      .finishedGoods()
+      .filter((item) => item.flavor === 'Guayaba Criolla');
+    return guava.find((item) => item.presentation === presentation)?.baseCost ?? 0;
+  }
+
+  /** Packaging material cost (USD per unit) for the given presentation. */
+  public sheetPackagingUnitCostFor(presentation: PresentationType): number {
+    switch (presentation) {
+      case 'pote_20kg':
+        return this.materialRate(['rm-17'], [/(cu[nñ]ete|pote).*20\s*kg/i]);
+      case 'caja_20kg':
+        return this.materialRate(['rm-18'], [/caja.*20\s*kg/i]);
+      case 'pequena_250g':
+        return this.materialRate([], [/frasco.*250/i, /envase.*250/i]);
+      case 'grande_1000g':
+        return this.materialRate(
+          [],
+          [/frasco.*1000/i, /frasco.*1\s*kg/i, /envase.*1000/i]
+        );
+      case 'galon_5kg':
+        return this.materialRate([], [/gal[oó]n.*5/i]);
+      case 'balde_15kg':
+        return this.materialRate([], [/balde.*15/i]);
+      default:
+        return 0;
+    }
+  }
+
+  public sheetUnitRates = computed(() => ({
+    cunete: this.sheetUnitRateFor('pote_20kg'),
+    caja: this.sheetUnitRateFor('caja_20kg'),
+  }));
+
+  /** Materials cost of the captured ingredients (USD). */
+  public sheetMaterialsCost = computed(() => {
     this.sheetRevision();
     const totals = this.sheetTotals();
-    const packaging = this.manualSheetForm.controls.packaging.getRawValue();
-    const cunetes = this.positive(packaging.cunetes);
-    const cajas = this.positive(packaging.cajas);
-
-    const materialsCost = Number(
+    return Number(
       (
         totals.guavaKg * this.materialRate(['rm-1'], [/guayaba/i]) +
         totals.sugarKg * this.materialRate(['rm-2'], [/az[uú]car/i]) +
@@ -235,37 +497,98 @@ export class ProductionComponent {
           this.materialRate(['rm-21'], [/gasoil|agua de proceso/i])
       ).toFixed(2)
     );
-    const cunetePackagingUnitCost = this.materialRate(
-      ['rm-17'],
-      [/(cu[nñ]ete|pote).*20\s*kg/i]
+  });
+
+  /** Presentation lines with the units captured across the six marmitas. */
+  public sheetPresentationRows = computed(() => {
+    this.sheetRevision();
+    const lines = this.sheetPresentations.getRawValue();
+    const rows = this.sheetMarmitas.getRawValue();
+    const multi = this.hasMultiplePresentations();
+    return lines.map((line) => {
+      const units = multi
+        ? rows.reduce(
+            (sum, row) =>
+              sum +
+              this.positive(
+                row.presentationUnits?.find(
+                  (item) => item.presentationId === line.id
+                )?.units
+              ),
+            0
+          )
+        : rows.reduce(
+            (sum, row) => sum + this.positive(row.obtainedUnits),
+            0
+          );
+      return {
+        id: line.id,
+        label: this.presentationLabel(line),
+        presentation: line.presentation,
+        presentationKg: this.positive(line.presentationKg),
+        units: this.round(units, 2),
+      };
+    });
+  });
+
+  public sheetCosts = computed(() => {
+    this.sheetRevision();
+    const totals = this.sheetTotals();
+    const materialsCost = this.sheetMaterialsCost();
+    const inputCostPerKg =
+      totals.totalKg > 0 ? materialsCost / totals.totalKg : 0;
+
+    const presentations = this.sheetPresentationRows().map((line) => {
+      const packagingUnitCost = this.sheetPackagingUnitCostFor(line.presentation);
+      let unitRate = this.sheetUnitRateFor(line.presentation);
+      if (unitRate <= 0) {
+        unitRate = this.round(
+          inputCostPerKg * line.presentationKg + packagingUnitCost,
+          2
+        );
+      }
+      return {
+        ...line,
+        unitRate: this.round(unitRate, 2),
+        packagingUnitCost: this.round(packagingUnitCost, 2),
+        productionValue: this.round(line.units * unitRate, 2),
+        packagingCost: this.round(line.units * packagingUnitCost, 2),
+      };
+    });
+
+    const packagingCost = this.round(
+      presentations.reduce((sum, line) => sum + line.packagingCost, 0),
+      2
     );
-    const cajaPackagingUnitCost = this.materialRate(
-      ['rm-18'],
-      [/caja.*20\s*kg/i]
+    const productionValue = this.round(
+      presentations.reduce((sum, line) => sum + line.productionValue, 0),
+      2
     );
-    const packagingCost = Number(
-      (
-        cunetes * cunetePackagingUnitCost +
-        cajas * cajaPackagingUnitCost
-      ).toFixed(2)
+    const cuneteLine = presentations.find(
+      (line) => line.presentation === 'pote_20kg'
     );
-    const rates = this.sheetUnitRates();
-    const cuneteValue = Number((cunetes * rates.cunete).toFixed(2));
-    const cajaValue = Number((cajas * rates.caja).toFixed(2));
+    const cajaLine = presentations.find(
+      (line) => line.presentation === 'caja_20kg'
+    );
+
     return {
       materialsCost,
       packagingCost,
-      totalCost: Number((materialsCost + packagingCost).toFixed(2)),
-      cuneteValue,
-      cajaValue,
-      productionValue: Number((cuneteValue + cajaValue).toFixed(2)),
-      cunetePackagingUnitCost,
-      cajaPackagingUnitCost,
-      cuneteRate: rates.cunete,
-      cajaRate: rates.caja,
-      cunetes,
-      cajas,
-      units: cunetes + cajas,
+      totalCost: this.round(materialsCost + packagingCost, 2),
+      cuneteValue: cuneteLine?.productionValue ?? 0,
+      cajaValue: cajaLine?.productionValue ?? 0,
+      productionValue,
+      cunetePackagingUnitCost: cuneteLine?.packagingUnitCost ?? 0,
+      cajaPackagingUnitCost: cajaLine?.packagingUnitCost ?? 0,
+      cuneteRate: cuneteLine?.unitRate ?? 0,
+      cajaRate: cajaLine?.unitRate ?? 0,
+      cunetes: cuneteLine?.units ?? 0,
+      cajas: cajaLine?.units ?? 0,
+      units: this.round(
+        presentations.reduce((sum, line) => sum + line.units, 0),
+        2
+      ),
+      presentations,
     };
   });
 
@@ -273,20 +596,66 @@ export class ProductionComponent {
   public sheetPackagingEstimate = computed(() => {
     this.sheetRevision();
     const totals = this.sheetTotals();
-    const packaging = this.manualSheetForm.controls.packaging.getRawValue();
-    return calculatePackagingEstimate(
+    const lines = this.sheetPresentationRows();
+
+    if (lines.length > 1) {
+      const presentations = calculatePresentationsEstimate(
+        totals.totalKg,
+        lines
+      );
+      const assignedUnits = this.round(
+        presentations.reduce((sum, line) => sum + line.units, 0),
+        2
+      );
+      const assignedKg = this.round(
+        presentations.reduce((sum, line) => sum + line.assignedKg, 0),
+        2
+      );
+      // With several presentations the kilos are shared, so the meaningful
+      // comparison is captured kilos versus kilos represented by the units.
+      const differenceKg = this.round(assignedKg - totals.totalKg, 2);
+      return {
+        presentationKg: lines[0]?.presentationKg ?? 0,
+        estimatedUnits: assignedUnits,
+        assignedUnits,
+        difference: differenceKg,
+        missingUnits: differenceKg < 0 ? this.round(-differenceKg, 2) : 0,
+        excessUnits: differenceKg > 0 ? differenceKg : 0,
+        assignedKg,
+        totalKg: this.round(totals.totalKg, 2),
+        cunetesKg: this.round(
+          presentations
+            .filter((_, index) => lines[index]?.presentation === 'pote_20kg')
+            .reduce((sum, line) => sum + line.assignedKg, 0),
+          2
+        ),
+        cajasKg: this.round(
+          presentations
+            .filter((_, index) => lines[index]?.presentation === 'caja_20kg')
+            .reduce((sum, line) => sum + line.assignedKg, 0),
+          2
+        ),
+        presentations,
+      };
+    }
+
+    const line = lines[0];
+    const legacy = calculatePackagingEstimate(
       totals.totalKg,
-      packaging.presentationKg,
-      packaging.cunetes,
-      packaging.cajas
+      line?.presentationKg ?? 0,
+      line?.units ?? 0,
+      0
     );
+    return {
+      ...legacy,
+      presentations: calculatePresentationsEstimate(totals.totalKg, lines),
+    };
   });
 
   public canSubmitManualSheet(): boolean {
-    const packaging = this.manualSheetForm.controls.packaging.getRawValue();
     return (
       this.manualSheetForm.valid &&
-      this.positive(packaging.cunetes) + this.positive(packaging.cajas) > 0 &&
+      this.sheetCosts().units > 0 &&
       !this.isSavingManualSheet()
     );
   }
@@ -411,22 +780,40 @@ export class ProductionComponent {
       (control) => control.controls.number.value === number
     );
     if (!row) return;
+    const lines = this.sheetPresentationLines();
+    if (lines.length === 0) return;
+
+    // With several presentations the operator captures the units manually and
+    // the marmita total is simply their sum.
+    if (requiresManualPresentationUnits(lines)) {
+      const units = sumPresentationUnits(
+        row.controls.presentationUnits.getRawValue()
+      );
+      if (row.controls.obtainedUnits.value !== units) {
+        row.controls.obtainedUnits.setValue(units, { emitEvent: false });
+        this.sheetRevision.update((value) => value + 1);
+      }
+      return;
+    }
+
     if (!force && this.manualUnitsOverrides.has(number)) return;
 
     if (force && this.manualUnitsOverrides.delete(number)) {
       this.sheetRevision.update((value) => value + 1);
     }
-    const presentationKg = this.positive(
-      this.manualSheetForm.controls.packaging.controls.presentationKg.value
-    );
     const units = calculateObtainedUnits(
       row.controls.totalKg.value,
-      presentationKg
+      lines[0].presentationKg
     );
-    if (row.controls.obtainedUnits.value === units) return;
-
-    row.controls.obtainedUnits.setValue(units, {emitEvent: false});
-    this.sheetRevision.update((value) => value + 1);
+    if (row.controls.obtainedUnits.value !== units) {
+      row.controls.obtainedUnits.setValue(units, { emitEvent: false });
+      this.sheetRevision.update((value) => value + 1);
+    }
+    // Keep the single presentation line aligned with the derived units.
+    const array = row.controls.presentationUnits;
+    if (array.length === 1 && array.at(0).controls.units.value !== units) {
+      array.at(0).controls.units.setValue(units, { emitEvent: false });
+    }
   }
 
   private recalculateAllObtainedUnits(): void {
@@ -487,6 +874,12 @@ export class ProductionComponent {
         validators: nonNegative,
       }),
       reprocess: new FormControl<boolean>(false, { nonNullable: true }),
+      presentationUnits: new FormArray<
+        FormGroup<{
+          presentationId: FormControl<string>;
+          units: FormControl<number>;
+        }>
+      >([]),
     });
 
     group.controls.totalKg.valueChanges.subscribe(() => {
@@ -498,6 +891,26 @@ export class ProductionComponent {
     group.controls.obtainedUnits.valueChanges.subscribe(() => {
       // This only fires for user edits: automatic writes use emitEvent: false.
       this.manualUnitsOverrides.add(group.controls.number.value);
+      if (!this.hasMultiplePresentations()) {
+        const array = group.controls.presentationUnits;
+        if (array.length === 1) {
+          array
+            .at(0)
+            .controls.units.setValue(group.controls.obtainedUnits.value, {
+              emitEvent: false,
+            });
+        }
+        this.syncLegacyPackaging();
+      }
+    });
+    group.controls.presentationUnits.valueChanges.subscribe(() => {
+      // Manual distribution across presentations: refresh the marmita total
+      // and the legacy packaging counters derived from it.
+      if (this.hasMultiplePresentations()) {
+        this.recalculateObtainedUnits(group.controls.number.value, true);
+      }
+      this.syncLegacyPackaging();
+      this.sheetRevision.update((value) => value + 1);
     });
 
     const ingredientKeys = [
@@ -525,18 +938,35 @@ export class ProductionComponent {
     for (let index = 1; index <= 6; index += 1) {
       this.sheetMarmitas.push(this.buildMarmitaGroup(index));
     }
-    this.manualSheetForm.patchValue({
-      lotNumber: this.autoManualLot(),
-      productionDate: new Date().toISOString().slice(0, 10),
-      commitmentReference: '',
-      operatorNotes: '',
-      packaging: {
-        presentationKg: 20,
-        cunetes: 0,
-        cajas: 0,
-        rendimiento: DEFAULT_SHEET_YIELD_PERCENT,
+    this.sheetPresentations.clear();
+    const defaultPresentation = this.presentationOptions[0];
+    this.sheetPresentations.push(
+      this.buildPresentationGroup({
+        id: this.newPresentationId(),
+        label: defaultPresentation.label,
+        presentation: defaultPresentation.value,
+        presentationKg: defaultPresentation.kg,
+      })
+    );
+    this.manualSheetForm.patchValue(
+      {
+        lotNumber: this.autoManualLot(),
+        productionDate: new Date().toISOString().slice(0, 10),
+        commitmentReference: '',
+        operatorNotes: '',
+        packaging: {
+          presentationKg: defaultPresentation.kg,
+          cunetes: 0,
+          cajas: 0,
+          rendimiento: DEFAULT_SHEET_YIELD_PERCENT,
+        },
       },
-    });
+      { emitEvent: false }
+    );
+    this.syncPresentationUnits();
+    this.syncLegacyPackaging();
+    this.recalculateAllObtainedUnits();
+    this.sheetRevision.update((value) => value + 1);
   }
 
   public openNewManualSheetOrder() {
@@ -568,9 +998,14 @@ export class ProductionComponent {
       return;
     }
     const value = this.manualSheetForm.getRawValue();
-    if (this.positive(value.packaging.cunetes) + this.positive(value.packaging.cajas) <= 0) {
+    const presentationRows = this.sheetPresentationRows();
+    const totalUnits = presentationRows.reduce(
+      (sum, line) => sum + this.positive(line.units),
+      0
+    );
+    if (totalUnits <= 0) {
       this.api.showToast(
-        'Registre al menos un cuñete o una caja como cantidad obtenida.',
+        'Registre al menos una unidad producida en las presentaciones.',
         'error'
       );
       return;
@@ -578,6 +1013,19 @@ export class ProductionComponent {
 
     this.isSavingManualSheet.set(true);
     try {
+      const costLines = this.sheetCosts().presentations;
+      const presentations = presentationRows.map((line) => {
+        const cost = costLines.find((entry) => entry.id === line.id);
+        return {
+          id: line.id,
+          label: line.label,
+          presentation: line.presentation,
+          presentationKg: line.presentationKg,
+          units: line.units,
+          unitRate: cost?.unitRate ?? 0,
+          packagingUnitCost: cost?.packagingUnitCost ?? 0,
+        };
+      });
       await this.api.createManualSheetProductionOrder({
         lotNumber: value.lotNumber,
         productionDate: value.productionDate,
@@ -593,12 +1041,17 @@ export class ProductionComponent {
           waterGasOil: this.positive(row.waterGasOil),
           obtainedUnits: this.positive(row.obtainedUnits),
           totalKg: this.positive(row.totalKg),
+          presentationUnits: row.presentationUnits.map((item) => ({
+            presentationId: item.presentationId,
+            units: this.positive(item.units),
+          })),
         })),
         packaging: {
           presentationKg: this.positive(value.packaging.presentationKg),
           cunetes: this.positive(value.packaging.cunetes),
           cajas: this.positive(value.packaging.cajas),
           rendimiento: this.positive(value.packaging.rendimiento),
+          presentations,
         },
         commitmentReference: value.commitmentReference || undefined,
         operatorNotes: value.operatorNotes || undefined,
