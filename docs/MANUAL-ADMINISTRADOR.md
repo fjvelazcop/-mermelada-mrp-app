@@ -301,7 +301,44 @@ intentos. Si SMTP no está configurado o no hay destinatarios activos, el envío
 queda como `omitido` con su causa y el túnel se registra igual. Para un envío
 fallido, corrija SMTP/destinatarios y use el endpoint de reenvío indicado arriba.
 
-### 6.3. Si el túnel no arranca
+### 6.3. Recuperación y cambio de contraseña
+
+El correo de recuperación se envía **al correo del propio usuario**, no a la
+lista de destinatarios de alertas. El enlace usa el fragmento
+`/login#reset=<token>`, por lo que el token no viaja al servidor ni en el
+`Referer`, y también incluye el código manual. El enlace y el código vencen en
+`AUTH_RESET_TTL_SECONDS` (30 minutos por defecto) y son de un solo uso.
+
+Requisitos:
+
+- `SMTP_HOST`, `SMTP_FROM` y credenciales válidas.
+- `SMTP_FROM` debe coincidir con `SMTP_USER` o con un alias «Enviar como»
+  verificado; de lo contrario Gmail puede reescribir el remitente o rechazar el
+  mensaje.
+- `APP_URL` debe ser la URL pública real (por ejemplo
+  `https://erp.tudominio.com`), porque de ahí sale el enlace. Si `APP_URL` está
+  vacío, en `localhost` o en `127.0.0.1`, el sistema usa el origen público de la
+  petición (`X-Forwarded-Host`/`Host`), lo que mantiene los enlaces válidos
+  detrás de un túnel cuya URL cambia.
+- En producción no configure `AUTH_RESET_EXPOSE_TOKEN=true`: el token solo se
+  entrega por correo.
+
+Comprobar el envío:
+
+```bash
+curl -s -X POST http://127.0.0.1:4000/api/auth/reset-password \
+  -H 'Content-Type: application/json' \
+  -d '{"identifier":"usuario"}'
+
+node -e "const D=require('better-sqlite3');const db=new D('./data/mermelada.db',{readonly:true});console.log(db.prepare(\"SELECT kind,status,recipients,error,created_at FROM notification_log WHERE kind IN ('password-reset','password-changed') ORDER BY created_at DESC LIMIT 5\").all());db.close()"
+```
+
+Estados: `enviado` (SMTP aceptó al usuario y al BCC), `parcial` (revisar
+`error`), `fallido` (revisar credenciales/red) u `omitido` (SMTP incompleto).
+Tras un cambio de contraseña autenticado se envía un aviso de seguridad
+`password-changed` al mismo usuario.
+
+### 6.4. Si el túnel no arranca
 
 1. `pm2 logs mermelada-tunnel --lines 100`.
 2. Verifique `cloudflared version` y `TUNNEL_CLOUDFLARED`.

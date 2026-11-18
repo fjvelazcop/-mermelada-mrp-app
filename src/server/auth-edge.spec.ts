@@ -5,6 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { closeDb, getDb, setDbPath } from './database/persistence.js';
+import {
+  setMailTransportFactory,
+  type MailMessage,
+} from './notifications.js';
 import type {
   AuthUser,
   AuthUserRecord,
@@ -901,6 +905,104 @@ describe('authentication handlers', () => {
       notFound.res
     );
     expect(notFound.captured.statusCode).toBe(401);
+  });
+});
+
+describe('auth email delivery', () => {
+  afterEach(() => setMailTransportFactory(null));
+
+  function captureMail(): MailMessage[] {
+    const sent: MailMessage[] = [];
+    setMailTransportFactory(() => ({
+      async sendMail(message: MailMessage) {
+        sent.push(message);
+        return { accepted: [message.to] };
+      },
+    }));
+    vi.stubEnv('SMTP_HOST', 'smtp.test.local');
+    vi.stubEnv('SMTP_PORT', '587');
+    vi.stubEnv('SMTP_FROM', 'no-reply@test.local');
+    vi.stubEnv('SMTP_BCC', '');
+    vi.stubEnv('SMTP_RETRY_DELAY_MS', '0');
+    vi.stubEnv('APP_URL', 'https://erp.test');
+    return sent;
+  }
+
+  it('emails the recovery link and code to the account holder', async () => {
+    const sent = captureMail();
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('AUTH_RESET_EXPOSE_TOKEN', 'false');
+
+    const { res, captured } = captureResponse();
+    await auth.resetPasswordHandler(
+      makeRequest({ body: { identifier: 'admin' } }),
+      res
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(bodyOf(captured)['devToken']).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe('admin@pulpacraft.local');
+    expect(sent[0]?.subject).toContain('Recuperación de contraseña');
+    expect(sent[0]?.text).toContain('https://erp.test/login#reset=');
+
+    const log = getDb()
+      .prepare(
+        'SELECT kind, status FROM notification_log ORDER BY created_at DESC LIMIT 1'
+      )
+      .get() as { kind: string; status: string } | undefined;
+    expect(log).toEqual({ kind: 'password-reset', status: 'enviado' });
+  });
+
+  it('uses the forwarded public host when APP_URL is local', async () => {
+    const sent = captureMail();
+    vi.stubEnv('APP_URL', 'http://localhost:4000');
+
+    const { res } = captureResponse();
+    await auth.resetPasswordHandler(
+      makeRequest({
+        body: { identifier: 'admin' },
+        headers: {
+          host: '127.0.0.1:4000',
+          'x-forwarded-host': 'erp.trycloudflare.com',
+          'x-forwarded-proto': 'https',
+        },
+      }),
+      res
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.text).toContain(
+      'https://erp.trycloudflare.com/login#reset='
+    );
+  });
+
+  it('sends the security notice after changing the password', async () => {
+    const sent = captureMail();
+    const user = auth.createUser({
+      fullName: 'Cambio Clave',
+      username: 'change-password-email',
+      email: 'change-password-email@pulpacraft.local',
+      roleId: 'operator',
+      password: 'initial-password',
+    });
+
+    const { res, captured } = captureResponse();
+    await auth.changePasswordHandler(
+      makeRequest({
+        auth: authenticated(auth.findUserById(user.id)!),
+        body: {
+          currentPassword: 'initial-password',
+          newPassword: 'new-password-123',
+        },
+      }),
+      res
+    );
+
+    expect(captured.statusCode).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.to).toBe('change-password-email@pulpacraft.local');
+    expect(sent[0]?.subject).toContain('contraseña fue cambiada');
   });
 });
 

@@ -136,6 +136,8 @@ AUTH_ENABLED=true
 AUTH_SECRET=<AUTH_SECRET>
 AUTH_SEED_PASSWORD=<AUTH_SEED_PASSWORD>
 AUTH_MASTER_PASSWORD=<AUTH_MASTER_PASSWORD>
+# Validez del enlace/código de recuperación (30 min por defecto).
+AUTH_RESET_TTL_SECONDS=1800
 
 LICENSE_ENABLED=true
 LICENSE_ID=erp-mermelada
@@ -153,6 +155,7 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=<USUARIO_SMTP>
 SMTP_PASSWORD=<APP_PASSWORD_SMTP>
+# Debe coincidir con SMTP_USER o con un alias "Enviar como" verificado.
 SMTP_FROM=<CORREO_SMTP>
 SMTP_FROM_NAME="Mermelada ERP"
 SMTP_BCC=<CORREO_AUDITORIA>
@@ -214,18 +217,68 @@ curl -X POST http://127.0.0.1:4000/api/notifications/recipients \
 node scripts/license.mjs alerts --test
 ```
 
+### 2.8 Probar recuperación de contraseña
+
+El correo de recuperación se envía al usuario que lo solicita (no a la lista de
+alertas). El enlace usa el fragmento `#reset=...`, que el navegador no envía al
+servidor, y también incluye el código manual. Si `APP_URL` es público se usa tal
+cual; si está vacío o en `localhost`, se usa el host público de la petición.
+
+```bash
+curl -s -X POST http://127.0.0.1:4000/api/auth/reset-password \
+  -H 'Content-Type: application/json' \
+  -d '{"identifier":"fjvelazco"}'
+
+# En producción no se devuelve el token; revisar el envío en la BD:
+node -e "const D=require('better-sqlite3');const db=new D('./data/mermelada.db',{readonly:true});console.log(db.prepare(\"SELECT kind,status,recipients,error,created_at FROM notification_log WHERE kind IN ('password-reset','password-changed') ORDER BY created_at DESC LIMIT 5\").all());db.close()"
+```
+
+Resultado esperado: una fila `password-reset` con estado `enviado` y el correo del
+usuario. Si dice `fallido`, revisar `SMTP_*` y los logs (`pm2 logs mermelada-erp` o
+`docker compose ... logs app`). Abrir el enlace del correo debe mostrar directamente
+la pantalla **Nueva contraseña**.
+
 ---
 
-## 3. Opción B — Docker Compose (alternativa validada)
+## 3. Opción B — Docker Compose
 
-El build ya incluye `dist/`, `scripts/` y `keys/license-public.pem`; solo se necesita el
-contexto del repo y `.env.production` en el host.
+### 3.1 Bundle precompilado (recomendado en el servidor)
+
+El bundle ya incluye `dist/`, `Dockerfile.runtime` y `docker-compose.runtime.yml`.
+No compila Angular en el servidor: solo instala dependencias de producción.
 
 ```bash
 # 1) Preparar
 sudo mkdir -p /opt/mermelada/{keys,data,backups}
 cd /opt/mermelada
 
+# 2) Copiar el bundle descomprimido (incluye .env.production real)
+#    Ajustar APP_URL y NG_ALLOWED_HOSTS antes de arrancar.
+chmod 600 .env.production
+
+# 3) Construir y arrancar
+docker compose -f docker-compose.runtime.yml --env-file .env.production build
+docker compose -f docker-compose.runtime.yml --env-file .env.production up -d
+docker compose -f docker-compose.runtime.yml --env-file .env.production ps
+
+# 4) Verificar
+curl -s http://127.0.0.1:4000/api/health
+docker compose -f docker-compose.runtime.yml --env-file .env.production logs -f --tail=200 app
+
+# 5) Aplicar licencia dentro del contenedor (si la BD no la trae aplicada)
+docker compose -f docker-compose.runtime.yml --env-file .env.production exec app \
+  node scripts/license.mjs apply "<TOKEN_FIRMADO>" --actor despliegue-prod
+docker compose -f docker-compose.runtime.yml --env-file .env.production exec app \
+  node scripts/license.mjs status
+```
+
+### 3.2 Desde el repositorio (compila Angular en el servidor)
+
+Solo si se copia el código fuente completo. Usa `Dockerfile` y
+`docker-compose.yml`; el build incluye `dist/`, `scripts/` y
+`keys/license-public.pem`.
+
+```bash
 # 2) Copiar contexto de build (sin .env reales; .dockerignore los excluye)
 rsync -av --exclude 'node_modules' --exclude '.git' --exclude 'data' \
   --exclude 'backups' --exclude 'logs' \
@@ -244,11 +297,6 @@ docker compose --env-file .env.production ps
 # 5) Verificar
 curl -s http://127.0.0.1:4000/api/health
 docker compose --env-file .env.production logs -f --tail=200 app
-
-# 6) Aplicar licencia dentro del contenedor
-docker compose --env-file .env.production exec app \
-  node scripts/license.mjs apply "<TOKEN_FIRMADO>" --actor despliegue-prod
-docker compose --env-file .env.production exec app node scripts/license.mjs status
 ```
 
 Si se migra la BD al volumen de Docker:
@@ -260,7 +308,7 @@ docker compose --env-file .env.production start app
 ```
 
 Puerto host: `APP_PORT` en `.env.production` (por defecto `4000`). Para validar sin
-chocar con otra instancia: `APP_PORT=4100 docker compose --env-file .env.production up -d`.
+chocar con otra instancia: `APP_PORT=4100 docker compose -f docker-compose.runtime.yml --env-file .env.production up -d`.
 
 ---
 

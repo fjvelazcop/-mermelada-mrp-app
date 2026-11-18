@@ -1,7 +1,15 @@
-import {ChangeDetectionStrategy, Component, inject, signal} from '@angular/core';
+import {isPlatformBrowser} from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  OnInit,
+  PLATFORM_ID,
+  signal,
+} from '@angular/core';
 import {FormsModule} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
-import {Router} from '@angular/router';
+import {ActivatedRoute, Router} from '@angular/router';
 import {AuthService} from '../../core/services/auth.service';
 
 type AuthMode = 'login' | 'request' | 'confirm';
@@ -13,9 +21,11 @@ type AuthMode = 'login' | 'request' | 'confirm';
   templateUrl: './login.html',
   styleUrls: ['./login.css'],
 })
-export class LoginComponent {
+export class LoginComponent implements OnInit {
   public readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public mode = signal<AuthMode>('login');
   public username = '';
@@ -28,6 +38,34 @@ export class LoginComponent {
   public message = signal<string>('');
   public error = signal<string>('');
   public isLoading = signal<boolean>(false);
+
+  /**
+   * Deep link from the recovery email: `/login#reset=<token>`.
+   * The query-string variant is accepted for older links.
+   */
+  public ngOnInit(): void {
+    const fragment = this.route.snapshot.fragment ?? '';
+    const fromFragment = fragment.startsWith('reset=')
+      ? fragment.slice('reset='.length)
+      : null;
+    const raw = this.route.snapshot.queryParamMap.get('reset') ?? fromFragment;
+    if (!raw) return;
+
+    try {
+      this.resetToken = decodeURIComponent(raw);
+    } catch {
+      this.resetToken = raw;
+    }
+    this.mode.set('confirm');
+    this.message.set(
+      'Ingresa tu nueva contraseña para completar la recuperación.'
+    );
+
+    // Drop the token from the address bar once it has been captured.
+    if (isPlatformBrowser(this.platformId)) {
+      void this.router.navigate(['/login'], {replaceUrl: true});
+    }
+  }
 
   public async onLogin(): Promise<void> {
     this.error.set('');
@@ -114,6 +152,8 @@ export class LoginComponent {
     this.mode.set('login');
     this.error.set('');
     this.message.set('');
+    this.resetToken = '';
+    this.devToken.set(null);
   }
 
   public showRequest(): void {

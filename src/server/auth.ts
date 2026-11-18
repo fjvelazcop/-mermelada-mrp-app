@@ -6,7 +6,13 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
+import {
+  buildPasswordChangedEmail,
+  buildPasswordResetEmail,
+  resolvePublicAppUrl,
+} from './auth-emails.js';
 import { getDb } from './database/persistence.js';
+import { sendSystemEmail } from './notifications.js';
 
 /**
  * Basic authentication and role-based authorization.
@@ -1609,8 +1615,28 @@ export function logoutHandler(req: Request, res: Response): void {
   });
 }
 
+/** Public origin of the incoming request, honouring reverse proxies. */
+function requestOrigin(req: Request): string {
+  const host =
+    req.header('x-forwarded-host')?.split(',')[0]?.trim() ||
+    req.header('host')?.trim() ||
+    '';
+  if (!host) return '';
+
+  const forwardedProto = req
+    .header('x-forwarded-proto')
+    ?.split(',')[0]
+    ?.trim()
+    ?.toLowerCase();
+  const proto = forwardedProto || (req.secure ? 'https' : 'http');
+  return `${proto}://${host}`;
+}
+
 /** POST /api/auth/reset-password handler. */
-export function resetPasswordHandler(req: Request, res: Response): void {
+export async function resetPasswordHandler(
+  req: Request,
+  res: Response
+): Promise<void> {
   const identifier =
     typeof req.body?.identifier === 'string' ? req.body.identifier.trim() : '';
 
@@ -1634,7 +1660,42 @@ export function resetPasswordHandler(req: Request, res: Response): void {
     body['expiresInSeconds'] = getResetTtlSeconds();
   }
 
+  // Reply before contacting the SMTP server so the response time does not
+  // depend on whether the account exists or on how slow the mail server is.
   res.json(body);
+
+  if (!result) return;
+
+  const email = buildPasswordResetEmail({
+    user: {
+      username: result.user.username,
+      fullName: result.user.full_name,
+      email: result.user.email,
+    },
+    token: result.token,
+    ttlSeconds: getResetTtlSeconds(),
+    appUrl: resolvePublicAppUrl({ requestOrigin: requestOrigin(req) }),
+  });
+
+  try {
+    const delivery = await sendSystemEmail({
+      kind: 'password-reset',
+      ...email,
+      recipients: [result.user.email],
+    });
+    if (delivery.status !== 'sent') {
+      console.warn(
+        `[auth] No se pudo enviar el correo de recuperación (${delivery.status}` +
+          `${delivery.reason ? `/${delivery.reason}` : ''}, ` +
+          `log ${delivery.logId ?? 'sin-registro'})`
+      );
+    }
+  } catch (error) {
+    console.error(
+      '[auth] Error inesperado al enviar el correo de recuperación:',
+      error instanceof Error ? error.message : error
+    );
+  }
 }
 
 /** POST /api/auth/reset-password/confirm handler. */
@@ -1666,7 +1727,10 @@ function paramId(req: Request): string {
 }
 
 /** POST /api/auth/change-password handler. */
-export function changePasswordHandler(req: Request, res: Response): void {
+export async function changePasswordHandler(
+  req: Request,
+  res: Response
+): Promise<void> {
   if (!req.auth) {
     unauthorized(res, 'Autenticación requerida');
     return;
@@ -1697,6 +1761,8 @@ export function changePasswordHandler(req: Request, res: Response): void {
     return;
   }
 
+  const user = req.auth.user;
+
   // The current token was issued before `password_changed_at`, so the client
   // must sign in again with the new password.
   res.json({
@@ -1704,6 +1770,34 @@ export function changePasswordHandler(req: Request, res: Response): void {
     message: 'Contraseña actualizada correctamente. Inicia sesión nuevamente.',
     requiresLogin: true,
   });
+
+  const email = buildPasswordChangedEmail({
+    user: {
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
+    },
+  });
+
+  try {
+    const delivery = await sendSystemEmail({
+      kind: 'password-changed',
+      ...email,
+      recipients: [user.email],
+    });
+    if (delivery.status !== 'sent') {
+      console.warn(
+        `[auth] No se pudo enviar el aviso de cambio de contraseña (${delivery.status}` +
+          `${delivery.reason ? `/${delivery.reason}` : ''}, ` +
+          `log ${delivery.logId ?? 'sin-registro'})`
+      );
+    }
+  } catch (error) {
+    console.error(
+      '[auth] Error inesperado al enviar el aviso de cambio de contraseña:',
+      error instanceof Error ? error.message : error
+    );
+  }
 }
 
 /** GET /api/auth/users handler. The master account is never listed. */

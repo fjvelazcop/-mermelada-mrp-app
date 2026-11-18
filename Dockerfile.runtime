@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.7
+# Runtime-only image for the prebuilt production bundle.
+#
+# Unlike ./Dockerfile, this image does NOT compile the Angular application:
+# it expects `dist/` to be present next to this file (the release bundle
+# already contains it). Use it when the build machine is separate from the
+# Docker host.
+#
+# Build (from the bundle root):
+#   docker build -f Dockerfile.runtime -t mermelada-erp:runtime .
+# Run:
+#   docker compose -f docker-compose.runtime.yml up -d
+
+FROM node:22-bookworm-slim AS deps
+WORKDIR /app
+
+# better-sqlite3 may need to compile when no prebuild matches the platform.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund \
+  && npm cache clean --force
+
+
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=4000 \
+    DB_PATH=/app/data/mermelada.db \
+    BACKUP_DIR=/app/backups
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system --gid 1001 mermelada \
+  && useradd --system --uid 1001 --gid mermelada --home-dir /app mermelada
+
+COPY --from=deps --chown=mermelada:mermelada /app/node_modules ./node_modules
+COPY --chown=mermelada:mermelada package.json ./
+COPY --chown=mermelada:mermelada dist ./dist
+COPY --chown=mermelada:mermelada scripts ./scripts
+# Only the PUBLIC license key is deployed. The Ed25519 private key stays with
+# the licensor and must never be copied into the image or the build context.
+COPY --chown=mermelada:mermelada keys/license-public.pem ./keys/license-public.pem
+
+RUN mkdir -p /app/data /app/backups \
+  && chown -R mermelada:mermelada /app/data /app/backups
+
+USER mermelada
+EXPOSE 4000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
+  CMD ["node", "scripts/healthcheck.mjs"]
+
+CMD ["node", "dist/app/server/server.mjs"]
