@@ -177,6 +177,8 @@ describe('read-only endpoints', () => {
     '/api/payroll/employees',
     '/api/expenses',
     '/api/expenses/categories',
+    '/api/payables',
+    '/api/payables/payments',
     '/api/audit-logs',
   ])('GET %s returns an array', async (path) => {
     const response = await fetch(`${baseUrl}${path}`);
@@ -193,6 +195,31 @@ describe('read-only endpoints', () => {
     const body = (await response.json()) as { companyName?: string };
     expect(typeof body).toBe('object');
     expect(body.companyName).toBeTruthy();
+  });
+
+  it('GET /api/accounting/books generates a provisional book', async () => {
+    const { response, body } = await jsonRequest(
+      '/api/accounting/books?type=diario&year=2026&month=11',
+      'GET'
+    );
+    expect(response.status).toBe(200);
+    expect(body['type']).toBe('diario');
+    expect(body['periodKey']).toBe('2026-11');
+    expect(Array.isArray(body['rows'])).toBe(true);
+    expect((body['metadata'] as Record<string, unknown>)['provisional']).toBe(true);
+  });
+
+  it('GET /api/accounting/books generates the draft inventory book', async () => {
+    const { response, body } = await jsonRequest(
+      '/api/accounting/books?type=inventario&year=2026&month=11',
+      'GET'
+    );
+    expect(response.status).toBe(200);
+    expect(body['type']).toBe('inventario');
+    expect(String(body['title'])).toContain('BORRADOR / PRUEBA');
+    expect((body['notes'] as unknown[]).join(' ')).toContain(
+      'PENDIENTE DE VALIDACIÓN CONTABLE'
+    );
   });
 
   it('GET /api/reports/dashboard returns metrics', async () => {
@@ -231,8 +258,14 @@ describe('API documentation, 404s and auth defaults', () => {
     expect(paths['/api/auth/login']).toBeTruthy();
     expect(paths['/api/inventory/raw-materials']).toBeTruthy();
     expect(paths['/api/expenses/{id}']).toBeTruthy();
+    expect(paths['/api/expenses/{id}/fiscal-eligibility']).toBeTruthy();
+    expect(paths['/api/payables']).toBeTruthy();
+    expect(paths['/api/payables/{id}/payments']).toBeTruthy();
     expect(paths['/api/fiscal-obligations']).toBeTruthy();
     expect(paths['/api/fiscal-obligations/{key}']).toBeTruthy();
+    expect(paths['/api/fiscal-reference-catalog']).toBeTruthy();
+    expect(paths['/api/fiscal-reference-values']).toBeTruthy();
+    expect(paths['/api/accounting/books']).toBeTruthy();
 
     const components = body['components'] as {
       securitySchemes: { bearerAuth: { type: string; scheme: string } };
@@ -241,6 +274,28 @@ describe('API documentation, 404s and auth defaults', () => {
       type: 'http',
       scheme: 'bearer',
     });
+
+    const schemas = (body['components'] as {
+      schemas: Record<
+        string,
+        {properties?: Record<string, {enum?: string[]}>}
+      >;
+    }).schemas;
+    expect(schemas['Payable']).toBeTruthy();
+    expect(schemas['PayablePaymentResult']).toBeTruthy();
+    expect(schemas['FiscalReferenceCatalogEntry']?.properties?.['taxpayerTypes']).toBeTruthy();
+    expect(schemas['FiscalReferenceCatalogResponse']?.properties?.['entries']).toBeTruthy();
+    expect(
+      schemas['FiscalSettings']?.properties?.['digitalInvoicingEnabled']
+    ).toBeTruthy();
+    expect(
+      schemas['FiscalSettings']?.properties?.['digitalInvoicingEnvironment']
+        ?.enum
+    ).toContain('pruebas');
+    const presentationValues =
+      schemas['ProductionOrder']?.properties?.['presentation']?.enum ?? [];
+    expect(presentationValues).toContain('pequena_300g');
+    expect(presentationValues).toContain('caja_6kg');
   });
 
   it('renders Swagger UI', async () => {
@@ -593,6 +648,7 @@ describe('mutating endpoints', () => {
     );
     expect(note.response.status).toBe(201);
     expect(note.body['transporter']).toBe('Camión de prueba');
+    expect(note.body['noteNumber']).toMatch(/^NE-\d{6}$/);
 
     const notes = (await (
       await fetch(`${baseUrl}/api/sales/delivery-notes`)
@@ -742,6 +798,9 @@ describe('mutating endpoints', () => {
       controlNumber: number;
       salesOrderId: string;
       status: string;
+      saleCondition: string;
+      creditDays: number;
+      emitterSnapshot: Record<string, unknown>;
       customerSnapshot: { taxId: string };
       annulledBy?: string;
       annulmentReason?: string;
@@ -757,6 +816,11 @@ describe('mutating endpoints', () => {
     expect(invoice!.controlNumber).toBe(settings.nextControlNumber);
     expect(invoice!.status).toBe('emitida');
     expect(invoice!.customerSnapshot.taxId).toBe(customer.taxId);
+    expect(invoice!.saleCondition).toBe(order.body['saleCondition']);
+    expect(invoice!.creditDays).toBe(order.body['creditDays'] ?? 30);
+    expect(
+      (invoice!.emitterSnapshot as Record<string, unknown>)['printNotes']
+    ).toBe((fiscalBefore.body as Record<string, unknown>)['printNotes']);
 
     const firstPrint = await jsonRequest(
       `/api/fiscal-invoices/${invoice!.id}/print`,
@@ -1135,6 +1199,20 @@ describe('mutating endpoints', () => {
     expect(expense.response.status).toBe(201);
     const expenseId = expense.body['id'] as string;
 
+    const toggled = await jsonRequest(
+      `/api/expenses/${expenseId}/fiscal-eligibility`,
+      'PATCH',
+      {fiscalBookEligible: true}
+    );
+    expect(toggled.response.status).toBe(200);
+    expect(toggled.body['fiscalBookEligible']).toBe(true);
+    const eligibilityAudit = getDb()
+      .prepare(
+        "SELECT COUNT(*) AS count FROM audit_logs WHERE action_type = 'gasto_elegibilidad_actualizada' AND details_json LIKE ?"
+      )
+      .get(`%${expenseId}%`) as {count: number};
+    expect(eligibilityAudit.count).toBeGreaterThan(0);
+
     const deleted = await jsonRequest(`/api/expenses/${expenseId}`, 'DELETE');
     expect(deleted.response.status).toBe(200);
 
@@ -1270,6 +1348,13 @@ describe('mutating endpoints', () => {
       booksFormat: 'pdf',
       historicalOrdersTreatment: 'no_emitir',
       authorizationCode: 'AUTH-SECRET-DO-NOT-LOG',
+      digitalInvoicingEnabled: true,
+      digitalInvoicingProvider: 'Proveedor Digital Prueba',
+      digitalInvoicingProviderTaxId: 'J-12345678-9',
+      digitalInvoicingApiUrl: 'https://digital.example.com/api',
+      digitalInvoicingEnvironment: 'pruebas',
+      digitalInvoicingStartDate: '2027-04-01',
+      digitalInvoicingNotes: 'Borrador de configuración',
     };
 
     const updated = await jsonRequest(
@@ -1288,7 +1373,11 @@ describe('mutating endpoints', () => {
 
     const row = getDb()
       .prepare(
-        'SELECT company_phone, tax_regime, invoice_serie, next_control_number, special_taxpayer, books_format FROM fiscal_settings WHERE id = 1'
+        `SELECT company_phone, tax_regime, invoice_serie, next_control_number,
+                special_taxpayer, books_format, digital_invoicing_enabled,
+                digital_invoicing_provider, digital_invoicing_environment,
+                digital_invoicing_start_date
+           FROM fiscal_settings WHERE id = 1`
       )
       .get() as Record<string, unknown>;
     expect(row).toMatchObject({
@@ -1298,6 +1387,10 @@ describe('mutating endpoints', () => {
       next_control_number: 500,
       special_taxpayer: 1,
       books_format: 'pdf',
+      digital_invoicing_enabled: 1,
+      digital_invoicing_provider: payload.digitalInvoicingProvider,
+      digital_invoicing_environment: 'pruebas',
+      digital_invoicing_start_date: '2027-04-01',
     });
 
     const auditLogs = (await (
@@ -1343,6 +1436,60 @@ describe('mutating endpoints', () => {
     );
   });
 
+  it('rejects an incomplete digital invoicing configuration when marked ready', async () => {
+    const {response, body} = await jsonRequest('/api/fiscal-settings', 'PUT', {
+      digitalInvoicingEnabled: true,
+      digitalInvoicingProvider: '',
+    });
+    expect(response.status).toBe(422);
+    expect(JSON.stringify(body)).toContain('digitalInvoicingProvider');
+  });
+
+  it('auto-marks SPE agents on ordinario -> especial without enabling withholdings', async () => {
+    const reset = await jsonRequest('/api/fiscal-settings', 'PUT', {
+      taxRegime: 'ordinario',
+      specialTaxpayer: false,
+      vatWithholdingAgent: false,
+      islrWithholdingAgent: false,
+    });
+    expect(reset.response.status).toBe(200);
+
+    const transition = await jsonRequest('/api/fiscal-settings', 'PUT', {
+      taxRegime: 'especial',
+    });
+    expect(transition.response.status).toBe(200);
+    expect(transition.body['taxRegime']).toBe('especial');
+    expect(transition.body['specialTaxpayer']).toBe(true);
+    expect(transition.body['vatWithholdingAgent']).toBe(true);
+    expect(transition.body['islrWithholdingAgent']).toBe(true);
+    expect(transition.body['vatWithholdingEnabled']).toBe(false);
+    expect(transition.body['islrWithholdingEnabled']).toBe(false);
+
+    const row = getDb()
+      .prepare(
+        `SELECT tax_regime, special_taxpayer, vat_withholding_agent,
+                islr_withholding_agent, vat_withholding_enabled,
+                islr_withholding_enabled
+           FROM fiscal_settings WHERE id = 1`
+      )
+      .get() as Record<string, unknown>;
+    expect(row).toMatchObject({
+      tax_regime: 'especial',
+      special_taxpayer: 1,
+      vat_withholding_agent: 1,
+      islr_withholding_agent: 1,
+      vat_withholding_enabled: 0,
+      islr_withholding_enabled: 0,
+    });
+
+    const logs = (await (
+      await fetch(`${baseUrl}/api/audit-logs?module=ventas`)
+    ).json()) as { details?: { autoSpecialTaxpayerTransition?: boolean } }[];
+    expect(
+      logs.some((entry) => entry.details?.autoSpecialTaxpayerTransition === true)
+    ).toBe(true);
+  });
+
   it('records fiscal obligation decisions and keeps a separate history for admins', async () => {
     const deniedRead = await fetch(`${baseUrl}/api/fiscal-obligations`, {
       headers: { 'x-demo-role': 'operator' },
@@ -1372,7 +1519,7 @@ describe('mutating endpoints', () => {
     expect(deniedUpdate.status).toBe(403);
 
     const update = await jsonRequest('/api/fiscal-obligations/vat_withholding', 'PUT', {
-      applicability: 'no_aplica',
+      applicability: 'aplica',
       normativeReference: 'Constancia revisada por contador',
       reviewedAt: '2026-10-31',
       notes: 'La empresa no fue designada agente de retención.',
@@ -1380,7 +1527,7 @@ describe('mutating endpoints', () => {
     expect(update.response.status).toBe(200);
     expect(update.body).toMatchObject({
       key: 'vat_withholding',
-      applicability: 'no_aplica',
+      applicability: 'aplica',
       updatedBy: 'Administrador (demo)',
       updatedByRole: 'admin',
     });
@@ -1394,8 +1541,8 @@ describe('mutating endpoints', () => {
     }[];
     expect(history[0]).toMatchObject({
       obligationKey: 'vat_withholding',
-      previous: { applicability: 'pendiente' },
-      current: { applicability: 'no_aplica' },
+      previous: { applicability: 'no_aplica' },
+      current: { applicability: 'aplica' },
       userRole: 'admin',
     });
 
@@ -1411,10 +1558,10 @@ describe('mutating endpoints', () => {
     };
     expect(persistedHistory.obligation_key).toBe('vat_withholding');
     expect(JSON.parse(persistedHistory.previous_json)).toMatchObject({
-      applicability: 'pendiente',
+      applicability: 'no_aplica',
     });
     expect(JSON.parse(persistedHistory.current_json)).toMatchObject({
-      applicability: 'no_aplica',
+      applicability: 'aplica',
     });
     expect(persistedHistory.user_role).toBe('admin');
 
@@ -1479,6 +1626,119 @@ describe('mutating endpoints', () => {
     );
     expect(response.status).toBe(200);
     expect(typeof body['currentUsd']).toBe('number');
+  });
+
+  it('registers payables, rejects overpayment and generates one expense on full payment', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const year = Number(today.slice(0, 4));
+    const month = Number(today.slice(5, 7));
+    const expensesBefore = (
+      (await (await fetch(`${baseUrl}/api/expenses`)).json()) as unknown[]
+    ).length;
+
+    const created = await jsonRequest('/api/payables', 'POST', {
+      supplierName: 'Insumos del Llano C.A.',
+      taxId: 'J-12345678-9',
+      invoiceNumber: 'F-CXP-001',
+      issueDate: today,
+      dueDate: today,
+      amountUsd: 100,
+      exchangeRateUsed: 50,
+      category: 'materia_prima',
+    });
+    expect(created.response.status).toBe(201);
+    expect(created.body['payableNumber']).toBe(`FAP-${year}-001`);
+    expect(created.body['status']).toBe('pendiente');
+    const payableId = created.body['id'] as string;
+
+    const badBank = await jsonRequest(`/api/payables/${payableId}/payments`, 'POST', {
+      bankCode: '9999',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'CXP-BAD-BANK',
+      amountUsd: 10,
+    });
+    expect(badBank.response.status).toBe(422);
+
+    const partial = await jsonRequest(`/api/payables/${payableId}/payments`, 'POST', {
+      bankCode: '0108',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'CXP-REF-001',
+      amountUsd: 40,
+    });
+    expect(partial.response.status).toBe(201);
+    expect(partial.body['payment']).toMatchObject({amountUsd: 40, bankCode: '0108'});
+    expect((partial.body['payable'] as {status: string}).status).toBe('parcial');
+    expect(partial.body['expense']).toBeUndefined();
+
+    const duplicate = await jsonRequest(`/api/payables/${payableId}/payments`, 'POST', {
+      bankCode: '0108',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'cxp-ref-001',
+      amountUsd: 1,
+    });
+    expect(duplicate.response.status).toBe(400);
+
+    const overpayment = await jsonRequest(`/api/payables/${payableId}/payments`, 'POST', {
+      bankCode: '0108',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'CXP-REF-OVER',
+      amountUsd: 61,
+    });
+    expect(overpayment.response.status).toBe(400);
+
+    const history = await jsonRequest(`/api/payables/${payableId}/payments`, 'GET');
+    expect(history.response.status).toBe(200);
+    expect((history.body as unknown[]).length).toBe(1);
+
+    const paid = await jsonRequest(`/api/payables/${payableId}/payments`, 'POST', {
+      bankCode: '0108',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'CXP-REF-002',
+      amountUsd: 60,
+    });
+    expect(paid.response.status).toBe(201);
+    expect((paid.body['payable'] as {status: string}).status).toBe('pagada');
+    const expense = paid.body['expense'] as {id: string; payableId: string} | undefined;
+    expect(expense?.payableId).toBe(payableId);
+
+    const expensesAfter = (
+      (await (await fetch(`${baseUrl}/api/expenses`)).json()) as unknown[]
+    ).length;
+    expect(expensesAfter).toBe(expensesBefore + 1);
+
+    const books = await jsonRequest(`/api/fiscal-books/${year}/${month}`, 'GET');
+    expect(books.response.status).toBe(200);
+    const purchaseRows = books.body['purchaseRows'] as {documentNumber: string}[];
+    expect(purchaseRows.some((row) => row.documentNumber.includes('F-CXP-001'))).toBe(true);
+
+    const annulPaid = await jsonRequest(`/api/payables/${payableId}`, 'PATCH', {
+      status: 'anulada',
+    });
+    expect(annulPaid.response.status).toBe(400);
+
+    const second = await jsonRequest('/api/payables', 'POST', {
+      supplierName: 'Servicios Industriales C.A.',
+      invoiceNumber: 'F-CXP-002',
+      issueDate: today,
+      dueDate: today,
+      amountUsd: 25,
+      exchangeRateUsed: 50,
+      category: 'otros',
+    });
+    expect(second.response.status).toBe(201);
+    const annulled = await jsonRequest(
+      `/api/payables/${second.body['id'] as string}`,
+      'PATCH',
+      {status: 'anulada'}
+    );
+    expect(annulled.response.status).toBe(200);
+    expect(annulled.body['status']).toBe('anulada');
+
+    const audits = await jsonRequest('/api/audit-logs?module=gastos', 'GET');
+    const actions = (audits.body as {actionType: string}[]).map((entry) => entry.actionType);
+    expect(actions).toContain('payable_registrado');
+    expect(actions).toContain('payable_pago_registrado');
+    expect(actions).toContain('payable_anulado');
   });
 
   it('issues adjustment notes, reports fiscal books and locks a closed period', async () => {
@@ -1655,6 +1915,24 @@ describe('mutating endpoints', () => {
     });
     expect(expense.response.status).toBe(201);
 
+    const taxableExpense = await jsonRequest('/api/expenses', 'POST', {
+      date: `${invoice!.periodYear}-${String(invoice!.periodMonth).padStart(2, '0')}-16`,
+      concept: 'Gasto con IVA incluido en el libro fiscal',
+      category: 'otros',
+      categoryLabel: 'Otros',
+      amountUsd: 12,
+      exchangeRateUsed: 50,
+      supplierOrBeneficiary: 'Proveedor gravado',
+      documentType: 'factura_fiscal',
+      paymentMethod: 'efectivo_usd',
+      registeredBy: 'Test',
+      taxCategory: 'con_factura_iva',
+      taxRatePercent: 16,
+      taxAmountUsd: 1.92,
+      fiscalBookEligible: true,
+    });
+    expect(taxableExpense.response.status).toBe(201);
+
     const period = `${invoice!.periodYear}/${invoice!.periodMonth}`;
     const books = await jsonRequest(`/api/fiscal-books/${period}`, 'GET');
     expect(books.response.status).toBe(200);
@@ -1665,10 +1943,26 @@ describe('mutating endpoints', () => {
     expect(books.body['purchaseRows']).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: expense.body['id'] })])
     );
-    expect(books.body['reconciliation']).toMatchObject({
+    const reconciliation = books.body['reconciliation'] as {
+      salesDifference: number;
+      purchaseDifference: number;
+      taxDebit: number;
+      taxCredit: number;
+      netTaxPayable: number;
+    };
+    expect(reconciliation).toMatchObject({
       salesDifference: 0,
       purchaseDifference: 0,
     });
+    expect(reconciliation.taxDebit).toBeCloseTo(
+      (books.body['salesTotals'] as {taxAmount: number}).taxAmount,
+      2
+    );
+    expect(reconciliation.taxCredit).toBeGreaterThanOrEqual(1.92);
+    expect(reconciliation.netTaxPayable).toBeCloseTo(
+      reconciliation.taxDebit - reconciliation.taxCredit,
+      2
+    );
 
     const exportedBooks = await jsonRequest(
       `/api/fiscal-books/${period}/export`,
@@ -1713,6 +2007,12 @@ describe('mutating endpoints', () => {
       'DELETE'
     );
     expect(rejectedExpenseDelete.response.status).toBe(400);
+    const rejectedEligibility = await jsonRequest(
+      `/api/expenses/${expense.body['id']}/fiscal-eligibility`,
+      'PATCH',
+      {fiscalBookEligible: false}
+    );
+    expect(rejectedEligibility.response.status).toBe(400);
     const rejectedAdjustment = await jsonRequest(
       '/api/fiscal-adjustment-notes',
       'POST',
@@ -1731,5 +2031,141 @@ describe('mutating endpoints', () => {
       orderPayload
     );
     expect(rejectedInvoice.response.status).toBe(400);
+  });
+});
+
+describe('Fase 0 — valores fiscales de referencia y parámetros de libros (HTTP)', () => {
+  it('sirve el catálogo de referencia solo a administrador o master', async () => {
+    const response = await jsonRequest('/api/fiscal-reference-catalog', 'GET');
+    expect(response.response.status).toBe(200);
+    const entries = response.body['entries'] as JsonBody[];
+    expect(response.body['utReference']).toBe(43);
+    expect(entries).toHaveLength(9);
+    expect(entries.filter((item) => item['group'] === 'iva').map((item) => item['ratePercent'])).toEqual([16, 0, 8]);
+    expect(entries.filter((item) => item['group'] === 'islr')).toHaveLength(6);
+    expect(entries.every((item) => item['status'] === 'referencia' && item['confirmedByAccountant'] === false)).toBe(true);
+    expect(entries.filter((item) => item['group'] === 'islr').every((item) => item['sustraendo'] === null)).toBe(true);
+
+    const denied = await fetch(`${baseUrl}/api/fiscal-reference-catalog`, {
+      headers: {'x-demo-role': 'operator'},
+    });
+    expect(denied.status).toBe(403);
+  });
+
+  it('sirve los valores sembrados y permite CRUD con anulación lógica', async () => {
+    const initial = await jsonRequest('/api/fiscal-reference-values', 'GET');
+    expect(initial.response.status).toBe(200);
+    const values = initial.body['values'] as JsonBody[];
+    expect(values.some((item) => item['kind'] === 'iva' && item['value'] === 16)).toBe(true);
+    expect(values.some((item) => item['kind'] === 'ut' && item['value'] === 43)).toBe(true);
+    expect(initial.body['activeIva']).toMatchObject({value: 16, status: 'referencia'});
+
+    const created = await jsonRequest('/api/fiscal-reference-values', 'POST', {
+      kind: 'ut',
+      value: 45,
+      valueUnit: 'bs',
+      effectiveFrom: '2026-05-01',
+      effectiveTo: '',
+      instrumentType: 'providencia',
+      instrumentNumber: 'SNAT/PRUEBA',
+      officialGazette: 'G.O. de prueba',
+      publicationDate: '2026-05-01',
+      legalBasis: 'Prueba HTTP',
+      notes: 'Solo referencia',
+      status: 'referencia',
+      confirmedByAccountant: false,
+      supportDocument: '',
+    });
+    expect(created.response.status).toBe(201);
+    const createdId = String(created.body['id']);
+
+    const afterCreate = await jsonRequest('/api/fiscal-reference-values', 'GET');
+    const previous = (afterCreate.body['values'] as JsonBody[]).find(
+      (item) => item['id'] === 'frv-ut-43-2025'
+    );
+    expect(previous).toMatchObject({effectiveTo: '2026-04-30', status: 'historico'});
+    const closedAudit = getDb()
+      .prepare(
+        "SELECT COUNT(*) AS count FROM audit_logs WHERE action_type = 'valor_fiscal_referencia_vigencia_cerrada'"
+      )
+      .get() as {count: number};
+    expect(closedAudit.count).toBeGreaterThan(0);
+
+    const active = await jsonRequest(
+      '/api/fiscal-reference-values/active?kind=ut&date=2026-05-02',
+      'GET'
+    );
+    expect(active.body['value']).toBe(45);
+
+    const updated = await jsonRequest(
+      `/api/fiscal-reference-values/${createdId}`,
+      'PUT',
+      {
+        kind: 'ut',
+        value: 45,
+        valueUnit: 'bs',
+        effectiveFrom: '2026-05-01',
+        effectiveTo: '',
+        instrumentType: 'providencia',
+        instrumentNumber: 'SNAT/PRUEBA',
+        officialGazette: 'G.O. de prueba',
+        publicationDate: '2026-05-01',
+        legalBasis: 'Prueba HTTP',
+        notes: 'Confirmado por contador de prueba',
+        status: 'confirmado',
+        confirmedByAccountant: true,
+        supportDocument: 'SOP-1',
+      }
+    );
+    expect(updated.body['status']).toBe('confirmado');
+    expect(updated.body['confirmedByAccountant']).toBe(true);
+
+    const annulled = await jsonRequest(
+      `/api/fiscal-reference-values/${createdId}/annul`,
+      'POST',
+      {reason: 'Anulación de pruebaHTTP'}
+    );
+    expect(annulled.body['status']).toBe('anulado');
+    expect(annulled.body['annulledReason']).toBe('Anulación de pruebaHTTP');
+    const after = await jsonRequest('/api/fiscal-reference-values?kind=ut', 'GET');
+    expect((after.body['values'] as JsonBody[]).some((item) => item['id'] === createdId)).toBe(true);
+    expect(after.body['activeUt']).toBeNull();
+    const historical = await jsonRequest(
+      '/api/fiscal-reference-values/active?kind=ut&date=2026-04-30',
+      'GET'
+    );
+    expect(historical.body['value']).toBe(43);
+  });
+
+  it('guarda parámetros de libros y bloquea el acceso a operadores', async () => {
+    const initial = await jsonRequest('/api/accounting-book-settings', 'GET');
+    expect(initial.response.status).toBe(200);
+    expect(initial.body['approvedFormats']).toBe('xlsx,pdf');
+    expect(initial.body['auxiliaryFormat']).toBe('csv');
+
+    const updated = await jsonRequest('/api/accounting-book-settings', 'PUT', {
+      approvedFormats: 'xlsx,pdf',
+      auxiliaryFormat: 'csv',
+      pagination: 'Pendiente HTTP',
+      signatureText: 'Firma HTTP',
+      signatureRole: 'Contador',
+      exchangeRatePolicy: 'documento_con_fallback',
+      notes: 'Notas HTTP',
+      approvedAt: '2026-11-22',
+    });
+    expect(updated.response.status).toBe(200);
+    expect(updated.body['pagination']).toBe('Pendiente HTTP');
+    expect(updated.body['updatedBy']).toBe('Administrador (demo)');
+
+    const operatorRead = await fetch(`${baseUrl}/api/fiscal-reference-values`, {
+      headers: {'x-demo-role': 'operator'},
+    });
+    expect(operatorRead.status).toBe(403);
+    const operatorWrite = await fetch(`${baseUrl}/api/accounting-book-settings`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json', 'x-demo-role': 'operator'},
+      body: JSON.stringify(updated.body),
+    });
+    expect(operatorWrite.status).toBe(403);
   });
 });

@@ -3,6 +3,10 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { DatabaseState } from '../erp-database.js';
+import {
+  DEFAULT_MATERIAL_CATEGORIES,
+  DEFAULT_SUPPLIER_TYPES,
+} from '../../app/core/models/erp.models.js';
 
 // `better-sqlite3` is a native CommonJS addon that resolves its binding with
 // `__dirname`. The Angular dev server (Vite) bundles SSR dependencies as ESM,
@@ -116,6 +120,9 @@ function migrate(db: SqliteDatabase): void {
       cost_per_unit_bs REAL,
       total_cost_bs REAL,
       reference_doc TEXT,
+      supplier_id TEXT,
+      supplier_name_snapshot TEXT,
+      supplier_tax_id_snapshot TEXT,
       movement_date TEXT NOT NULL,
       performed_by TEXT NOT NULL
     );
@@ -357,6 +364,7 @@ function migrate(db: SqliteDatabase): void {
       exchange_rate_used REAL NOT NULL,
       amount_bs REAL NOT NULL,
       supplier_or_beneficiary TEXT NOT NULL,
+      supplier_id TEXT,
       tax_id TEXT,
       document_type TEXT NOT NULL,
       document_number TEXT,
@@ -417,7 +425,16 @@ function migrate(db: SqliteDatabase): void {
       special_taxpayer INTEGER NOT NULL DEFAULT 0,
       books_format TEXT NOT NULL DEFAULT 'xlsx',
       historical_orders_treatment TEXT NOT NULL DEFAULT 'revisar',
-      print_notes TEXT NOT NULL
+      print_notes TEXT NOT NULL,
+      digital_invoicing_enabled INTEGER NOT NULL DEFAULT 0,
+      digital_invoicing_provider TEXT NOT NULL DEFAULT '',
+      digital_invoicing_provider_tax_id TEXT NOT NULL DEFAULT '',
+      digital_invoicing_api_url TEXT NOT NULL DEFAULT '',
+      digital_invoicing_environment TEXT NOT NULL DEFAULT 'pruebas',
+      digital_invoicing_certificate_label TEXT NOT NULL DEFAULT '',
+      digital_invoicing_certificate_expiry TEXT NOT NULL DEFAULT '',
+      digital_invoicing_start_date TEXT NOT NULL DEFAULT '',
+      digital_invoicing_notes TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS fiscal_obligations (
@@ -594,6 +611,31 @@ function migrate(db: SqliteDatabase): void {
       PRIMARY KEY (role_id, module_id)
     );
 
+    -- Editable catalogs (migration v9)
+    CREATE TABLE IF NOT EXISTS supplier_types (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      color TEXT NOT NULL DEFAULT 'stone',
+      active INTEGER NOT NULL DEFAULT 1,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS material_categories (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      color TEXT NOT NULL DEFAULT 'stone',
+      active INTEGER NOT NULL DEFAULT 1,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS suppliers (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
@@ -751,6 +793,164 @@ function migrate(db: SqliteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_auth_users_username ON auth_users(username);
     CREATE INDEX IF NOT EXISTS idx_supplier_prices_supplier ON supplier_prices(supplier_id);
     CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
+
+    -- ==========================================================
+    -- Cuentas por pagar (migration v12)
+    -- ==========================================================
+
+    CREATE TABLE IF NOT EXISTS payables (
+      id TEXT PRIMARY KEY,
+      payable_number TEXT NOT NULL UNIQUE,
+      supplier_id TEXT,
+      supplier_name TEXT NOT NULL,
+      tax_id TEXT,
+      invoice_number TEXT NOT NULL,
+      control_number TEXT,
+      issue_date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      amount_usd REAL NOT NULL,
+      exchange_rate_used REAL NOT NULL,
+      amount_bs REAL NOT NULL,
+      tax_amount_usd REAL,
+      category TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pendiente',
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      expense_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS payable_payments (
+      id TEXT PRIMARY KEY,
+      payable_id TEXT NOT NULL,
+      bank_code TEXT NOT NULL,
+      bank_name TEXT NOT NULL,
+      payment_method TEXT NOT NULL,
+      reference TEXT NOT NULL,
+      amount_usd REAL NOT NULL,
+      amount_bs REAL NOT NULL,
+      exchange_rate_used REAL NOT NULL,
+      paid_at TEXT NOT NULL,
+      paid_by TEXT NOT NULL,
+      UNIQUE(payable_id, reference)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payable_payments_payable ON payable_payments(payable_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payable_payment_reference
+      ON payable_payments(payable_id, lower(reference));
+    CREATE INDEX IF NOT EXISTS idx_payables_due_date ON payables(due_date);
+    CREATE INDEX IF NOT EXISTS idx_payables_status ON payables(status);
+
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      nature TEXT NOT NULL,
+      parent_code TEXT,
+      level INTEGER NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      description TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS accounting_entries (
+      id TEXT PRIMARY KEY,
+      entry_number TEXT NOT NULL UNIQUE,
+      entry_date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT,
+      status TEXT NOT NULL,
+      total_debit REAL NOT NULL,
+      total_credit REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      exchange_rate_used REAL NOT NULL,
+      period_key TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      confirmed_at TEXT,
+      annulled_at TEXT,
+      annulment_reason TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS accounting_entry_lines (
+      id TEXT PRIMARY KEY,
+      entry_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      account_code TEXT NOT NULL,
+      account_name TEXT NOT NULL,
+      debit REAL NOT NULL DEFAULT 0,
+      credit REAL NOT NULL DEFAULT 0,
+      memo TEXT,
+      line_order INTEGER NOT NULL,
+      FOREIGN KEY (entry_id) REFERENCES accounting_entries(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS accounting_periods (
+      id TEXT PRIMARY KEY,
+      key TEXT NOT NULL UNIQUE,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      status TEXT NOT NULL,
+      closed_at TEXT,
+      closed_by TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_code);
+    CREATE INDEX IF NOT EXISTS idx_accounting_entries_period ON accounting_entries(period_key);
+    CREATE INDEX IF NOT EXISTS idx_accounting_entries_source
+      ON accounting_entries(source_type, source_id);
+    CREATE INDEX IF NOT EXISTS idx_accounting_entry_lines_entry
+      ON accounting_entry_lines(entry_id);
+    CREATE INDEX IF NOT EXISTS idx_accounting_entry_lines_account
+      ON accounting_entry_lines(account_id);
+
+    -- IVA/UT históricos y parámetros pendientes de la Fase 0 (#13).
+    CREATE TABLE IF NOT EXISTS fiscal_reference_values (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      value REAL NOT NULL,
+      value_unit TEXT NOT NULL,
+      effective_from TEXT NOT NULL,
+      effective_to TEXT NOT NULL DEFAULT '',
+      instrument_type TEXT NOT NULL DEFAULT '',
+      instrument_number TEXT NOT NULL DEFAULT '',
+      official_gazette TEXT NOT NULL DEFAULT '',
+      publication_date TEXT NOT NULL DEFAULT '',
+      legal_basis TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'referencia',
+      confirmed_by_accountant INTEGER NOT NULL DEFAULT 0,
+      support_document TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      annulled_at TEXT NOT NULL DEFAULT '',
+      annulled_reason TEXT NOT NULL DEFAULT '',
+      annulled_by TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fiscal_reference_kind_dates
+      ON fiscal_reference_values(kind, effective_from, effective_to);
+
+    CREATE TABLE IF NOT EXISTS accounting_book_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      approved_formats TEXT NOT NULL DEFAULT 'xlsx,pdf',
+      auxiliary_format TEXT NOT NULL DEFAULT 'csv',
+      pagination TEXT NOT NULL DEFAULT '',
+      signature_text TEXT NOT NULL DEFAULT '',
+      signature_role TEXT NOT NULL DEFAULT '',
+      exchange_rate_policy TEXT NOT NULL DEFAULT 'documento_con_fallback',
+      notes TEXT NOT NULL DEFAULT '',
+      approved_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT ''
+    );
   `);
 
   // Apply additive column migrations for databases created before the
@@ -772,6 +972,7 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'expenses', 'issuing_bank_code', 'TEXT');
   ensureColumn(db, 'expenses', 'issuing_bank_name', 'TEXT');
   ensureColumn(db, 'sales_orders', 'collection_json', 'TEXT');
+  ensureColumn(db, 'sales_orders', 'collections_json', 'TEXT');
   ensureColumn(db, 'sales_orders', 'created_by', 'TEXT');
   ensureColumn(db, 'customers', 'nit', 'TEXT');
   ensureColumn(db, 'sales_orders', 'customer_nit', 'TEXT');
@@ -798,11 +999,36 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'fiscal_settings', 'islr_withholding_agent', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'fiscal_settings', 'islr_withholding_percent', 'REAL NOT NULL DEFAULT 0');
   ensureColumn(db, 'fiscal_settings', 'special_taxpayer', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_settings', 'accounting_enabled', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'fiscal_settings', 'vat_withholding_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_settings', 'islr_withholding_enabled', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'fiscal_settings', 'books_format', "TEXT NOT NULL DEFAULT 'xlsx'");
   ensureColumn(db, 'fiscal_settings', 'historical_orders_treatment', "TEXT NOT NULL DEFAULT 'revisar'");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_provider', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_provider_tax_id', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_api_url', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_environment', "TEXT NOT NULL DEFAULT 'pruebas'");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_certificate_label', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_certificate_expiry', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_start_date', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_settings', 'digital_invoicing_notes', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'fiscal_invoices', 'print_count', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'fiscal_invoices', 'sale_condition', "TEXT NOT NULL DEFAULT 'contado'");
   ensureColumn(db, 'fiscal_invoices', 'payment_method', "TEXT NOT NULL DEFAULT 'efectivo_bs'");
+  ensureColumn(db, 'fiscal_invoices', 'credit_days', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'expenses', 'payable_id', 'TEXT');
+  ensureColumn(db, 'expenses', 'supplier_id', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'supplier_id', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'supplier_name_snapshot', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'supplier_tax_id_snapshot', 'TEXT');
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_payable
+      ON expenses(payable_id) WHERE payable_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_expenses_supplier ON expenses(supplier_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_movements_supplier
+      ON inventory_movements(supplier_id);
+  `);
 
   const row = db
     .prepare('SELECT MAX(version) AS version FROM schema_migrations')
@@ -877,6 +1103,162 @@ function migrate(db: SqliteDatabase): void {
     // table. The singleton row is seeded lazily by ensureSystemLicense() so the
     // initial period can be configured through LICENSE_INITIAL_DAYS.
     insert.run(8, new Date().toISOString());
+  }
+  if (currentVersion < 9) {
+    // Editable catalogs for supplier types and raw-material categories.
+    // Catalog rows are seeded only once so later user edits are never undone.
+    const now = new Date().toISOString();
+    const insertCatalogValue = db.prepare(`
+      INSERT OR IGNORE INTO supplier_types
+        (id, code, label, description, color, active, is_system, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertCategoryValue = db.prepare(`
+      INSERT OR IGNORE INTO material_categories
+        (id, code, label, description, color, active, is_system, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const seedCatalog = (
+      table: 'supplier_types' | 'material_categories',
+      values: typeof DEFAULT_SUPPLIER_TYPES
+    ) => {
+      const statement = table === 'supplier_types' ? insertCatalogValue : insertCategoryValue;
+      for (const value of values) {
+        const id = `${value.id || `seed-${table}-${value.code}`}`;
+        statement.run(
+          id,
+          value.code,
+          value.label,
+          value.description,
+          value.color,
+          value.active ? 1 : 0,
+          value.isSystem ? 1 : 0,
+          now,
+          now
+        );
+      }
+    };
+    seedCatalog('supplier_types', DEFAULT_SUPPLIER_TYPES);
+    seedCatalog('material_categories', DEFAULT_MATERIAL_CATEGORIES);
+
+    // Keep any legacy free-text value already stored by suppliers/materials.
+    const legacyCodes = (statement: string): string[] =>
+      (db.prepare(statement).all() as { code: string }[])
+        .map((row) => row.code)
+        .filter((code) => typeof code === 'string' && code.trim().length > 0);
+    const ensureLegacy = (
+      table: 'supplier_types' | 'material_categories',
+      codes: string[],
+      defaults: typeof DEFAULT_SUPPLIER_TYPES
+    ) => {
+      const statement = table === 'supplier_types' ? insertCatalogValue : insertCategoryValue;
+      for (const code of codes) {
+        if (defaults.some((value) => value.code === code)) continue;
+        statement.run(
+          `legacy-${table}-${code}`,
+          code,
+          code,
+          'Valor heredado de datos anteriores',
+          'stone',
+          1,
+          0,
+          now,
+          now
+        );
+      }
+    };
+    ensureLegacy(
+      'supplier_types',
+      legacyCodes("SELECT DISTINCT supplier_type AS code FROM suppliers WHERE supplier_type IS NOT NULL"),
+      DEFAULT_SUPPLIER_TYPES
+    );
+    ensureLegacy(
+      'material_categories',
+      legacyCodes("SELECT DISTINCT category AS code FROM raw_materials WHERE category IS NOT NULL"),
+      DEFAULT_MATERIAL_CATEGORIES
+    );
+
+    // Existing databases need explicit rows for the two new RBAC modules:
+    // ensureSeedRoles() uses INSERT OR IGNORE and only covers fresh databases.
+    const insertModulePermission = db.prepare(`
+      INSERT OR IGNORE INTO auth_role_permissions
+        (role_id, module_id, can_view, can_create, can_edit, can_delete, can_export)
+      SELECT id, ?,
+             CASE WHEN id IN ('admin', 'master') THEN 1 ELSE 0 END,
+             CASE WHEN id IN ('admin', 'master') THEN 1 ELSE 0 END,
+             CASE WHEN id IN ('admin', 'master') THEN 1 ELSE 0 END,
+             CASE WHEN id IN ('admin', 'master') THEN 1 ELSE 0 END,
+             CASE WHEN id IN ('admin', 'master') THEN 1 ELSE 0 END
+        FROM auth_roles
+    `);
+    insertModulePermission.run('supplier_types');
+    insertModulePermission.run('material_categories');
+
+    insert.run(9, now);
+  }
+  if (currentVersion < 10) {
+    // Fase 2 de CxC: el historial de abonos pasa a ser la fuente de verdad.
+    // Los pedidos ya cobrados conservan su `collection_json` y se migran a un
+    // array de un elemento para no perder trazabilidad.
+    const legacyRows = db
+      .prepare(
+        `SELECT id, collection_json FROM sales_orders
+          WHERE collection_json IS NOT NULL AND TRIM(collection_json) <> ''
+            AND (collections_json IS NULL OR TRIM(collections_json) = '')`
+      )
+      .all() as {id: string; collection_json: string}[];
+    const backfill = db.prepare('UPDATE sales_orders SET collections_json = ? WHERE id = ?');
+    for (const row of legacyRows) {
+      try {
+        const lastCollection = JSON.parse(row.collection_json);
+        if (lastCollection && typeof lastCollection === 'object' && !Array.isArray(lastCollection)) {
+          backfill.run(JSON.stringify([lastCollection]), row.id);
+        }
+      } catch {
+        // Una fila corrupta no debe impedir la migración del resto.
+      }
+    }
+    insert.run(10, new Date().toISOString());
+  }
+  if (currentVersion < 11) {
+    // Las facturas a crédito emitidas antes de v11 no guardaban el plazo; se
+    // reconstruye desde el pedido vinculado cuando está disponible.
+    db.exec(`
+      UPDATE fiscal_invoices
+      SET credit_days = COALESCE(
+        (SELECT credit_days FROM sales_orders WHERE sales_orders.id = fiscal_invoices.sales_order_id),
+        0
+      )
+      WHERE sale_condition = 'credito' AND credit_days = 0
+    `);
+    insert.run(11, new Date().toISOString());
+  }
+  if (currentVersion < 12) {
+    // CxP: las tablas se crean arriba para bases nuevas y antiguas; este bloque
+    // solo registra la migración y deja el camino abierto a futuros backfills.
+    insert.run(12, new Date().toISOString());
+  }
+  if (currentVersion < 13) {
+    // Los egresos y movimientos de inventario pueden vincularse al maestro de
+    // proveedores. Las columnas se añaden arriba; los registros históricos
+    // permanecen válidos con supplier_id = NULL.
+    insert.run(13, new Date().toISOString());
+  }
+  if (currentVersion < 14) {
+    // Núcleo contable Fase 1: plan de cuentas, asientos de doble entrada y
+    // períodos mensuales. El plan base es provisional hasta la validación #13.
+    insert.run(14, new Date().toISOString());
+  }
+  if (currentVersion < 15) {
+    // Facturación digital en modo preparación: solo se persiste la
+    // configuración futura. No emite documentos ni contacta al SENIAT.
+    insert.run(15, new Date().toISOString());
+  }
+  if (currentVersion < 16) {
+    // Histórico de IVA/UT y parámetros de libros pendientes de la Fase 0.
+    // Tablas creadas arriba; solo se registra la versión y se deja el
+    // camino abierto a futuros backfills.
+    insert.run(16, new Date().toISOString());
   }
 }
 

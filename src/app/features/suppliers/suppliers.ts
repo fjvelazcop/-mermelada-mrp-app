@@ -7,6 +7,7 @@ import {
   Supplier,
   SupplierPrice,
   SupplierType,
+  DEFAULT_SUPPLIER_TYPES,
 } from '../../core/models/erp.models';
 import {VeCurrencyPipe} from '../../core/pipes/ve-currency.pipe';
 
@@ -77,14 +78,19 @@ export class SuppliersComponent {
     notes: new FormControl<string>('', {nonNullable: true}),
   });
 
-  public supplierTypes: {value: SupplierType; label: string}[] = [
-    {value: 'fruta', label: 'Fruta / Pulpa'},
-    {value: 'aditivo', label: 'Aditivo / Azúcar'},
-    {value: 'empaque', label: 'Empaque / Etiqueta'},
-    {value: 'quimico', label: 'Químico / Conservante'},
-    {value: 'servicios', label: 'Servicios'},
-    {value: 'otro', label: 'Otro'},
-  ];
+  /** Tipos activos del catálogo administrable; fallback para datos no migrados. */
+  public supplierTypes = computed<{value: SupplierType; label: string}[]>(() => {
+    const catalog = this.api.supplierTypes().filter((type) => type.active);
+    const values = catalog.length
+      ? catalog
+      : DEFAULT_SUPPLIER_TYPES.filter((type) => type.active);
+    return values.map((type) => ({value: type.code, label: type.label}));
+  });
+
+  /** Código por defecto al abrir el formulario de un proveedor nuevo. */
+  public defaultSupplierType(): SupplierType {
+    return this.supplierTypes()[0]?.value || 'otro';
+  }
 
   public suppliers = computed(() => this.api.suppliers());
 
@@ -121,7 +127,7 @@ export class SuppliersComponent {
   }
 
   public typeLabel(type: string): string {
-    return this.supplierTypes.find((t) => t.value === type)?.label || type;
+    return this.supplierTypes().find((t) => t.value === type)?.label || type;
   }
 
   public togglePrices(supplierId: string) {
@@ -141,7 +147,7 @@ export class SuppliersComponent {
       email: '',
       fiscalAddress: '',
       physicalAddress: '',
-      supplierType: 'fruta',
+      supplierType: this.defaultSupplierType(),
       paymentTerms: 'Contado',
       status: 'activo',
       notes: '',

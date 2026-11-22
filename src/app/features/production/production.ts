@@ -5,6 +5,7 @@ import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   RecipeBOM,
+  ProductionMarmitaSheetRow,
   ProductionOrder,
   ProductionSheetPresentationLine,
   PresentationType,
@@ -17,8 +18,10 @@ import {
   calculateObtainedUnits,
   calculatePackagingEstimate,
   calculatePresentationsEstimate,
+  calculateSheetMerma,
   calculateSheetMatrixTotals,
   calculateTotalKgFromIngredients,
+  reconcileSheet,
   requiresManualPresentationUnits,
   sumPresentationUnits,
 } from './manual-sheet-calculations';
@@ -199,11 +202,13 @@ export class ProductionComponent {
     label: string;
     kg: number;
   }[] = [
-    { value: 'pote_20kg', label: 'Cuñete / Pote 20 kg', kg: 20 },
+    { value: 'pequena_300g', label: 'Frasco 300 g', kg: 0.3 },
+    { value: 'galon_5kg', label: 'Galón 5 kg', kg: 5 },
+    { value: 'pote_20kg', label: 'Cuñete 20 kg', kg: 20 },
     { value: 'caja_20kg', label: 'Caja 20 kg', kg: 20 },
+    { value: 'caja_6kg', label: 'Caja 6 kg', kg: 6 },
     { value: 'pequena_250g', label: 'Frasco 250 g', kg: 0.25 },
     { value: 'grande_1000g', label: 'Frasco 1000 g', kg: 1 },
-    { value: 'galon_5kg', label: 'Galón 5 kg', kg: 5 },
     { value: 'balde_15kg', label: 'Balde 15 kg', kg: 15 },
     { value: 'otra', label: 'Otra presentación', kg: 1 },
   ];
@@ -434,6 +439,16 @@ export class ProductionComponent {
             ? sumPresentationUnits(row.presentationUnits || [])
             : this.positive(row.obtainedUnits)),
         totalKg: acc.totalKg + this.positive(row.totalKg),
+        mermaKg:
+          acc.mermaKg +
+          calculateSheetMerma({
+            guavaKg: this.positive(row.guavaKg),
+            sugarKg: this.positive(row.sugarKg),
+            starchKg: this.positive(row.starchKg),
+            chemicalG: this.positive(row.chemicalG),
+            acidG: this.positive(row.acidG),
+            totalKg: this.positive(row.totalKg),
+          }),
       }),
       {
         guavaKg: 0,
@@ -444,9 +459,37 @@ export class ProductionComponent {
         waterGasOil: 0,
         obtainedUnits: 0,
         totalKg: 0,
+        mermaKg: 0,
       }
     );
   });
+
+  /** Merma of each editable marmita, excluding water/gasoil. */
+  public sheetMermaRows = computed<number[]>(() => {
+    this.sheetRevision();
+    return this.sheetMarmitas.getRawValue().map((row) =>
+      calculateSheetMerma({
+        guavaKg: this.positive(row.guavaKg),
+        sugarKg: this.positive(row.sugarKg),
+        starchKg: this.positive(row.starchKg),
+        chemicalG: this.positive(row.chemicalG),
+        acidG: this.positive(row.acidG),
+        totalKg: this.positive(row.totalKg),
+      })
+    );
+  });
+
+  /** Merma of a saved marmita, derived from the same mass balance. */
+  public savedSheetMerma(row: ProductionMarmitaSheetRow): number {
+    return calculateSheetMerma({
+      guavaKg: this.positive(row.guavaKg),
+      sugarKg: this.positive(row.sugarKg),
+      starchKg: this.positive(row.starchKg),
+      chemicalG: this.positive(row.chemicalG),
+      acidG: this.positive(row.acidG),
+      totalKg: this.positive(row.totalKg),
+    });
+  }
 
   private round(value: number, decimals = 2): number {
     return Number.isFinite(value) ? Number(value.toFixed(decimals)) : 0;
@@ -469,6 +512,10 @@ export class ProductionComponent {
         return this.materialRate(['rm-18'], [/caja.*20\s*kg/i]);
       case 'pequena_250g':
         return this.materialRate([], [/frasco.*250/i, /envase.*250/i]);
+      case 'pequena_300g':
+        return this.materialRate(['rm-22'], [/frasco.*300/i, /envase.*300/i]);
+      case 'caja_6kg':
+        return this.materialRate(['rm-23'], [/caja.*6\s*kg/i]);
       case 'grande_1000g':
         return this.materialRate(
           [],
@@ -645,6 +692,26 @@ export class ProductionComponent {
       ),
       presentations,
     };
+  });
+
+  /** Verificación independiente de unidades, kilos y empaques de la planilla. */
+  public sheetReconciliation = computed(() => {
+    const matrix = this.sheetMatrix();
+    const costs = this.sheetCosts();
+    const estimatedKg = this.round(
+      this.sheetMarmitas.getRawValue().reduce((sum, row) => sum + this.positive(row.totalKg), 0),
+      2
+    );
+    return reconcileSheet({
+      matrix,
+      obtainedUnits: this.round(this.sheetTotals().obtainedUnits, 2),
+      estimatedKg,
+      presentationPackagingCosts: costs.presentations.map((line) => ({
+        id: line.id,
+        packagingCost: line.packagingCost,
+      })),
+      packagingCost: costs.packagingCost,
+    });
   });
 
   /** Units represented by the captured kilos versus the units assigned to packaging. */

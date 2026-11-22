@@ -45,6 +45,24 @@ export function calculateIngredientMassKg(input: IngredientMassInput): number {
   );
 }
 
+/**
+ * Merma = ingredient mass − captured kilos. Water/gasoil is a process utility
+ * and is never part of the mass balance, so it cannot inflate the merma.
+ * Negative balances (manual kilos above ingredient mass) show zero merma.
+ */
+export function calculateMermaKg(ingredientMassKg: number, totalKg: number): number {
+  return roundSheetValue(
+    Math.max(0, nonNegative(ingredientMassKg) - nonNegative(totalKg))
+  );
+}
+
+/** Merma of one marmita from its captured ingredient inputs and total kilos. */
+export function calculateSheetMerma(
+  input: IngredientMassInput & { totalKg: number }
+): number {
+  return calculateMermaKg(calculateIngredientMassKg(input), input.totalKg);
+}
+
 /** Clamp the configured yield to a usable percentage. */
 export function normalizeYieldPercent(value: unknown): number {
   const parsed = Number(value);
@@ -387,5 +405,114 @@ export function calculateSheetMatrixTotals(
     presentations: presentationTotals,
     totalUnits,
     assignedKg,
+  };
+}
+
+export interface SheetReconciliationCheck {
+  key: string;
+  label: string;
+  actual: number;
+  expected: number;
+  difference: number;
+  ok: boolean;
+}
+
+export interface SheetReconciliation {
+  ok: boolean;
+  checks: SheetReconciliationCheck[];
+  totalUnits: number;
+  totalAssignedKg: number;
+  totalEstimatedKg: number;
+  packagingCost: number;
+}
+
+export interface SheetReconciliationInput {
+  matrix: SheetMatrixTotals;
+  /** `sheetTotals.obtainedUnits`: units derived from the editable kilos. */
+  obtainedUnits: number;
+  /** Sum of the six `totalKg` controls, independent of the matrix. */
+  estimatedKg: number;
+  /** Per-presentation packaging cost as valued by `sheetCosts`. */
+  presentationPackagingCosts: {id: string; packagingCost: number}[];
+  /** Grand packaging cost as valued by `sheetCosts`. */
+  packagingCost: number;
+}
+
+const RECONCILIATION_TOLERANCE = 0.01;
+
+/**
+ * Cross-checks the manual sheet using three independent paths: the marmita
+ * rows, the presentation columns and the grand total. All comparisons are in
+ * canonical USD/kilos/units and share the sheet's two-decimal precision.
+ */
+export function reconcileSheet(input: SheetReconciliationInput): SheetReconciliation {
+  const {matrix} = input;
+  const checks: SheetReconciliationCheck[] = [];
+  const addCheck = (
+    key: string,
+    label: string,
+    actual: number,
+    expected: number
+  ): void => {
+    const left = roundSheetValue(actual);
+    const right = roundSheetValue(expected);
+    const difference = roundSheetValue(left - right);
+    checks.push({
+      key,
+      label,
+      actual: left,
+      expected: right,
+      difference,
+      ok: Math.abs(difference) <= RECONCILIATION_TOLERANCE,
+    });
+  };
+
+  const columnUnits = roundSheetValue(
+    matrix.presentations.reduce((sum, line) => sum + line.units, 0)
+  );
+  const rowUnits = roundSheetValue(
+    matrix.marmitas.reduce((sum, row) => sum + row.units, 0)
+  );
+  addCheck('columnUnits', 'Suma de presentaciones = total de unidades', columnUnits, matrix.totalUnits);
+  addCheck('rowUnits', 'Suma de marmitas = total de unidades', rowUnits, matrix.totalUnits);
+
+  const columnKg = roundSheetValue(
+    matrix.presentations.reduce((sum, line) => sum + line.assignedKg, 0)
+  );
+  const rowKg = roundSheetValue(
+    matrix.marmitas.reduce((sum, row) => sum + row.assignedKg, 0)
+  );
+  addCheck('columnKg', 'Kilos por presentación = kilos asignados', columnKg, matrix.assignedKg);
+  addCheck('rowKg', 'Kilos por marmita = kilos asignados', rowKg, matrix.assignedKg);
+
+  addCheck(
+    'obtainedUnits',
+    'Cant. obtenida = unidades de la matriz',
+    input.obtainedUnits,
+    matrix.totalUnits
+  );
+
+  const matrixEstimatedKg = roundSheetValue(
+    matrix.marmitas.reduce((sum, row) => sum + row.estimatedKg, 0)
+  );
+  addCheck('estimatedKg', 'Kilos estimados = kilos totales', matrixEstimatedKg, input.estimatedKg);
+
+  const presentationPackagingCost = roundSheetValue(
+    input.presentationPackagingCosts.reduce((sum, line) => sum + line.packagingCost, 0)
+  );
+  addCheck(
+    'packagingCost',
+    'Empaques por presentación = costo de empaques',
+    presentationPackagingCost,
+    input.packagingCost
+  );
+
+  return {
+    ok: checks.every((check) => check.ok),
+    checks,
+    totalUnits: matrix.totalUnits,
+    totalAssignedKg: matrix.assignedKg,
+    totalEstimatedKg: matrixEstimatedKg,
+    packagingCost: roundSheetValue(input.packagingCost),
   };
 }

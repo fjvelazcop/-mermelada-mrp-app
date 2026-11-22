@@ -1121,6 +1121,91 @@ describe('sales collection with bank receiver', () => {
     );
     expect(response.status).toBe(400);
   });
+
+  let partialOrderId = '';
+  let partialTotal = 0;
+
+  it('registers a partial collection and exposes the history', async () => {
+    const orders = (await request('/api/sales/orders')).body as unknown as {
+      id: string;
+      status: string;
+      total: number;
+    }[];
+    const order = orders.find(
+      (candidate) => candidate.id !== orderId && candidate.status === 'en_produccion'
+    )!;
+    expect(order).toBeTruthy();
+    partialOrderId = order.id;
+    partialTotal = order.total;
+
+    const { response, body } = await request(
+      `/api/sales/orders/${partialOrderId}/collect`,
+      'POST',
+      {
+        bankCode: '0108',
+        paymentMethod: 'transferencia_bancaria',
+        reference: 'REF-PARCIAL-001',
+        amountUsd: 10,
+        exchangeRateUsed: 50,
+      }
+    );
+    expect(response.status).toBe(200);
+    expect(body['status']).toBe('cobrado_parcial');
+    expect((body['collections'] as JsonBody[]).length).toBe(1);
+
+    const history = await request(`/api/sales/orders/${partialOrderId}/collections`);
+    expect(history.response.status).toBe(200);
+    const entries = history.body as unknown as JsonBody[];
+    expect(entries.length).toBe(1);
+    expect(entries[0]['reference']).toBe('REF-PARCIAL-001');
+  });
+
+  it('rejects an amount greater than the outstanding balance', async () => {
+    const { response, body } = await request(
+      `/api/sales/orders/${partialOrderId}/collect`,
+      'POST',
+      {
+        bankCode: '0108',
+        paymentMethod: 'pago_movil',
+        reference: 'REF-EXCESO',
+        amountUsd: partialTotal + 100,
+      }
+    );
+    expect(response.status).toBe(400);
+    expect(String(body['error'])).toContain('supera el saldo pendiente');
+  });
+
+  it('rejects a duplicate reference on the same order', async () => {
+    const { response, body } = await request(
+      `/api/sales/orders/${partialOrderId}/collect`,
+      'POST',
+      {
+        bankCode: '0108',
+        paymentMethod: 'pago_movil',
+        reference: 'REF-PARCIAL-001',
+        amountUsd: 1,
+      }
+    );
+    expect(response.status).toBe(400);
+    expect(String(body['error'])).toContain('referencia');
+  });
+
+  it('completes the payment with a second abono', async () => {
+    const { response, body } = await request(
+      `/api/sales/orders/${partialOrderId}/collect`,
+      'POST',
+      {
+        bankCode: '0134',
+        paymentMethod: 'pago_movil',
+        reference: 'REF-PARCIAL-002',
+        amountUsd: Number((partialTotal - 10).toFixed(2)),
+      }
+    );
+    expect(response.status).toBe(200);
+    expect(body['status']).toBe('cobrado');
+    expect((body['collections'] as JsonBody[]).length).toBe(2);
+    expect((body['collection'] as JsonBody)['reference']).toBe('REF-PARCIAL-002');
+  });
 });
 
 describe('credit sale payment terms', () => {
@@ -1213,6 +1298,12 @@ describe('credit sale payment terms', () => {
     );
     expect(response.status).toBe(201);
     expect(body['creditDays']).toBe(0);
+
+    const invoices = (await request('/api/fiscal-invoices'))
+      .body as unknown as { salesOrderId: string; creditDays: number }[];
+    expect(invoices.find((invoice) => invoice.salesOrderId === body['id'])?.creditDays).toBe(
+      0
+    );
   });
 });
 

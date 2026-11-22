@@ -12,6 +12,11 @@ import {
 } from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel} from '../../core/utils/export.utils';
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
+import {
+  SupplierAutocompleteComponent,
+  SupplierSelection,
+} from '../../shared/components/supplier-autocomplete/supplier-autocomplete';
+import {AccountsPayableComponent} from '../accounts-payable/accounts-payable';
 
 export interface CategoryBudgetAnalysis {
   category: ExpenseCategoryConfig;
@@ -28,14 +33,14 @@ export interface CategoryBudgetAnalysis {
 @Component({
   selector: 'app-expenses',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog],
+  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog, SupplierAutocompleteComponent, AccountsPayableComponent],
   templateUrl: './expenses.html',
 })
 export class ExpensesComponent {
   public api = inject(ErpApiService);
 
   public currencyMode = signal<'USD' | 'Bs'>('USD');
-  public activeSubTab = signal<'list' | 'future_books' | 'audit'>('list');
+  public activeSubTab = signal<'list' | 'payables' | 'future_books' | 'audit'>('list');
   public categoryFilter = signal<string>('all');
   public searchQuery = signal<string>('');
 
@@ -106,6 +111,7 @@ export class ExpensesComponent {
     amountUsd: new FormControl<number>(0, {nonNullable: true}),
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     supplierOrBeneficiary: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
+    supplierId: new FormControl<string>('', {nonNullable: true}),
     taxId: new FormControl<string>('', {nonNullable: true}),
     documentType: new FormControl<'factura_fiscal' | 'recibo_pago' | 'nota_debito' | 'vale_caja' | 'otro'>('factura_fiscal', {nonNullable: true}),
     documentNumber: new FormControl<string>('', {nonNullable: true}),
@@ -406,6 +412,12 @@ export class ExpensesComponent {
     });
   }
 
+  /** Sincroniza el maestro de proveedores con los campos fiscales del egreso. */
+  public onSupplierSelected(selection: SupplierSelection): void {
+    this.expenseForm.controls.supplierId.setValue(selection.supplierId);
+    this.expenseForm.controls.taxId.setValue(selection.taxId || '');
+  }
+
   public openCreateModal() {
     const activeRate = this.api.exchangeRates()?.currentUsd || 48.35;
     const defaultCat = this.api.expenseCategories()[0]?.id || 'alquiler_instalaciones';
@@ -416,6 +428,7 @@ export class ExpensesComponent {
       amountUsd: 150.00,
       exchangeRateUsed: activeRate,
       supplierOrBeneficiary: '',
+      supplierId: '',
       taxId: '',
       documentType: 'factura_fiscal',
       documentNumber: '',
@@ -576,6 +589,7 @@ export class ExpensesComponent {
       exchangeRateUsed: rate,
       amountBs,
       supplierOrBeneficiary: v.supplierOrBeneficiary,
+      supplierId: v.supplierId || undefined,
       taxId: v.taxId || undefined,
       documentType: v.documentType,
       documentNumber: v.documentNumber || undefined,

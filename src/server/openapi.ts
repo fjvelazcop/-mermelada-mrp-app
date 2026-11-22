@@ -39,6 +39,13 @@ const idParameter: JsonObject = {
   schema: { type: 'string' },
 };
 
+const periodKeyParameter: JsonObject = {
+  name: 'key',
+  in: 'path',
+  required: true,
+  schema: { type: 'string', example: '2026-11' },
+};
+
 const arrayOf = (name: string): JsonObject => ({
   type: 'array',
   items: ref(name),
@@ -581,6 +588,106 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/supplier-types': {
+    get: {
+      tags: ['Proveedores', 'Configuración'],
+      summary: 'Listar el catálogo de tipos de proveedor',
+      responses: {
+        200: jsonResponse('Tipos de proveedor', arrayOf('CatalogValue')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Proveedores', 'Configuración'],
+      summary: 'Crear un tipo de proveedor',
+      requestBody: requestBody(ref('CatalogValueInput')),
+      responses: {
+        201: jsonResponse('Tipo creado', ref('CatalogValue')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/supplier-types/{id}': {
+    put: {
+      tags: ['Proveedores', 'Configuración'],
+      summary: 'Actualizar un tipo de proveedor',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('CatalogValueInput'), false),
+      responses: {
+        200: jsonResponse('Tipo actualizado', ref('CatalogValue')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+    delete: {
+      tags: ['Proveedores', 'Configuración'],
+      summary: 'Eliminar un tipo de proveedor (bloqueado si está en uso)',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Tipo eliminado'),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
+  '/api/material-categories': {
+    get: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Listar el catálogo de categorías de materia prima',
+      responses: {
+        200: jsonResponse('Categorías', arrayOf('CatalogValue')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Crear una categoría de materia prima',
+      requestBody: requestBody(ref('CatalogValueInput')),
+      responses: {
+        201: jsonResponse('Categoría creada', ref('CatalogValue')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/material-categories/{id}': {
+    put: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Actualizar una categoría de materia prima',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('CatalogValueInput'), false),
+      responses: {
+        200: jsonResponse('Categoría actualizada', ref('CatalogValue')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+    delete: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Eliminar una categoría (bloqueada si está en uso)',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Categoría eliminada'),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
   '/api/suppliers': {
     get: {
       tags: ['Proveedores'],
@@ -729,7 +836,14 @@ const paths: Record<string, JsonObject> = {
         properties: {
           status: {
             type: 'string',
-            enum: ['pendiente', 'en_produccion', 'listo_despacho', 'despachado', 'cobrado'],
+            enum: [
+              'pendiente',
+              'en_produccion',
+              'listo_despacho',
+              'despachado',
+              'cobrado_parcial',
+              'cobrado',
+            ],
           },
         },
       }),
@@ -745,18 +859,33 @@ const paths: Record<string, JsonObject> = {
   '/api/sales/orders/{id}/collect': {
     post: {
       tags: ['Ventas'],
-      summary: 'Registrar el cobro bancario de un pedido',
+      summary: 'Registrar un abono bancario de un pedido',
       description:
-        'El banco receptor es obligatorio y debe existir en el catálogo SUDEBAN. El pedido pasa a estado `cobrado`.',
+        'El banco receptor es obligatorio y debe existir en el catálogo SUDEBAN. El monto no puede superar el saldo pendiente y la referencia debe ser única por pedido. El pedido pasa a `cobrado_parcial` mientras quede saldo y a `cobrado` al cancelarse por completo.',
       parameters: [idParameter],
       requestBody: requestBody(ref('SalesCollectionInput')),
       responses: {
-        200: jsonResponse('Pedido cobrado', ref('SalesOrder')),
+        200: jsonResponse('Pedido con el abono registrado', ref('SalesOrder')),
         400: errorResponses[400],
         401: errorResponses[401],
         403: errorResponses[403],
         404: errorResponses[404],
         422: errorResponses[422],
+      },
+    },
+  },
+  '/api/sales/orders/{id}/collections': {
+    get: {
+      tags: ['Ventas'],
+      summary: 'Historial de abonos de un pedido',
+      description:
+        'Devuelve los cobros registrados, ordenados cronológicamente. Incluye el cobro único de pedidos migrados desde la versión anterior.',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Abonos del pedido', arrayOf('SalesCollection')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
       },
     },
   },
@@ -889,6 +1018,25 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/expenses/{id}/fiscal-eligibility': {
+    patch: {
+      tags: ['Gastos', 'Fiscal'],
+      summary: 'Incluir o excluir un gasto del Libro de Compras (período abierto)',
+      parameters: [idParameter],
+      requestBody: requestBody({
+        type: 'object',
+        required: ['fiscalBookEligible'],
+        properties: { fiscalBookEligible: { type: 'boolean' } },
+      }),
+      responses: {
+        200: jsonResponse('Gasto actualizado', ref('Expense')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
   '/api/expenses/{id}': {
     delete: {
       tags: ['Gastos'],
@@ -947,6 +1095,262 @@ const paths: Record<string, JsonObject> = {
         401: errorResponses[401],
         403: errorResponses[403],
         404: errorResponses[404],
+      },
+    },
+  },
+  '/api/accounting/books': {
+    get: {
+      tags: ['Contabilidad'],
+      summary: 'Generar un libro contable provisional del período',
+      description:
+        'Libro derivado de asientos y movimientos existentes, en modo BORRADOR / PRUEBA con cuentas de control provisionales. No calcula impuestos, no asigna consecutivos oficiales y está pendiente de validación contable (#13). Retenciones se devuelve vacío.',
+      parameters: [
+        {
+          name: 'type',
+          in: 'query',
+          required: true,
+          schema: {
+            type: 'string',
+            enum: [
+              'diario',
+              'mayor',
+              'balance_comprobacion',
+              'balance_general',
+              'inventario',
+              'estado_resultados',
+              'compras',
+              'ventas',
+              'retenciones',
+              'caja_banco',
+              'auxiliar_cxc',
+              'auxiliar_cxp',
+            ],
+          },
+        },
+        { name: 'year', in: 'query', required: true, schema: { type: 'integer', minimum: 2000, maximum: 9999 } },
+        { name: 'month', in: 'query', required: true, schema: { type: 'integer', minimum: 1, maximum: 12 } },
+      ],
+      responses: {
+        200: jsonResponse('Libro contable generado', ref('AccountingBookReport')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting/accounts': {
+    get: {
+      tags: ['Contabilidad'],
+      summary: 'Listar el plan de cuentas',
+      responses: {
+        200: jsonResponse('Plan de cuentas', arrayOf('Account')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Contabilidad'],
+      summary: 'Crear cuenta contable',
+      requestBody: requestBody(ref('AccountInput')),
+      responses: {
+        201: jsonResponse('Cuenta creada', ref('Account')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting/accounts/{id}': {
+    patch: {
+      tags: ['Contabilidad'],
+      summary: 'Actualizar cuenta contable (nombre, descripción o estado)',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('AccountUpdate')),
+      responses: {
+        200: jsonResponse('Cuenta actualizada', ref('Account')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting/entries': {
+    get: {
+      tags: ['Contabilidad'],
+      summary: 'Listar asientos contables (Diario)',
+      responses: {
+        200: jsonResponse('Asientos', arrayOf('AccountingEntry')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Contabilidad'],
+      summary: 'Crear asiento de doble entrada balanceado',
+      requestBody: requestBody(ref('AccountingEntryInput')),
+      responses: {
+        201: jsonResponse('Asiento creado', ref('AccountingEntry')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting/entries/{id}/confirm': {
+    post: {
+      tags: ['Contabilidad'],
+      summary: 'Confirmar asiento en borrador (admin/master)',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Asiento confirmado', ref('AccountingEntry')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
+  '/api/accounting/entries/{id}/annul': {
+    post: {
+      tags: ['Contabilidad'],
+      summary: 'Anular asiento con motivo (admin/master)',
+      parameters: [idParameter],
+      requestBody: requestBody({
+        type: 'object',
+        required: ['reason'],
+        properties: {reason: {type: 'string', minLength: 1, maxLength: 500}},
+      }),
+      responses: {
+        200: jsonResponse('Asiento anulado', ref('AccountingEntry')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting/periods': {
+    get: {
+      tags: ['Contabilidad'],
+      summary: 'Listar períodos contables mensuales',
+      responses: {
+        200: jsonResponse('Períodos', arrayOf('AccountingPeriod')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
+  '/api/accounting/periods/{key}/close': {
+    post: {
+      tags: ['Contabilidad'],
+      summary: 'Cerrar período contable (admin/master)',
+      parameters: [periodKeyParameter],
+      responses: {
+        200: jsonResponse('Período cerrado', ref('AccountingPeriod')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting/periods/{key}/open': {
+    post: {
+      tags: ['Contabilidad'],
+      summary: 'Reabrir período contable (admin/master)',
+      parameters: [periodKeyParameter],
+      responses: {
+        200: jsonResponse('Período abierto', ref('AccountingPeriod')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/payables': {
+    get: {
+      tags: ['Gastos'],
+      summary: 'Listar facturas por pagar',
+      responses: {
+        200: jsonResponse('Facturas por pagar', arrayOf('Payable')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Gastos'],
+      summary: 'Registrar factura por pagar',
+      requestBody: requestBody(ref('PayableInput')),
+      responses: {
+        201: jsonResponse('Factura registrada', ref('Payable')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/payables/payments': {
+    get: {
+      tags: ['Gastos'],
+      summary: 'Listar todos los pagos de facturas por pagar',
+      responses: {
+        200: jsonResponse('Pagos', arrayOf('PayablePayment')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
+  '/api/payables/{id}': {
+    get: {
+      tags: ['Gastos'],
+      summary: 'Consultar factura por pagar',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Factura', ref('Payable')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+    patch: {
+      tags: ['Gastos'],
+      summary: 'Actualizar o anular factura por pagar',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('PayableUpdate')),
+      responses: {
+        200: jsonResponse('Factura actualizada', ref('Payable')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/payables/{id}/payments': {
+    get: {
+      tags: ['Gastos'],
+      summary: 'Historial de pagos de una factura',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Pagos de la factura', arrayOf('PayablePayment')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+    post: {
+      tags: ['Gastos'],
+      summary: 'Registrar pago (parcial o total) de una factura',
+      description:
+        'Al saldar la factura se genera un único gasto vinculado por payableId para el Libro de Compras.',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('PayablePaymentInput')),
+      responses: {
+        201: jsonResponse('Pago registrado', ref('PayablePaymentResult')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
       },
     },
   },
@@ -1011,6 +1415,118 @@ const paths: Record<string, JsonObject> = {
       requestBody: requestBody(ref('FiscalObligationUpdate')),
       responses: {
         200: jsonResponse('Obligación actualizada', ref('FiscalObligation')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/fiscal-reference-catalog': {
+    get: {
+      tags: ['Configuración'],
+      summary: 'Consultar catálogo de referencia de IVA/ISLR (solo administrador o master)',
+      description: 'Catálogo de solo lectura de la Fase 0 / issue #13. No calcula impuestos, no activa retenciones ni modifica facturas o libros.',
+      responses: {
+        200: jsonResponse('Catálogo de referencia', ref('FiscalReferenceCatalogResponse')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
+  '/api/fiscal-reference-values': {
+    get: {
+      tags: ['Configuración'],
+      summary: 'Consultar histórico de IVA/UT y valores vigentes (solo administrador)',
+      description: 'Solo referencia/consulta hasta cerrar la Fase 0 / issue #13. No modifica cálculos activos.',
+      parameters: [
+        { name: 'kind', in: 'query', schema: { type: 'string', enum: ['iva', 'ut'] } },
+        { name: 'date', in: 'query', schema: { type: 'string', format: 'date' } },
+        { name: 'includeAnnulled', in: 'query', schema: { type: 'string', enum: ['true', 'false'] } },
+      ],
+      responses: {
+        200: jsonResponse('Histórico y vigentes', ref('FiscalReferenceValuesResponse')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+    post: {
+      tags: ['Configuración'],
+      summary: 'Crear valor histórico de IVA o UT (solo administrador)',
+      description: 'Cierra automáticamente la vigencia anterior al día previo y deja auditoría.',
+      requestBody: requestBody(ref('FiscalReferenceInput')),
+      responses: {
+        201: jsonResponse('Valor creado', ref('FiscalReferenceValue')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/fiscal-reference-values/active': {
+    get: {
+      tags: ['Configuración'],
+      summary: 'Consultar el valor vigente por tipo y fecha (solo administrador)',
+      parameters: [
+        { name: 'kind', in: 'query', required: true, schema: { type: 'string', enum: ['iva', 'ut'] } },
+        { name: 'date', in: 'query', schema: { type: 'string', format: 'date' } },
+      ],
+      responses: {
+        200: jsonResponse('Valor vigente', ref('FiscalReferenceValue')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
+  '/api/fiscal-reference-values/{id}': {
+    put: {
+      tags: ['Configuración'],
+      summary: 'Editar valor histórico de IVA o UT (solo administrador)',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('FiscalReferenceInput')),
+      responses: {
+        200: jsonResponse('Valor actualizado', ref('FiscalReferenceValue')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/fiscal-reference-values/{id}/annul': {
+    post: {
+      tags: ['Configuración'],
+      summary: 'Anular lógicamente un valor histórico, conservando el registro (solo administrador)',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('FiscalReferenceAnnulment')),
+      responses: {
+        200: jsonResponse('Valor anulado', ref('FiscalReferenceValue')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting-book-settings': {
+    get: {
+      tags: ['Contabilidad'],
+      summary: 'Consultar parámetros pendientes de libros (solo administrador)',
+      responses: {
+        200: jsonResponse('Parámetros de libros', ref('AccountingBookSettings')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    put: {
+      tags: ['Contabilidad'],
+      summary: 'Guardar paginación, firma y política de tasa de libros (solo administrador)',
+      requestBody: requestBody(ref('AccountingBookSettingsInput')),
+      responses: {
+        200: jsonResponse('Parámetros actualizados', ref('AccountingBookSettings')),
         401: errorResponses[401],
         403: errorResponses[403],
         422: errorResponses[422],
@@ -1242,6 +1758,19 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/system/reset-operational': {
+    post: {
+      tags: ['Sistema'],
+      summary: 'Borrar transacciones y dejar existencias en cero (solo admin/master)',
+      description:
+        'Elimina gastos, órdenes de producción y movimientos de inventario; pone en cero el stock de materias primas y productos terminados. Conserva los maestros.',
+      responses: {
+        200: jsonResponse('Reset operativo ejecutado'),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
 };
 
 const string: JsonObject = { type: 'string' };
@@ -1253,11 +1782,13 @@ const date: JsonObject = { type: 'string', format: 'date' };
 
 const presentationEnum = [
   'pequena_250g',
+  'pequena_300g',
   'grande_1000g',
   'galon_5kg',
   'balde_15kg',
   'pote_20kg',
   'caja_20kg',
+  'caja_6kg',
   'otra',
 ];
 const unitEnum = ['kg', 'g', 'l', 'ml', 'unidades', 'cajas', 'paquetes'];
@@ -1445,6 +1976,8 @@ const schemas: Record<string, JsonObject> = {
           'payroll',
           'expenses',
           'suppliers',
+          'supplier_types',
+          'material_categories',
           'settings',
           'architecture',
         ],
@@ -1499,7 +2032,10 @@ const schemas: Record<string, JsonObject> = {
     properties: {
       code: string,
       name: string,
-      category: { type: 'string', enum: ['fruta', 'aditivo', 'empaque', 'quimico'] },
+      category: {
+        type: 'string',
+        description: 'Clave de una categoría activa del catálogo /api/material-categories.',
+      },
       currentStock: number,
       minStock: number,
       unit: { type: 'string', enum: unitEnum },
@@ -1549,6 +2085,9 @@ const schemas: Record<string, JsonObject> = {
       costPerUnitBs: number,
       totalCostBs: number,
       referenceDoc: string,
+      supplierId: string,
+      supplierNameSnapshot: string,
+      supplierTaxIdSnapshot: string,
       date: date,
       performedBy: string,
       notes: string,
@@ -1930,6 +2469,35 @@ const schemas: Record<string, JsonObject> = {
       { type: 'object', required: ['id'], properties: { id: string } },
     ],
   },
+  CatalogValueInput: {
+    type: 'object',
+    required: ['code', 'label'],
+    properties: {
+      code: string,
+      label: string,
+      description: string,
+      color: string,
+      active: boolean,
+    },
+  },
+  CatalogValue: {
+    allOf: [
+      ref('CatalogValueInput'),
+      {
+        type: 'object',
+        required: ['id', 'code', 'label', 'active', 'isSystem', 'createdAt', 'updatedAt'],
+        properties: {
+          id: string,
+          code: string,
+          label: string,
+          active: boolean,
+          isSystem: boolean,
+          createdAt: dateTime,
+          updatedAt: dateTime,
+        },
+      },
+    ],
+  },
   SupplierInput: {
     type: 'object',
     required: [
@@ -1960,7 +2528,7 @@ const schemas: Record<string, JsonObject> = {
       physicalAddress: string,
       supplierType: {
         type: 'string',
-        enum: ['fruta', 'aditivo', 'empaque', 'quimico', 'servicios', 'otro'],
+        description: 'Clave de un tipo activo del catálogo /api/supplier-types.',
       },
       paymentTerms: string,
       status: { type: 'string', enum: ['activo', 'inactivo'] },
@@ -2036,7 +2604,14 @@ const schemas: Record<string, JsonObject> = {
       deliveryDate: date,
       status: {
         type: 'string',
-        enum: ['pendiente', 'en_produccion', 'listo_despacho', 'despachado', 'cobrado'],
+        enum: [
+          'pendiente',
+          'en_produccion',
+          'listo_despacho',
+          'despachado',
+          'cobrado_parcial',
+          'cobrado',
+        ],
       },
       saleCondition: { type: 'string', enum: ['contado', 'credito'] },
       creditDays: {
@@ -2118,6 +2693,25 @@ const schemas: Record<string, JsonObject> = {
       exchangeRateUsed: number,
     },
   },
+  SalesCollection: {
+    type: 'object',
+    description: 'Abono bancario registrado contra un pedido de venta.',
+    properties: {
+      id: string,
+      bankCode: { type: 'string', example: '0108' },
+      bankName: { type: 'string', example: 'Banco Provincial (BBVA)' },
+      paymentMethod: {
+        type: 'string',
+        enum: ['transferencia_bancaria', 'pago_movil', 'efectivo_bs', 'zelle', 'tarjeta'],
+      },
+      reference: string,
+      amountUsd: number,
+      amountBs: number,
+      exchangeRateUsed: number,
+      collectedAt: dateTime,
+      collectedBy: string,
+    },
+  },
   SalesOrder: {
     type: 'object',
     properties: {
@@ -2147,7 +2741,17 @@ const schemas: Record<string, JsonObject> = {
       },
       orderDate: date,
       deliveryDate: date,
-      status: string,
+      status: {
+        type: 'string',
+        enum: [
+          'pendiente',
+          'en_produccion',
+          'listo_despacho',
+          'despachado',
+          'cobrado_parcial',
+          'cobrado',
+        ],
+      },
       exchangeRateUsed: number,
       items: { type: 'array', items: { type: 'object', additionalProperties: true } },
       subtotal: number,
@@ -2184,6 +2788,11 @@ const schemas: Record<string, JsonObject> = {
           collectedAt: dateTime,
           collectedBy: string,
         },
+      },
+      collections: {
+        type: 'array',
+        description: 'Historial completo de abonos; fuente de verdad del saldo.',
+        items: ref('SalesCollection'),
       },
     },
   },
@@ -2320,6 +2929,216 @@ const schemas: Record<string, JsonObject> = {
       targetMarginRetail: number,
     },
   },
+  Account: {
+    type: 'object',
+    required: ['id', 'code', 'name', 'type', 'nature', 'level', 'active', 'isSystem'],
+    properties: {
+      id: string,
+      code: string,
+      name: string,
+      type: {type: 'string', enum: ['activo', 'pasivo', 'patrimonio', 'ingreso', 'gasto', 'costo']},
+      nature: {type: 'string', enum: ['debito', 'credito']},
+      parentCode: string,
+      level: integer,
+      active: boolean,
+      isSystem: boolean,
+      description: string,
+      createdAt: dateTime,
+      updatedAt: dateTime,
+    },
+  },
+  AccountInput: {
+    type: 'object',
+    required: ['code', 'name', 'type', 'nature'],
+    properties: {
+      code: string,
+      name: string,
+      type: {type: 'string', enum: ['activo', 'pasivo', 'patrimonio', 'ingreso', 'gasto', 'costo']},
+      nature: {type: 'string', enum: ['debito', 'credito']},
+      parentCode: string,
+      description: string,
+      active: boolean,
+    },
+  },
+  AccountUpdate: {
+    type: 'object',
+    properties: {
+      name: string,
+      description: string,
+      active: boolean,
+    },
+  },
+  AccountingEntryLine: {
+    type: 'object',
+    required: ['accountCode'],
+    properties: {
+      accountCode: string,
+      debit: number,
+      credit: number,
+      memo: string,
+    },
+  },
+  AccountingEntry: {
+    type: 'object',
+    required: ['id', 'entryNumber', 'date', 'description', 'sourceType', 'status', 'totalDebit', 'totalCredit'],
+    properties: {
+      id: string,
+      entryNumber: string,
+      date: date,
+      description: string,
+      sourceType: string,
+      sourceId: string,
+      status: {type: 'string', enum: ['borrador', 'confirmado', 'anulado']},
+      lines: arrayOf('AccountingEntryLine'),
+      totalDebit: number,
+      totalCredit: number,
+      currency: string,
+      exchangeRateUsed: number,
+      periodKey: string,
+      createdBy: string,
+      createdAt: dateTime,
+      updatedAt: dateTime,
+      confirmedAt: dateTime,
+      annulledAt: dateTime,
+      annulmentReason: string,
+    },
+  },
+  AccountingEntryInput: {
+    type: 'object',
+    required: ['date', 'description', 'lines'],
+    properties: {
+      date: date,
+      description: string,
+      sourceType: string,
+      sourceId: string,
+      exchangeRateUsed: number,
+      status: {type: 'string', enum: ['borrador', 'confirmado']},
+      lines: {type: 'array', minItems: 2, items: ref('AccountingEntryLine')},
+    },
+  },
+  AccountingPeriod: {
+    type: 'object',
+    required: ['id', 'key', 'startDate', 'endDate', 'status'],
+    properties: {
+      id: string,
+      key: string,
+      startDate: date,
+      endDate: date,
+      status: {type: 'string', enum: ['abierto', 'cerrado']},
+      closedAt: dateTime,
+      closedBy: string,
+    },
+  },
+  AccountingBookRow: {
+    type: 'object',
+    required: ['cells', 'rowType'],
+    properties: {
+      cells: {type: 'array', items: {}},
+      rowType: {
+        type: 'string',
+        enum: ['detail', 'section', 'entryTotal', 'total', 'grandTotal', 'note', 'signature'],
+      },
+    },
+  },
+  AccountingBookMetadata: {
+    type: 'object',
+    required: [
+      'companyName',
+      'taxId',
+      'fiscalAddress',
+      'periodLabel',
+      'startDate',
+      'endDate',
+      'currency',
+      'currencyLabel',
+      'secondaryCurrency',
+      'secondaryCurrencyLabel',
+      'exchangeRateUsed',
+      'exchangeRatePolicy',
+      'generatedAt',
+      'generatedBy',
+      'totalControl',
+      'hash',
+      'provisional',
+      'signatureLabel',
+    ],
+    properties: {
+      companyName: string,
+      taxId: string,
+      fiscalAddress: string,
+      periodLabel: string,
+      startDate: date,
+      endDate: date,
+      currency: {type: 'string', enum: ['USD']},
+      currencyLabel: string,
+      secondaryCurrency: {type: 'string', enum: ['BS']},
+      secondaryCurrencyLabel: string,
+      exchangeRateUsed: number,
+      exchangeRatePolicy: {
+        type: 'string',
+        enum: ['documento_con_fallback'],
+        description: 'Tasa guardada en el documento; si no existe, currentUsd como referencia.',
+      },
+      generatedAt: dateTime,
+      generatedBy: string,
+      totalControl: number,
+      hash: string,
+      provisional: {type: 'boolean', enum: [true]},
+      signatureLabel: string,
+    },
+  },
+  AccountingBookReport: {
+    type: 'object',
+    required: [
+      'type',
+      'title',
+      'year',
+      'month',
+      'periodKey',
+      'periodStatus',
+      'headers',
+      'rows',
+      'totals',
+      'notes',
+      'metadata',
+    ],
+    properties: {
+      type: {
+        type: 'string',
+        enum: [
+          'diario',
+          'mayor',
+          'balance_comprobacion',
+          'balance_general',
+          'inventario',
+          'estado_resultados',
+          'compras',
+          'ventas',
+          'retenciones',
+          'caja_banco',
+          'auxiliar_cxc',
+          'auxiliar_cxp',
+        ],
+      },
+      title: string,
+      year: integer,
+      month: integer,
+      periodKey: string,
+      periodStatus: {type: 'string', enum: ['abierto', 'cerrado']},
+      headers: {type: 'array', items: string},
+      rows: arrayOf('AccountingBookRow'),
+      totals: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['label', 'value'],
+          properties: {label: string, value: number, valueBs: number},
+        },
+      },
+      notes: {type: 'array', items: string},
+      metadata: ref('AccountingBookMetadata'),
+    },
+  },
   ExpenseInput: {
     type: 'object',
     required: [
@@ -2344,6 +3163,7 @@ const schemas: Record<string, JsonObject> = {
       exchangeRateUsed: number,
       amountBs: number,
       supplierOrBeneficiary: string,
+      supplierId: string,
       taxId: string,
       documentType: {
         type: 'string',
@@ -2414,6 +3234,101 @@ const schemas: Record<string, JsonObject> = {
       registeredBy: string,
       taxCategory: string,
       fiscalBookEligible: boolean,
+      payableId: string,
+    },
+  },
+  PayableInput: {
+    type: 'object',
+    required: ['supplierName', 'invoiceNumber', 'issueDate', 'dueDate', 'amountUsd', 'category'],
+    properties: {
+      supplierId: string,
+      supplierName: string,
+      taxId: string,
+      invoiceNumber: string,
+      controlNumber: string,
+      issueDate: date,
+      dueDate: date,
+      amountUsd: number,
+      exchangeRateUsed: number,
+      amountBs: number,
+      taxAmountUsd: number,
+      category: string,
+      status: {type: 'string', enum: ['pendiente', 'parcial', 'pagada', 'anulada']},
+      notes: string,
+    },
+  },
+  PayableUpdate: {
+    type: 'object',
+    description: 'Cualquier subconjunto de dueDate, category, notes, taxAmountUsd y status',
+    properties: {
+      status: {type: 'string', enum: ['pendiente', 'parcial', 'pagada', 'anulada']},
+      dueDate: date,
+      category: string,
+      notes: string,
+      taxAmountUsd: number,
+    },
+  },
+  Payable: {
+    allOf: [
+      ref('PayableInput'),
+      {
+        type: 'object',
+        required: ['id', 'payableNumber', 'amountBs', 'exchangeRateUsed', 'status'],
+        properties: {
+          id: string,
+          payableNumber: string,
+          exchangeRateUsed: number,
+          amountBs: number,
+          status: string,
+          createdBy: string,
+          createdAt: dateTime,
+          updatedAt: dateTime,
+          expenseId: string,
+        },
+      },
+    ],
+  },
+  PayablePaymentInput: {
+    type: 'object',
+    required: ['bankCode', 'paymentMethod', 'reference'],
+    properties: {
+      bankCode: {
+        type: 'string',
+        description: 'Código SUDEBAN del banco pagador.',
+        example: '0108',
+      },
+      bankName: string,
+      paymentMethod: {
+        type: 'string',
+        enum: ['transferencia_bancaria', 'pago_movil', 'tarjeta', 'zelle'],
+      },
+      reference: string,
+      amountUsd: number,
+      exchangeRateUsed: number,
+    },
+  },
+  PayablePayment: {
+    type: 'object',
+    properties: {
+      id: string,
+      payableId: string,
+      bankCode: string,
+      bankName: string,
+      paymentMethod: string,
+      reference: string,
+      amountUsd: number,
+      amountBs: number,
+      exchangeRateUsed: number,
+      paidAt: dateTime,
+      paidBy: string,
+    },
+  },
+  PayablePaymentResult: {
+    type: 'object',
+    properties: {
+      payable: ref('Payable'),
+      payment: ref('PayablePayment'),
+      expense: ref('Expense'),
     },
   },
   ExpenseCategoryInput: {
@@ -2480,6 +3395,22 @@ const schemas: Record<string, JsonObject> = {
         enum: ['no_emitir', 'emitir_actual', 'revisar'],
       },
       printNotes: string,
+      digitalInvoicingEnabled: {
+        type: 'boolean',
+        description:
+          'Solo preparación: guarda los datos para futura facturación digital; no emite ni envía al SENIAT.',
+      },
+      digitalInvoicingProvider: string,
+      digitalInvoicingProviderTaxId: string,
+      digitalInvoicingApiUrl: string,
+      digitalInvoicingEnvironment: {
+        type: 'string',
+        enum: ['pruebas', 'produccion'],
+      },
+      digitalInvoicingCertificateLabel: string,
+      digitalInvoicingCertificateExpiry: string,
+      digitalInvoicingStartDate: string,
+      digitalInvoicingNotes: string,
     },
   },
   FiscalSettingsUpdate: {
@@ -2520,6 +3451,138 @@ const schemas: Record<string, JsonObject> = {
       },
     },
   },
+  FiscalReferenceValue: {
+    type: 'object',
+    properties: {
+      id: string,
+      kind: {type: 'string', enum: ['iva', 'ut']},
+      value: number,
+      valueUnit: {type: 'string', enum: ['percent', 'bs']},
+      effectiveFrom: date,
+      effectiveTo: string,
+      instrumentType: string,
+      instrumentNumber: string,
+      officialGazette: string,
+      publicationDate: string,
+      legalBasis: string,
+      notes: string,
+      status: {type: 'string', enum: ['referencia', 'confirmado', 'historico', 'anulado']},
+      confirmedByAccountant: {type: 'boolean', enum: [true, false]},
+      supportDocument: string,
+      createdAt: dateTime,
+      createdBy: string,
+      updatedAt: dateTime,
+      annulledAt: string,
+      annulledReason: string,
+      annulledBy: string,
+    },
+  },
+  FiscalReferenceInput: {
+    type: 'object',
+    required: [
+      'kind', 'value', 'valueUnit', 'effectiveFrom', 'effectiveTo', 'instrumentType',
+      'instrumentNumber', 'officialGazette', 'publicationDate', 'legalBasis', 'notes',
+      'status', 'confirmedByAccountant', 'supportDocument',
+    ],
+    properties: {
+      kind: {type: 'string', enum: ['iva', 'ut']},
+      value: {type: 'number', exclusiveMinimum: 0},
+      valueUnit: {type: 'string', enum: ['percent', 'bs']},
+      effectiveFrom: date,
+      effectiveTo: string,
+      instrumentType: string,
+      instrumentNumber: string,
+      officialGazette: string,
+      publicationDate: string,
+      legalBasis: string,
+      notes: string,
+      status: {type: 'string', enum: ['referencia', 'confirmado', 'historico', 'anulado']},
+      confirmedByAccountant: {type: 'boolean'},
+      supportDocument: string,
+    },
+  },
+  FiscalReferenceAnnulment: {
+    type: 'object',
+    required: ['reason'],
+    properties: {reason: string},
+  },
+  FiscalReferenceCatalogEntry: {
+    type: 'object',
+    required: [
+      'id', 'group', 'code', 'label', 'applicability', 'ratePercent', 'taxpayerTypes',
+      'utReference', 'sustraendo', 'legalBasis', 'notes', 'status',
+      'confirmedByAccountant',
+    ],
+    properties: {
+      id: string,
+      group: {type: 'string', enum: ['iva', 'islr']},
+      code: string,
+      label: string,
+      applicability: {type: 'string', enum: ['general', 'exento', 'reducido', 'rubro']},
+      ratePercent: {type: 'number', nullable: true},
+      taxpayerTypes: {
+        type: 'array',
+        items: {type: 'string', enum: ['natural', 'juridica']},
+      },
+      utReference: {type: 'number', nullable: true},
+      sustraendo: {type: 'number', nullable: true},
+      legalBasis: string,
+      notes: string,
+      status: {type: 'string', enum: ['referencia']},
+      confirmedByAccountant: {type: 'boolean', enum: [false]},
+    },
+  },
+  FiscalReferenceCatalogResponse: {
+    type: 'object',
+    properties: {
+      entries: arrayOf('FiscalReferenceCatalogEntry'),
+      utReference: {type: 'number', example: 43},
+      generatedAt: dateTime,
+      notes: {type: 'array', items: string},
+    },
+  },
+  FiscalReferenceValuesResponse: {
+    type: 'object',
+    properties: {
+      values: arrayOf('FiscalReferenceValue'),
+      activeIva: ref('FiscalReferenceValue'),
+      activeUt: ref('FiscalReferenceValue'),
+      date: date,
+    },
+  },
+  AccountingBookSettings: {
+    type: 'object',
+    properties: {
+      id: {type: 'integer', enum: [1]},
+      approvedFormats: string,
+      auxiliaryFormat: string,
+      pagination: string,
+      signatureText: string,
+      signatureRole: string,
+      exchangeRatePolicy: {type: 'string', enum: ['documento_con_fallback']},
+      notes: string,
+      approvedAt: string,
+      updatedAt: dateTime,
+      updatedBy: string,
+    },
+  },
+  AccountingBookSettingsInput: {
+    type: 'object',
+    required: [
+      'approvedFormats', 'auxiliaryFormat', 'pagination', 'signatureText',
+      'signatureRole', 'exchangeRatePolicy', 'notes', 'approvedAt',
+    ],
+    properties: {
+      approvedFormats: string,
+      auxiliaryFormat: string,
+      pagination: string,
+      signatureText: string,
+      signatureRole: string,
+      exchangeRatePolicy: {type: 'string', enum: ['documento_con_fallback']},
+      notes: string,
+      approvedAt: string,
+    },
+  },
   FiscalInvoice: {
     type: 'object',
     properties: {
@@ -2531,6 +3594,13 @@ const schemas: Record<string, JsonObject> = {
       paymentMethod: {
         type: 'string',
         enum: ['efectivo_bs', 'efectivo_usd', 'transferencia_bancaria', 'pago_movil', 'tarjeta', 'zelle', 'credito'],
+      },
+      creditDays: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 365,
+        description:
+          'Plazo de crédito congelado al emitir la factura (0 en ventas de contado).',
       },
       salesOrderId: string,
       salesOrderNumber: string,
@@ -2647,7 +3717,13 @@ const schemas: Record<string, JsonObject> = {
       purchaseTotals: { type: 'object', additionalProperties: true },
       reconciliation: {
         type: 'object',
-        properties: { salesDifference: number, purchaseDifference: number },
+        properties: {
+          salesDifference: number,
+          purchaseDifference: number,
+          taxDebit: number,
+          taxCredit: number,
+          netTaxPayable: number,
+        },
       },
     },
   },
@@ -2744,6 +3820,7 @@ export const openApiDocument: JsonObject = {
     { name: 'Nómina', description: 'Empleados y semanas de nómina' },
     { name: 'Costos', description: 'Estructura de costos y simulaciones' },
     { name: 'Gastos', description: 'Egresos operativos y presupuestos' },
+    { name: 'Contabilidad', description: 'Plan de cuentas, asientos de doble entrada y períodos' },
     { name: 'Configuración', description: 'Datos fiscales y tasas de cambio' },
     { name: 'Reportes', description: 'Métricas agregadas' },
     { name: 'Auditoría', description: 'Trazabilidad de operaciones' },

@@ -127,6 +127,19 @@
           </button>
         }
 
+        @if (api.canViewModule('accounting')) {
+          <button
+            (click)="setTab('accounting')"
+            class="px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+            [class.bg-stone-100]="currentTab() === 'accounting'"
+            [class.text-stone-900]="currentTab() === 'accounting'"
+            [class.font-semibold]="currentTab() === 'accounting'"
+          >
+            <mat-icon class="text-xs text-amber-700">account_balance</mat-icon>
+            <span>Contabilidad</span>
+          </button>
+        }
+
         @if (api.canViewModule('suppliers')) {
           <button
             (click)="setTab('suppliers')"
@@ -304,6 +317,12 @@
         <button (click)="setTab('expenses')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-amber-600]="currentTab() === 'expenses'" [class.text-white]="currentTab() === 'expenses'" [class.bg-stone-100]="currentTab() !== 'expenses'" [class.text-stone-700]="currentTab() !== 'expenses'">
           <mat-icon class="text-xs">receipt_long</mat-icon>
           <span>Gastos</span>
+        </button>
+      }
+      @if (api.canViewModule('accounting')) {
+        <button (click)="setTab('accounting')" class="px-2.5 py-1.5 whitespace-nowrap rounded-lg font-medium transition-colors flex items-center gap-1" [class.bg-amber-600]="currentTab() === 'accounting'" [class.text-white]="currentTab() === 'accounting'" [class.bg-stone-100]="currentTab() !== 'accounting'" [class.text-stone-700]="currentTab() !== 'accounting'">
+          <mat-icon class="text-xs">account_balance</mat-icon>
+          <span>Contabilidad</span>
         </button>
       }
       @if (api.canViewModule('suppliers')) {
@@ -493,6 +512,20 @@
             >
               <mat-icon class="text-sm text-amber-700">receipt_long</mat-icon>
               <span>Gastos & Egresos</span>
+            </button>
+          }
+
+          @if (api.canViewModule('accounting')) {
+            <button
+              (click)="setTab('accounting')"
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left min-h-[44px]"
+              [class.bg-amber-50]="currentTab() === 'accounting'"
+              [class.text-amber-900]="currentTab() === 'accounting'"
+              [class.font-semibold]="currentTab() === 'accounting'"
+              [class.text-stone-700]="currentTab() !== 'accounting'"
+            >
+              <mat-icon class="text-sm text-amber-700">account_balance</mat-icon>
+              <span>Contabilidad</span>
             </button>
           }
 
@@ -734,6 +767,9 @@
         }
         @case ('expenses') {
           <app-expenses />
+        }
+        @case ('accounting') {
+          <app-accounting />
         }
         @case ('suppliers') {
           <app-suppliers />

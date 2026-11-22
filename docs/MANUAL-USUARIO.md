@@ -1,6 +1,6 @@
 # Manual de Usuario — Mermelada ERP
 
-**Versión:** 1.3 · **Última actualización:** 31/10/2026
+**Versión:** 1.4 · **Última actualización:** 22/11/2026
 **Aplicación:** PulpaCraft MRP / Mermelada ERP
 **Alcance:** personal administrativo, supervisores, operadores de planta, almacén y costos.
 
@@ -21,6 +21,7 @@ Es un ERP/MRP para una microempresa de mermeladas que integra:
 - Nómina semanal.
 - Gastos y egresos.
 - Directorio de proveedores.
+- Contabilidad básica: plan de cuentas, asientos de doble entrada y períodos.
 - Auditoría de las operaciones y administración de usuarios.
 
 Todos los módulos comparten la misma base de datos, por lo que una venta
@@ -171,7 +172,12 @@ Las órdenes manuales cargadas por fórmulas BOM siguen disponibles con el botó
 - **Materia prima:** stock actual, mínimo, unidad, costo y proveedor.
 - **Producto terminado:** unidades disponibles y reservadas por pedidos.
 - **Movimientos:** entradas, salidas, ajustes y mermas. Cada movimiento guarda
-  quién lo realizó.
+  quién lo realizó. En el modal **Registrar Movimiento de Inventario**, el campo
+  **Proveedor de la factura** busca en el maestro de proveedores por razón
+  social, código (`PROV-0001`), RIF/Cédula o contacto. Al seleccionarlo se guardan
+  el `supplierId` y una copia de la razón social y el RIF/Cédula vigentes, que
+  aparecen en el listado, detalle y exportaciones. Si el proveedor no existe,
+  puede crearlo desde **+ Registrar nuevo proveedor** sin salir del modal.
 - **Alertas:** los insumos por debajo del mínimo se resaltan para reposición.
 
 Buenas prácticas:
@@ -219,9 +225,21 @@ Importante:
 
 - Clasifique cada gasto por categoría (alquiler, servicios, transporte,
   honorarios, etc.).
-- Registre proveedor, RIF, número de factura y datos fiscales cuando aplique.
-- El IVA de gastos con factura válida puede registrarse como crédito fiscal.
-- Cada gasto guarda el usuario que lo registró.
+- En **Registrar Nuevo Gasto / Egreso**, el campo **Proveedor o Beneficiario** es
+  un autocompletable del maestro de proveedores. Busca por razón social, código,
+  RIF/Cédula o contacto; al elegir una opción se llenan automáticamente el RIF y
+  la razón social y se vincula el `supplierId`. El RIF queda de solo lectura hasta
+  que se use **Limpiar selección**.
+- Si el proveedor no existe, use **+ Registrar nuevo proveedor**. El alta rápida
+  exige razón social, RIF/Cédula válido (`V-`, `J-`, `G-`, `E-` o `C-`), contacto,
+  teléfono, dirección fiscal, tipo y condiciones de pago. Si el RIF ya está
+  registrado, el sistema ofrece **Usar proveedor existente** para evitar duplicados.
+- Para socios, viáticos o vales de caja use **Beneficiario eventual (sin
+  proveedor maestro)**: se conserva el texto libre sin crear una ficha.
+- Registre número de factura y datos fiscales cuando aplique. El IVA de gastos
+  con factura válida puede registrarse como crédito fiscal.
+- Cada gasto guarda el usuario que lo registró y, cuando aplica, el proveedor
+  maestro vinculado.
 
 ### 4.8. Directorio de proveedores
 
@@ -236,6 +254,10 @@ Disponible para administradores y Master:
 - **Usuarios:** crear, editar, desactivar y asignar roles.
 - **Roles:** matriz de permisos por módulo y acción.
 - **Datos fiscales:** razón social, RIF, dirección, serie y datos de contacto.
+- **IVA / UT e Historial (#13):** solo admin/master. Histórico de IVA/UT con
+  vigencias e instrumentos, parámetros pendientes de libros y un catálogo de
+  referencia de solo lectura con la clasificación IVA 16%/0%/8% y los rubros
+  ISLR del giro. No calcula impuestos ni activa retenciones.
 - **Auditoría:** consulta de eventos por módulo y usuario.
 
 ### 4.10. Documentación y guía
@@ -292,6 +314,44 @@ de clientes:
 5. El sistema no permite que otros roles vean, creen, editen o eliminen estos
    registros, ni desde la interfaz ni desde la API.
 
+### 4.13. Contabilidad (plan de cuentas, asientos y períodos)
+
+El módulo **Contabilidad** aparece en la navegación principal para los roles con
+permiso. Cinco pestañas:
+
+1. **Plan de cuentas:** lista el plan base provisional de 35 cuentas activas
+   (activo, pasivo, patrimonio, ingreso, gasto y costo), con código, naturaleza
+   y nivel. Ya incluye caja/bancos, CxC, CxP, materia prima, producto terminado
+   e IVA; no incluye una cuenta dedicada a **retenciones recibidas** ni una
+   cuenta específica para IVA 8%. Administradores pueden crear cuentas
+   adicionales, pero en esta ronda no se han creado cuentas ni modificado
+   asientos. Los códigos, la naturaleza y el plan definitivo (base 35 o VEN-NIF
+   de 167) deben confirmarse con el contador (#13).
+2. **Asientos / Diario:** consulta los asientos automáticos generados desde
+   ventas, cobros, egresos, pagos de CxP e inventario, y permite crear asientos
+   manuales balanceados. Un asiento con débitos distintos de créditos no puede
+   guardarse. Admin/Master pueden confirmar borradores o anular con motivo; la
+   anulación conserva el historial.
+3. **Libros:** genera versiones **BORRADOR / PRUEBA** de Diario, Mayor, Balance
+   de comprobación, Balance General, Inventario, Estado de resultados, Compras,
+   Ventas, Retenciones, Caja/Banco y auxiliares CxC/CxP para el año y mes
+   elegidos. Inventario usa las cuentas provisionales `1.03.01` y `1.03.02`.
+   Cada libro incluye metadatos, saldo de control, hash, leyenda «PENDIENTE DE
+   VALIDACIÓN CONTABLE (#13)» y línea de firma. Puede exportarlo a CSV, Excel o
+   PDF. Retenciones se muestra «SIN OPERACIONES»: como ordinario no se practican retenciones; solo control de comprobantes recibidos de SPE, sin cálculo ni
+   consecutivos.
+4. **Períodos:** los meses se crean automáticamente al registrar el primer
+   asiento. Admin/Master pueden cerrar o reabrir un período; un período cerrado
+   bloquea nuevos asientos con fecha de ese mes.
+5. **Retenciones:** aparece bloqueada para cálculo. Como contribuyente ordinario no se practican retenciones de IVA/ISLR al pagar; solo se contempla el control documental de comprobantes recibidos de clientes SPE. No hay cálculo ni
+   consecutivos oficiales hasta que el contador valide las obligaciones en el
+   [issue #13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13).
+
+En **Asientos / Diario** puede exportar el libro Diario a CSV o Excel. Los
+asientos automáticos son idempotentes: un mismo origen (por ejemplo, una
+entrada de inventario) genera un solo asiento aunque se sincronice varias veces.
+El detalle de columnas y encabezados está en `docs/PLANTILLAS-LIBROS.md`.
+
 ---
 
 ## 5. Reglas importantes
@@ -327,11 +387,33 @@ usuario que las ejecuta; compartir cuentas rompe la trazabilidad.
 El sistema emite facturas numeradas, notas de crédito/débito y reportes mensuales
 de compras y ventas, con impresión, auditoría, exportación CSV y cierre
 bloqueante. La representación y los reportes requieren validación de un
-contador público y **no implican autorización del SENIAT**. Retenciones,
-contabilidad general, IGTF y facturación digital requieren definición de
-obligaciones con un contador en el [issue #13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13)
-y su implementación posterior, si aplica. La adaptación a SNAT/2026/00093 debe
-planificarse antes del 19/04/2027. **No use las notas de entrega como documento fiscal**.
+contador público y **no implican autorización del SENIAT**.
+
+La Fase 1 del plan ampliado ya entrega un plan de cuentas base, asientos de
+doble entrada (manuales y automáticos), períodos mensuales y exportación del
+Diario. Es una base técnica **provisional**: no sustituye la validación del plan
+de cuentas, libros formales ni estados financieros. Mayor, Balances e Inventario
+ya se pueden generar como **borradores/prueba**, pero el cálculo de Retenciones
+IVA/ISLR e IGTF sigue bloqueado hasta definir las obligaciones con un contador en el
+[issue #13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13).
+
+Si cambia el régimen de **Ordinario** a **Especial / SPE**, el sistema marca
+automáticamente «Sujeto Pasivo Especial», «Agente de Retención de IVA» y
+«Agente de Retención de ISLR» como condición declarativa. No enciende los cálculos
+de retención: `vatWithholdingEnabled` e `islrWithholdingEnabled` permanecen en
+`false` hasta la validación contable. El usuario confirmó que hoy somos
+contribuyentes **ordinarios** (fabricación de mermelada): IVA 16% de referencia
+general para mermelada procesada/envasada, exentos/8% y conceptos de ISLR
+pendientes del contador, y UT de referencia Bs. 43,00.
+
+En **Configuración → Datos Fiscales** puede guardar, sin activar emisión real,
+los datos de facturación digital: proveedor autorizado, RIF del proveedor, URL
+del servicio, ambiente, certificado (solo etiqueta/serial), fecha prevista y
+notas. La casilla «Configuración de facturación digital preparada / borrador» no
+envía nada al SENIAT; solo exige que los datos estén completos. Tampoco se guardan
+secretos ni claves privadas en la base de datos.
+La adaptación a SNAT/2026/00093 debe planificarse antes del 19/04/2027.
+**No use las notas de entrega como documento fiscal**.
 
 ---
 

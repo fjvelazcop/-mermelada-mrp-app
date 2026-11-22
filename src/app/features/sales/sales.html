@@ -97,6 +97,51 @@
     </div>
   </div>
 
+  <!-- PESTAÑAS PRINCIPALES: NOTAS DE ENTREGA / CUENTAS POR COBRAR / FISCAL -->
+  <div class="flex flex-wrap items-center gap-2 border-b border-stone-200">
+    <button
+      type="button"
+      (click)="activeSalesTab.set('notas')"
+      class="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-t-lg border-b-2 transition-colors"
+      [class.border-amber-600]="activeSalesTab() === 'notas'"
+      [class.text-amber-800]="activeSalesTab() === 'notas'"
+      [class.border-transparent]="activeSalesTab() !== 'notas'"
+      [class.text-stone-500]="activeSalesTab() !== 'notas'"
+    >
+      <mat-icon class="text-sm">local_shipping</mat-icon>
+      Notas de entrega
+    </button>
+    @if (canViewCxcTab()) {
+      <button
+        type="button"
+        (click)="activeSalesTab.set('cxc')"
+        class="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-t-lg border-b-2 transition-colors"
+        [class.border-amber-600]="activeSalesTab() === 'cxc'"
+        [class.text-amber-800]="activeSalesTab() === 'cxc'"
+        [class.border-transparent]="activeSalesTab() !== 'cxc'"
+        [class.text-stone-500]="activeSalesTab() !== 'cxc'"
+      >
+        <mat-icon class="text-sm">account_balance_wallet</mat-icon>
+        Cuentas por cobrar
+      </button>
+    }
+    @if (canViewFiscalTab()) {
+      <button
+        type="button"
+        (click)="activeSalesTab.set('fiscal')"
+        class="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-t-lg border-b-2 transition-colors"
+        [class.border-amber-600]="activeSalesTab() === 'fiscal'"
+        [class.text-amber-800]="activeSalesTab() === 'fiscal'"
+        [class.border-transparent]="activeSalesTab() !== 'fiscal'"
+        [class.text-stone-500]="activeSalesTab() !== 'fiscal'"
+      >
+        <mat-icon class="text-sm">receipt_long</mat-icon>
+        Fiscal
+      </button>
+    }
+  </div>
+
+  @if (activeSalesTab() === 'notas') {
   <!-- SECCIÓN 1: PEDIDOS DE CLIENTES (MTO FLOW) -->
   <div class="bg-white border border-stone-200 rounded-xl p-6 shadow-xs">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
@@ -141,10 +186,18 @@
                   [class.text-emerald-800]="order.status === 'despachado' || order.status === 'cobrado'"
                   [class.bg-blue-100]="order.status === 'listo_despacho'"
                   [class.text-blue-800]="order.status === 'listo_despacho'"
-                  [class.bg-amber-100]="order.status === 'en_produccion' || order.status === 'pendiente'"
-                  [class.text-amber-800]="order.status === 'en_produccion' || order.status === 'pendiente'">
-                  {{ order.status === 'cobrado' ? 'Cobrado' : (order.status === 'despachado' ? 'Despachado' : (order.status === 'listo_despacho' ? 'Listo en Bodega' : (order.status === 'en_produccion' ? 'En Marmita (MTO)' : 'Pendiente Stock'))) }}
+                  [class.bg-amber-100]="order.status === 'en_produccion' || order.status === 'pendiente' || order.status === 'cobrado_parcial'"
+                  [class.text-amber-800]="order.status === 'en_produccion' || order.status === 'pendiente' || order.status === 'cobrado_parcial'"
+                  [class.border]="order.status === 'cobrado_parcial'"
+                  [class.border-amber-300]="order.status === 'cobrado_parcial'">
+                  {{ orderStatusLabel(order) }}
                 </span>
+                @if (orderOutstanding(order).hasPartialCollection) {
+                  <span class="text-[10px] font-mono text-amber-800 bg-amber-50 px-2 py-0.5 rounded"
+                    [title]="'Abonado ' + (orderOutstanding(order).collectedUsd | veCurrency:'$':2)">
+                    Saldo {{ orderOutstanding(order).balanceUsd | veCurrency:'$':2 }}
+                  </span>
+                }
                 @if (order.saleCondition === 'credito') {
                   <span class="text-xs font-semibold px-2.5 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200" title="Plazo de crédito pactado">
                     Crédito {{ order.creditDays || 30 }} días
@@ -246,14 +299,24 @@
                   </button>
                 }
 
-                @if (order.status !== 'cobrado') {
+                @if (order.collections?.length || order.collection) {
+                  <button
+                    (click)="viewCollections(order)"
+                    class="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-lg border border-sky-200"
+                    title="Ver el historial de abonos"
+                  >
+                    <mat-icon class="text-xs">receipt_long</mat-icon>
+                    Ver cobros
+                  </button>
+                }
+                @if (canCollectOrder(order)) {
                   <button
                     (click)="openCollectModal(order)"
                     class="inline-flex items-center gap-1 px-3 py-2 text-xs font-bold bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 shadow-xs"
-                    title="Registrar el cobro bancario del pedido"
+                    title="Registrar un abono bancario del pedido"
                   >
                     <mat-icon class="text-xs">payments</mat-icon>
-                    Registrar Cobro
+                    {{ orderOutstanding(order).hasPartialCollection ? 'Abonar' : 'Registrar Cobro' }}
                   </button>
                 }
               </div>
@@ -379,9 +442,15 @@
     </div>
   </div>
   }
+  }
 
+  @if (activeSalesTab() === 'cxc' && canViewCxcTab()) {
+  <!-- SECCIÓN 2: CUENTAS POR COBRAR -->
+  <app-accounts-receivable (collect)="openCollectModal($event)" (viewHistory)="viewCollections($event)" />
+  }
+
+  @if (activeSalesTab() === 'fiscal' && canViewFiscalTab()) {
   <!-- SECCIÓN 3: FACTURACIÓN FISCAL (FACTURAS EMITIDAS AUTOMÁTICAMENTE) -->
-  @if (!api.isSupervisorPlanta()) {
   <app-fiscal-invoices />
   }
 
@@ -597,8 +666,16 @@
             <div class="bg-stone-50 border border-stone-200 rounded-lg p-3">
               <span class="text-[10px] uppercase font-bold text-stone-400 block">Estado</span>
               <span class="text-xs font-semibold text-stone-900 block mt-0.5">
-                {{ selectedOrderDetail()?.status === 'cobrado' ? 'Cobrado' : (selectedOrderDetail()?.status === 'despachado' ? 'Despachado' : (selectedOrderDetail()?.status === 'listo_despacho' ? 'Listo en Bodega' : (selectedOrderDetail()?.status === 'en_produccion' ? 'En Marmita (MTO)' : 'Pendiente Stock'))) }}
+                {{ selectedOrderDetail() ? orderStatusLabel(selectedOrderDetail()!) : '—' }}
               </span>
+              @if (selectedOrderDetail(); as detail) {
+                @if (orderOutstanding(detail).collectedUsd > 0) {
+                  <span class="text-[10px] text-stone-500 block">
+                    Cobrado {{ orderOutstanding(detail).collectedUsd | veCurrency:'$':2 }} ·
+                    Saldo {{ orderOutstanding(detail).balanceUsd | veCurrency:'$':2 }}
+                  </span>
+                }
+              }
             </div>
             <div class="bg-stone-50 border border-stone-200 rounded-lg p-3">
               <span class="text-[10px] uppercase font-bold text-stone-400 block">Fecha / Entrega</span>
@@ -721,14 +798,25 @@
 
         <!-- Footer -->
         <div class="flex items-center justify-end gap-2 px-4 sm:px-6 py-3 border-t border-stone-100 shrink-0">
-          @if (!api.isSupervisorPlanta() && selectedOrderDetail()?.status !== 'cobrado') {
-            <button
-              (click)="openCollectModal(selectedOrderDetail()!); closeOrderDetail()"
-              class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 shadow-xs"
-            >
-              <mat-icon class="text-sm">payments</mat-icon>
-              Registrar Cobro
-            </button>
+          @if (selectedOrderDetail(); as detail) {
+            @if (detail.collections?.length || detail.collection) {
+              <button
+                (click)="viewCollections(detail); closeOrderDetail()"
+                class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-200 rounded-lg hover:bg-sky-100"
+              >
+                <mat-icon class="text-sm">receipt_long</mat-icon>
+                Ver cobros
+              </button>
+            }
+            @if (canCollectOrder(detail)) {
+              <button
+                (click)="openCollectModal(detail); closeOrderDetail()"
+                class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 shadow-xs"
+              >
+                <mat-icon class="text-sm">payments</mat-icon>
+                Abonar / Registrar Cobro
+              </button>
+            }
           }
           <button
             (click)="closeOrderDetail()"
@@ -1246,6 +1334,12 @@
               {{ collectingOrder()?.orderNumber }} · {{ collectingOrder()?.customerName }}
               · Total ${{ collectingOrder()?.total | veNumber:2 }}
             </p>
+            @if (collectingOrder(); as order) {
+              <p class="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 mt-2">
+                Cobrado acumulado {{ orderOutstanding(order).collectedUsd | veCurrency:'$':2 }} ·
+                <strong>Saldo pendiente {{ collectingBalance() | veCurrency:'$':2 }}</strong>
+              </p>
+            }
           </div>
           <button (click)="closeCollectModal()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
             <mat-icon>close</mat-icon>
@@ -1260,6 +1354,7 @@
                 type="number"
                 step="0.01"
                 min="0.01"
+                [max]="collectingBalance()"
                 formControlName="amountUsd"
                 class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm font-mono text-stone-900"
               />
@@ -1354,5 +1449,69 @@
         </form>
       </div>
     </div>
+  }
+
+  <!-- DRAWER: HISTORIAL DE COBROS -->
+  @if (isCollectionsDrawerOpen() && collectionsHistoryOrder(); as historyOrder) {
+    <div
+      class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs"
+      role="presentation"
+      tabindex="0"
+      (click)="closeCollectionsDrawer()"
+      (keydown.escape)="closeCollectionsDrawer()"
+    ></div>
+    <aside class="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl overflow-y-auto">
+        <div class="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-start justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <mat-icon class="text-sky-700">receipt_long</mat-icon>
+              <h3 class="text-base font-bold text-stone-900">Historial de cobros</h3>
+            </div>
+            <p class="text-xs text-stone-500 mt-1">{{ historyOrder.orderNumber }} · {{ historyOrder.customerName }}</p>
+          </div>
+          <button (click)="closeCollectionsDrawer()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <div class="p-5 space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-stone-50 border border-stone-200 rounded-lg p-3">
+              <span class="text-[10px] font-bold uppercase text-stone-400 block">Total pedido</span>
+              <span class="text-sm font-bold font-mono text-stone-900">{{ orderOutstanding(historyOrder).totalUsd | veCurrency:'$':2 }}</span>
+            </div>
+            <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+              <span class="text-[10px] font-bold uppercase text-emerald-700 block">Cobrado</span>
+              <span class="text-sm font-bold font-mono text-emerald-900">{{ orderOutstanding(historyOrder).collectedUsd | veCurrency:'$':2 }}</span>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 col-span-2">
+              <span class="text-[10px] font-bold uppercase text-amber-700 block">Saldo pendiente</span>
+              <span class="text-sm font-bold font-mono text-amber-900">{{ orderOutstanding(historyOrder).balanceUsd | veCurrency:'$':2 }}</span>
+            </div>
+          </div>
+
+          @if (loadingCollections()) {
+            <p class="text-xs text-stone-400 italic py-4">Cargando abonos…</p>
+          } @else {
+            @for (entry of collectionsHistory(); track entry.id) {
+              <div class="border border-stone-200 rounded-xl p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-sm font-bold font-mono text-stone-900">{{ entry.amountUsd | veCurrency:'$':2 }}</span>
+                  <span class="text-[10px] font-mono text-stone-500">{{ entry.collectedAt | date:'dd-MM-yyyy HH:mm' }}</span>
+                </div>
+                <div class="mt-1 text-[11px] text-stone-600 space-y-0.5">
+                  <p>Banco: <span class="font-semibold">{{ entry.bankName }} ({{ entry.bankCode }})</span></p>
+                  <p>Referencia: <span class="font-mono">{{ entry.reference }}</span></p>
+                  <p>Método: {{ entry.paymentMethod.replace('_', ' ') }}</p>
+                  <p>Tasa: {{ entry.exchangeRateUsed | veCurrency:'Bs.':2 }} · {{ entry.amountBs || 0 | veCurrency:'Bs.':2 }}</p>
+                  <p class="text-stone-400">Registrado por {{ entry.collectedBy }}</p>
+                </div>
+              </div>
+            } @empty {
+              <p class="text-xs text-stone-400 italic py-4">Este pedido aún no tiene abonos registrados.</p>
+            }
+          }
+        </div>
+    </aside>
   }
 </div>

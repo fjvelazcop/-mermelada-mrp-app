@@ -1,0 +1,665 @@
+<section class="p-4 sm:p-6 space-y-6">
+  <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <div class="flex items-center gap-2">
+        <mat-icon class="text-amber-700">account_balance</mat-icon>
+        <h1 class="text-xl sm:text-2xl font-bold text-stone-900">Contabilidad</h1>
+      </div>
+      <p class="text-sm text-stone-500 mt-1">
+        Plan de cuentas base y asientos de doble entrada. Pendiente de validación contable (#13).
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      @if (api.hasPermission('accounting', 'canCreate')) {
+        @if (activeTab() === 'accounts') {
+          <button
+            (click)="openAccountModal()"
+            class="px-3 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800"
+          >
+            + Nueva cuenta
+          </button>
+        }
+        @if (activeTab() === 'entries') {
+          <button
+            (click)="openEntryModal()"
+            class="px-3 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800"
+          >
+            + Nuevo asiento
+          </button>
+        }
+      }
+      @if (activeTab() === 'entries' && api.hasPermission('accounting', 'canExport')) {
+        <button
+          (click)="exportEntries('csv')"
+          class="px-3 py-2 rounded-lg border border-stone-300 text-sm font-medium hover:bg-stone-50"
+        >
+          Exportar CSV
+        </button>
+        <button
+          (click)="exportEntries('excel')"
+          class="px-3 py-2 rounded-lg border border-stone-300 text-sm font-medium hover:bg-stone-50"
+        >
+          Exportar Excel
+        </button>
+      }
+      @if (activeTab() === 'books' && api.hasPermission('accounting', 'canExport')) {
+        <button
+          (click)="exportAccountingBook('csv')"
+          class="px-3 py-2 rounded-lg border border-stone-300 text-sm font-medium hover:bg-stone-50"
+        >
+          CSV
+        </button>
+        <button
+          (click)="exportAccountingBook('excel')"
+          class="px-3 py-2 rounded-lg border border-stone-300 text-sm font-medium hover:bg-stone-50"
+        >
+          Excel
+        </button>
+        <button
+          (click)="exportAccountingBook('pdf')"
+          class="px-3 py-2 rounded-lg border border-stone-300 text-sm font-medium hover:bg-stone-50"
+        >
+          PDF
+        </button>
+      }
+    </div>
+  </header>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div class="rounded-xl border border-stone-200 bg-white p-4">
+      <p class="text-xs uppercase tracking-wide text-stone-500">Cuentas activas</p>
+      <p class="text-2xl font-bold text-stone-900">
+        {{ activeAccountCount() }}
+      </p>
+    </div>
+    <div class="rounded-xl border border-stone-200 bg-white p-4">
+      <p class="text-xs uppercase tracking-wide text-stone-500">Asientos vigentes</p>
+      <p class="text-2xl font-bold text-stone-900">{{ activeEntries().length }}</p>
+    </div>
+    <div class="rounded-xl border border-stone-200 bg-white p-4">
+      <p class="text-xs uppercase tracking-wide text-stone-500">Movimiento contable (USD)</p>
+      <p class="text-2xl font-bold text-stone-900">${{ totalPostedUsd().toFixed(2) }}</p>
+    </div>
+  </div>
+
+  <nav class="flex flex-wrap gap-2 border-b border-stone-200 pb-2">
+    @for (tab of [
+      {id: 'accounts', label: 'Plan de cuentas', icon: 'list_alt'},
+      {id: 'entries', label: 'Asientos / Diario', icon: 'receipt_long'},
+      {id: 'books', label: 'Libros', icon: 'menu_book'},
+      {id: 'periods', label: 'Períodos', icon: 'calendar_month'},
+      {id: 'withholdings', label: 'Retenciones', icon: 'lock'}
+    ]; track tab.id) {
+      <button
+        (click)="activeTab.set($any(tab.id))"
+        class="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1"
+        [class.bg-amber-600]="activeTab() === tab.id"
+        [class.text-white]="activeTab() === tab.id"
+        [class.bg-stone-100]="activeTab() !== tab.id"
+        [class.text-stone-700]="activeTab() !== tab.id"
+      >
+        <mat-icon class="text-sm">{{ tab.icon }}</mat-icon>
+        {{ tab.label }}
+      </button>
+    }
+  </nav>
+
+  @if (activeTab() === 'accounts') {
+    <div class="rounded-xl border border-stone-200 bg-white overflow-hidden">
+      <div class="p-4 border-b border-stone-200 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <input
+          type="search"
+          placeholder="Buscar por código o nombre…"
+          class="w-full sm:w-80 px-3 py-2 border border-stone-300 rounded-lg text-sm"
+          [value]="accountSearch()"
+          (input)="accountSearch.set($any($event.target).value)"
+        />
+        <span class="text-xs text-stone-500">
+          Plan provisional: validar códigos y naturaleza con el contador (#13).
+        </span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+            <tr>
+              <th class="px-4 py-2">Código</th>
+              <th class="px-4 py-2">Cuenta</th>
+              <th class="px-4 py-2">Tipo</th>
+              <th class="px-4 py-2">Naturaleza</th>
+              <th class="px-4 py-2">Nivel</th>
+              <th class="px-4 py-2">Estado</th>
+              <th class="px-4 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (account of filteredAccounts(); track account.id) {
+              <tr class="border-t border-stone-100" [class.opacity-50]="!account.active">
+                <td class="px-4 py-2 font-mono text-xs">{{ account.code }}</td>
+                <td class="px-4 py-2">
+                  {{ account.name }}
+                  @if (account.isSystem) {
+                    <span class="ml-2 text-[10px] uppercase text-amber-700">base</span>
+                  }
+                </td>
+                <td class="px-4 py-2 capitalize">{{ account.type }}</td>
+                <td class="px-4 py-2 capitalize">{{ account.nature }}</td>
+                <td class="px-4 py-2">{{ account.level }}</td>
+                <td class="px-4 py-2">{{ account.active ? 'Activa' : 'Inactiva' }}</td>
+                <td class="px-4 py-2 text-right">
+                  @if (!account.isSystem && api.hasPermission('accounting', 'canEdit')) {
+                    <button
+                      (click)="toggleAccount(account)"
+                      class="text-xs text-amber-700 hover:underline"
+                    >
+                      {{ account.active ? 'Desactivar' : 'Activar' }}
+                    </button>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="7" class="px-4 py-6 text-center text-stone-500">
+                  No hay cuentas que coincidan con la búsqueda.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (activeTab() === 'entries') {
+    <div class="rounded-xl border border-stone-200 bg-white overflow-hidden">
+      <div class="p-4 border-b border-stone-200 flex flex-wrap items-center gap-3">
+        <select
+          class="px-3 py-2 border border-stone-300 rounded-lg text-sm"
+          [value]="entryPeriodFilter()"
+          (change)="entryPeriodFilter.set($any($event.target).value)"
+        >
+          <option value="all">Todos los períodos</option>
+          @for (period of availablePeriods(); track period) {
+            <option [value]="period">{{ period }}</option>
+          }
+        </select>
+        <select
+          class="px-3 py-2 border border-stone-300 rounded-lg text-sm"
+          [value]="entryStatusFilter()"
+          (change)="entryStatusFilter.set($any($event.target).value)"
+        >
+          <option value="all">Todos los estados</option>
+          <option value="borrador">Borrador</option>
+          <option value="confirmado">Confirmado</option>
+          <option value="anulado">Anulado</option>
+        </select>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+            <tr>
+              <th class="px-4 py-2">Asiento</th>
+              <th class="px-4 py-2">Fecha</th>
+              <th class="px-4 py-2">Descripción</th>
+              <th class="px-4 py-2">Origen</th>
+              <th class="px-4 py-2 text-right">Débito</th>
+              <th class="px-4 py-2 text-right">Crédito</th>
+              <th class="px-4 py-2">Estado</th>
+              <th class="px-4 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (entry of filteredEntries(); track entry.id) {
+              <tr class="border-t border-stone-100 cursor-pointer hover:bg-stone-50" (click)="selectedEntry.set(entry)">
+                <td class="px-4 py-2 font-mono text-xs">{{ entry.entryNumber }}</td>
+                <td class="px-4 py-2">{{ entry.date }}</td>
+                <td class="px-4 py-2">{{ entry.description }}</td>
+                <td class="px-4 py-2 text-xs text-stone-500">{{ entry.sourceType }}</td>
+                <td class="px-4 py-2 text-right">${{ entry.totalDebit.toFixed(2) }}</td>
+                <td class="px-4 py-2 text-right">${{ entry.totalCredit.toFixed(2) }}</td>
+                <td class="px-4 py-2">
+                  <span
+                    class="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                    [class.bg-emerald-100]="entry.status === 'confirmado'"
+                    [class.text-emerald-800]="entry.status === 'confirmado'"
+                    [class.bg-amber-100]="entry.status === 'borrador'"
+                    [class.text-amber-800]="entry.status === 'borrador'"
+                    [class.bg-stone-200]="entry.status === 'anulado'"
+                    [class.text-stone-600]="entry.status === 'anulado'"
+                  >
+                    {{ entry.status }}
+                  </span>
+                </td>
+                <td class="px-4 py-2 text-right space-x-2">
+                  @if (entry.status === 'borrador' && api.hasPermission('accounting', 'canEdit')) {
+                    <button
+                      class="text-xs text-emerald-700 hover:underline"
+                      (click)="$event.stopPropagation(); confirmEntry(entry)"
+                    >
+                      Confirmar
+                    </button>
+                  }
+                  @if (entry.status !== 'anulado' && api.hasPermission('accounting', 'canEdit')) {
+                    <button
+                      class="text-xs text-rose-700 hover:underline"
+                      (click)="$event.stopPropagation(); openAnnulModal(entry)"
+                    >
+                      Anular
+                    </button>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="8" class="px-4 py-6 text-center text-stone-500">
+                  Aún no hay asientos. Se generan automáticamente desde ventas, cobros, gastos, CxP e inventario.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    @if (selectedEntry(); as entry) {
+      <div class="rounded-xl border border-stone-200 bg-white p-4">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold text-stone-900">{{ entry.entryNumber }} · {{ entry.description }}</h2>
+          <button class="text-stone-400 hover:text-stone-700" (click)="selectedEntry.set(null)">
+            <mat-icon class="text-sm">close</mat-icon>
+          </button>
+        </div>
+        <div class="overflow-x-auto mt-3">
+          <table class="min-w-full text-sm">
+            <thead class="bg-stone-50 text-xs uppercase text-stone-500">
+              <tr>
+                <th class="px-3 py-2 text-left">Cuenta</th>
+                <th class="px-3 py-2 text-left">Detalle</th>
+                <th class="px-3 py-2 text-right">Débito</th>
+                <th class="px-3 py-2 text-right">Crédito</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (line of entry.lines; track line.id) {
+                <tr class="border-t border-stone-100">
+                  <td class="px-3 py-2 font-mono text-xs">{{ line.accountCode }} · {{ line.accountName }}</td>
+                  <td class="px-3 py-2">{{ line.memo || '—' }}</td>
+                  <td class="px-3 py-2 text-right">{{ line.debit ? '$' + line.debit.toFixed(2) : '—' }}</td>
+                  <td class="px-3 py-2 text-right">{{ line.credit ? '$' + line.credit.toFixed(2) : '—' }}</td>
+                </tr>
+              }
+            </tbody>
+            <tfoot class="bg-stone-50 font-semibold">
+              <tr>
+                <td colspan="2" class="px-3 py-2 text-right">Totales</td>
+                <td class="px-3 py-2 text-right">${{ entry.totalDebit.toFixed(2) }}</td>
+                <td class="px-3 py-2 text-right">${{ entry.totalCredit.toFixed(2) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    }
+  }
+
+  @if (activeTab() === 'books') {
+    <div class="rounded-xl border border-stone-200 bg-white overflow-hidden">
+      <div class="p-4 border-b border-stone-200 flex flex-col lg:flex-row gap-3 lg:items-end lg:justify-between">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+          <label class="text-xs text-stone-500">
+            Libro
+            <select
+              class="mt-1 w-full px-3 py-2 border border-stone-300 rounded-lg text-sm text-stone-900"
+              [value]="bookType()"
+              (change)="bookType.set($any($event.target).value)"
+            >
+              @for (item of bookTypes; track item.id) {
+                <option [value]="item.id">{{ item.label }}</option>
+              }
+            </select>
+          </label>
+          <label class="text-xs text-stone-500">
+            Año
+            <input
+              type="number"
+              min="2000"
+              max="9999"
+              class="mt-1 w-full px-3 py-2 border border-stone-300 rounded-lg text-sm text-stone-900"
+              [value]="bookYear()"
+              (change)="bookYear.set(+$any($event.target).value)"
+            />
+          </label>
+          <label class="text-xs text-stone-500">
+            Mes
+            <input
+              type="number"
+              min="1"
+              max="12"
+              class="mt-1 w-full px-3 py-2 border border-stone-300 rounded-lg text-sm text-stone-900"
+              [value]="bookMonth()"
+              (change)="bookMonth.set(+$any($event.target).value)"
+            />
+          </label>
+        </div>
+        @if (api.hasPermission('accounting', 'canView')) {
+          <button
+            (click)="loadAccountingBook()"
+            [disabled]="bookLoading()"
+            class="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800 disabled:opacity-50"
+          >
+            {{ bookLoading() ? 'Generando…' : 'Generar libro' }}
+          </button>
+        }
+      </div>
+
+      @if (api.accountingBook(); as report) {
+        <div class="p-4 bg-amber-50 border-b border-amber-200 text-xs text-amber-900">
+          <p class="font-semibold">
+            BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13). No constituye un libro oficial.
+          </p>
+          <p class="mt-1">
+            {{ report.metadata.companyName }} · RIF {{ report.metadata.taxId }} ·
+            {{ report.metadata.periodLabel }} ({{ report.metadata.startDate }} al
+            {{ report.metadata.endDate }}) · Estado: {{ report.periodStatus }} ·
+            Control: {{ report.metadata.totalControl.toFixed(2) }} · Hash
+            {{ report.metadata.hash }}
+          </p>
+          <p class="mt-1">
+            {{ report.metadata.currencyLabel }} · {{ report.metadata.secondaryCurrencyLabel }} ·
+            Tasa {{ report.metadata.exchangeRateUsed }} Bs./USD ({{ report.metadata.exchangeRatePolicy }}) ·
+            Generado {{ report.metadata.generatedAt }} por {{ report.metadata.generatedBy }}
+          </p>
+        </div>
+
+        <div class="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 border-b border-stone-200">
+          @for (total of report.totals; track total.label) {
+            <div class="rounded-lg bg-stone-50 p-3">
+              <p class="text-[10px] uppercase tracking-wide text-stone-500">{{ total.label }}</p>
+              <p class="text-base font-bold text-stone-900">${{ total.value.toFixed(2) }}</p>
+              @if (total.valueBs !== undefined) {
+                <p class="text-xs text-stone-600">Bs. {{ total.valueBs.toFixed(2) }}</p>
+              }
+            </div>
+          }
+        </div>
+
+        <div class="overflow-x-auto max-h-[32rem]">
+          <table class="min-w-full text-sm">
+            <thead class="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500 sticky top-0">
+              <tr>
+                @for (header of report.headers; track header) {
+                  <th class="px-4 py-2 whitespace-nowrap">{{ header }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of report.rows; track $index) {
+                <tr
+                  class="border-t border-stone-100"
+                  [class.bg-stone-100]="item.rowType === 'section'"
+                  [class.font-semibold]="item.rowType === 'total' || item.rowType === 'entryTotal'"
+                  [class.bg-amber-50]="item.rowType === 'grandTotal'"
+                  [class.text-xs]="item.rowType === 'note'"
+                >
+                  @for (cell of item.cells; track $index) {
+                    <td class="px-4 py-2 whitespace-nowrap">{{ cell === null ? '' : cell }}</td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="p-4 border-t border-stone-200 text-xs text-stone-600 space-y-1">
+          @for (note of report.notes; track note) {
+            <p>* {{ note }}</p>
+          }
+          <p class="pt-6 font-medium text-stone-900">{{ report.metadata.signatureLabel }}</p>
+        </div>
+      } @else {
+        <div class="p-8 text-center text-sm text-stone-500">
+          Selecciona el libro y el período, luego pulsa <strong>Generar libro</strong>.
+        </div>
+      }
+    </div>
+  }
+
+  @if (activeTab() === 'periods') {
+    <div class="rounded-xl border border-stone-200 bg-white overflow-hidden">
+      <table class="min-w-full text-sm">
+        <thead class="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+          <tr>
+            <th class="px-4 py-2">Período</th>
+            <th class="px-4 py-2">Desde</th>
+            <th class="px-4 py-2">Hasta</th>
+            <th class="px-4 py-2">Estado</th>
+            <th class="px-4 py-2">Cerrado por</th>
+            <th class="px-4 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (period of api.accountingPeriods(); track period.id) {
+            <tr class="border-t border-stone-100">
+              <td class="px-4 py-2 font-mono text-xs">{{ period.key }}</td>
+              <td class="px-4 py-2">{{ period.startDate }}</td>
+              <td class="px-4 py-2">{{ period.endDate }}</td>
+              <td class="px-4 py-2 capitalize">{{ period.status }}</td>
+              <td class="px-4 py-2">{{ period.closedBy || '—' }}</td>
+              <td class="px-4 py-2 text-right">
+                @if (api.hasPermission('accounting', 'canEdit')) {
+                  <button
+                    class="text-xs text-amber-700 hover:underline"
+                    (click)="setPeriodStatus(period.key, period.status === 'abierto' ? 'cerrado' : 'abierto')"
+                  >
+                    {{ period.status === 'abierto' ? 'Cerrar' : 'Reabrir' }}
+                  </button>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="6" class="px-4 py-6 text-center text-stone-500">
+                Los períodos se crean automáticamente al registrar el primer asiento del mes.
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  @if (activeTab() === 'withholdings') {
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-6">
+      <div class="flex items-center gap-2 text-amber-900">
+        <mat-icon>lock</mat-icon>
+        <h2 class="font-semibold">Retenciones pendientes de validación contable</h2>
+      </div>
+      <p class="text-sm text-amber-800 mt-2">
+        El módulo de retenciones IVA/ISLR se activará únicamente después de cargar en el issue #13
+        la matriz de obligaciones, alícuotas, consecutivos y responsables aprobada por el contador.
+        Mientras tanto, los asientos automáticos no calculan retenciones y
+        <code>fiscalSettings.vatWithholdingEnabled</code> / <code>islrWithholdingEnabled</code>
+        permanecen en <strong>false</strong>.
+      </p>
+    </div>
+  }
+</section>
+
+@if (showAccountModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
+    <form
+      class="w-full max-w-lg rounded-xl bg-white p-5 space-y-4"
+      [formGroup]="accountForm"
+      (ngSubmit)="saveAccount()"
+    >
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Nueva cuenta contable</h2>
+        <button type="button" class="text-stone-400" (click)="showAccountModal.set(false)">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Código</span>
+          <input formControlName="code" class="w-full px-3 py-2 border border-stone-300 rounded-lg" placeholder="5.01.04" />
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Nombre</span>
+          <input formControlName="name" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Tipo</span>
+          <select formControlName="type" class="w-full px-3 py-2 border border-stone-300 rounded-lg">
+            @for (type of accountTypes; track type) {
+              <option [value]="type">{{ type }}</option>
+            }
+          </select>
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Naturaleza</span>
+          <select formControlName="nature" class="w-full px-3 py-2 border border-stone-300 rounded-lg">
+            <option value="debito">Débito</option>
+            <option value="credito">Crédito</option>
+          </select>
+        </label>
+        <label class="text-sm sm:col-span-2">
+          <span class="block text-stone-600 mb-1">Cuenta padre (opcional)</span>
+          <select formControlName="parentCode" class="w-full px-3 py-2 border border-stone-300 rounded-lg">
+            <option value="">Ninguna</option>
+            @for (account of api.accounts(); track account.id) {
+              <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+            }
+          </select>
+        </label>
+        <label class="text-sm sm:col-span-2">
+          <span class="block text-stone-600 mb-1">Descripción</span>
+          <input formControlName="description" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" (click)="showAccountModal.set(false)" class="px-4 py-2 rounded-lg border border-stone-300 text-sm">Cancelar</button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold">Guardar</button>
+      </div>
+    </form>
+  </div>
+}
+
+@if (showEntryModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
+    <form
+      class="w-full max-w-3xl rounded-xl bg-white p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+      [formGroup]="entryForm"
+      (ngSubmit)="saveEntry()"
+    >
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Nuevo asiento contable</h2>
+        <button type="button" class="text-stone-400" (click)="showEntryModal.set(false)">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Fecha</span>
+          <input type="date" formControlName="date" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Descripción</span>
+          <input formControlName="description" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
+        </label>
+      </div>
+
+      <div formArrayName="lines" class="space-y-2">
+        @for (line of lineGroups; track $index) {
+          <div [formGroupName]="$index" class="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1.5fr_auto] gap-2 items-end">
+            <label class="text-xs">
+              <span class="block text-stone-600 mb-1">Cuenta</span>
+              <select formControlName="accountCode" class="w-full px-2 py-2 border border-stone-300 rounded-lg text-sm">
+                <option value="">Seleccione…</option>
+                @for (account of api.accounts(); track account.id) {
+                  <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+                }
+              </select>
+            </label>
+            <label class="text-xs">
+              <span class="block text-stone-600 mb-1">Débito</span>
+              <input type="number" step="0.01" min="0" formControlName="debit" class="w-full px-2 py-2 border border-stone-300 rounded-lg text-sm" />
+            </label>
+            <label class="text-xs">
+              <span class="block text-stone-600 mb-1">Crédito</span>
+              <input type="number" step="0.01" min="0" formControlName="credit" class="w-full px-2 py-2 border border-stone-300 rounded-lg text-sm" />
+            </label>
+            <label class="text-xs">
+              <span class="block text-stone-600 mb-1">Detalle</span>
+              <input formControlName="memo" class="w-full px-2 py-2 border border-stone-300 rounded-lg text-sm" />
+            </label>
+            <button
+              type="button"
+              class="px-2 py-2 text-rose-700 text-sm"
+              [disabled]="lineGroups.length <= 2"
+              (click)="removeLine($index)"
+            >
+              <mat-icon class="text-sm">delete</mat-icon>
+            </button>
+          </div>
+        }
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-3">
+        <button type="button" (click)="addLine()" class="text-sm text-amber-700 hover:underline">
+          + Agregar línea
+        </button>
+        <div class="text-sm space-x-4">
+          <span>Débitos: <strong>${{ entryDebitTotal().toFixed(2) }}</strong></span>
+          <span>Créditos: <strong>${{ entryCreditTotal().toFixed(2) }}</strong></span>
+          <span
+            class="px-2 py-1 rounded-full text-xs font-semibold"
+            [class.bg-emerald-100]="entryIsBalanced()"
+            [class.text-emerald-800]="entryIsBalanced()"
+            [class.bg-rose-100]="!entryIsBalanced()"
+            [class.text-rose-800]="!entryIsBalanced()"
+          >
+            {{ entryIsBalanced() ? 'Balanceado' : 'Desbalanceado' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" (click)="showEntryModal.set(false)" class="px-4 py-2 rounded-lg border border-stone-300 text-sm">Cancelar</button>
+        <button
+          type="submit"
+          class="px-4 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold disabled:opacity-50"
+          [disabled]="!entryIsBalanced()"
+        >
+          Guardar asiento
+        </button>
+      </div>
+    </form>
+  </div>
+}
+
+@if (showAnnulModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
+    <div class="w-full max-w-md rounded-xl bg-white p-5 space-y-3">
+      <h2 class="text-lg font-semibold">Anular asiento</h2>
+      <p class="text-sm text-stone-600">
+        El asiento {{ selectedEntry()?.entryNumber }} quedará marcado como anulado y no se eliminará del historial.
+      </p>
+      <textarea
+        rows="3"
+        class="w-full px-3 py-2 border border-stone-300 rounded-lg text-sm"
+        placeholder="Motivo de la anulación"
+        [value]="annulReason()"
+        (input)="annulReason.set($any($event.target).value)"
+      ></textarea>
+      <div class="flex justify-end gap-2">
+        <button (click)="showAnnulModal.set(false)" class="px-4 py-2 rounded-lg border border-stone-300 text-sm">Cancelar</button>
+        <button
+          (click)="annulEntry()"
+          class="px-4 py-2 rounded-lg bg-rose-700 text-white text-sm font-semibold disabled:opacity-50"
+          [disabled]="!annulReason().trim()"
+        >
+          Anular
+        </button>
+      </div>
+    </div>
+  </div>
+}

@@ -294,9 +294,18 @@
               {{ booksLoading() ? 'Cargando…' : 'Consultar libros' }}
             </button>
             @if (booksReport(); as report) {
-              <button type="button" (click)="exportFiscalBooks()" [disabled]="booksExporting()" class="min-h-10 rounded-lg bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                {{ booksExporting() ? 'Registrando exportación…' : 'Exportar CSV' }}
-              </button>
+              <div class="flex items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 p-1">
+                <span class="px-2 text-[10px] font-semibold uppercase tracking-wide text-stone-500">Exportar:</span>
+                <button type="button" (click)="exportFiscalBooks('csv')" [disabled]="booksExporting()" class="min-h-8 rounded bg-white px-2.5 text-xs font-semibold text-stone-700 border border-stone-200 hover:bg-stone-100 disabled:opacity-50">
+                  CSV
+                </button>
+                <button type="button" (click)="exportFiscalBooks('excel')" [disabled]="booksExporting()" class="min-h-8 rounded bg-emerald-700 px-2.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                  Excel
+                </button>
+                <button type="button" (click)="exportFiscalBooks('pdf')" [disabled]="booksExporting()" class="min-h-8 rounded bg-rose-700 px-2.5 text-xs font-semibold text-white hover:bg-rose-800 disabled:opacity-50">
+                  PDF
+                </button>
+              </div>
               @if (!report.isClosed) {
                 <button type="button" (click)="closeFiscalBooks()" class="min-h-10 rounded-lg bg-amber-700 px-3 text-xs font-semibold text-white hover:bg-amber-800">
                   Cerrar período
@@ -347,6 +356,21 @@
             </div>
           </div>
 
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div class="rounded-lg border border-sky-200 bg-sky-50 p-3">
+              <span class="block text-[10px] font-semibold uppercase tracking-wide text-sky-700">Débito fiscal (IVA ventas)</span>
+              <strong class="font-mono text-sm text-sky-900">{{ report.reconciliation.taxDebit | veCurrency: '$' }}</strong>
+            </div>
+            <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+              <span class="block text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Crédito fiscal (IVA compras)</span>
+              <strong class="font-mono text-sm text-emerald-900">{{ report.reconciliation.taxCredit | veCurrency: '$' }}</strong>
+            </div>
+            <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <span class="block text-[10px] font-semibold uppercase tracking-wide text-amber-700">Neto estimado a pagar</span>
+              <strong class="font-mono text-sm text-amber-900">{{ report.reconciliation.netTaxPayable | veCurrency: '$' }}</strong>
+            </div>
+          </div>
+
           <div class="rounded-lg border border-stone-200 p-3 text-[11px]">
             <strong>Conciliación:</strong>
             Ventas {{ report.reconciliation.salesDifference | veCurrency: '$' }} de diferencia ·
@@ -355,6 +379,76 @@
               <span class="font-bold text-rose-700">Revisar antes del cierre.</span>
             } @else {
               <span class="font-bold text-emerald-700">Cuadrado contra documentos fuente.</span>
+            }
+          </div>
+
+          <div class="rounded-xl border border-stone-200 p-3">
+            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 class="text-xs font-bold text-stone-800">Cruce de gastos → Libro de Compras</h4>
+                <p class="text-[10px] text-stone-500">
+                  Marque qué comprobantes alimentan el crédito fiscal. El cambio se audita y se bloquea cuando el período está cerrado.
+                </p>
+              </div>
+              <span class="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-semibold text-stone-600">
+                {{ crossCheckPurchaseIds().size }} de {{ crossCheckExpenses().length }} incluidos
+              </span>
+            </div>
+            @if (crossCheckExpenses().length === 0) {
+              <p class="text-[11px] text-stone-500">No hay gastos registrados en este período.</p>
+            } @else {
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[840px] text-[11px]">
+                  <thead class="bg-stone-50 text-stone-600">
+                    <tr>
+                      <th class="px-2 py-2 text-left font-semibold">Gasto</th>
+                      <th class="px-2 py-2 text-left font-semibold">Fecha</th>
+                      <th class="px-2 py-2 text-left font-semibold">Comprobante</th>
+                      <th class="px-2 py-2 text-left font-semibold">Proveedor / RIF</th>
+                      <th class="px-2 py-2 text-right font-semibold">Base</th>
+                      <th class="px-2 py-2 text-right font-semibold">IVA</th>
+                      <th class="px-2 py-2 text-right font-semibold">Total</th>
+                      <th class="px-2 py-2 text-center font-semibold">Libro de Compras</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (expense of crossCheckExpenses(); track expense.id) {
+                      <tr class="border-t border-stone-100">
+                        <td class="px-2 py-1.5">
+                          <span class="block font-semibold text-stone-800">{{ expense.expenseNumber }}</span>
+                          <span class="block text-[10px] text-stone-500">{{ expense.concept }}</span>
+                        </td>
+                        <td class="px-2 py-1.5 font-mono">{{ expense.date }}</td>
+                        <td class="px-2 py-1.5">{{ expense.documentNumber || '—' }}</td>
+                        <td class="px-2 py-1.5">
+                          <span class="block">{{ expense.supplierOrBeneficiary }}</span>
+                          <span class="block text-[10px] text-stone-500">{{ expense.taxId || 'Sin RIF' }}</span>
+                        </td>
+                        <td class="px-2 py-1.5 text-right font-mono">
+                          {{ (expense.amountUsd - (expense.taxAmountUsd || 0)) | veCurrency: '$' }}
+                        </td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ (expense.taxAmountUsd || 0) | veCurrency: '$' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono">{{ expense.amountUsd | veCurrency: '$' }}</td>
+                        <td class="px-2 py-1.5 text-center">
+                          <input
+                            type="checkbox"
+                            class="accent-emerald-700"
+                            [checked]="expense.fiscalBookEligible"
+                            [disabled]="report.isClosed || !isAdmin() || eligibilityUpdating() === expense.id"
+                            (change)="toggleExpenseEligibility(expense.id, $any($event.target).checked)"
+                            [title]="report.isClosed ? 'Período cerrado' : 'Incluir en el Libro de Compras'"
+                          />
+                          @if (crossCheckPurchaseIds().has(expense.id)) {
+                            <span class="ml-1 text-[9px] font-bold text-emerald-700">SÍ</span>
+                          } @else {
+                            <span class="ml-1 text-[9px] text-stone-400">NO</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
             }
           </div>
         }
@@ -488,6 +582,14 @@
             <p class="text-[11px] text-stone-600 mt-0.5">
               Condición: {{ invoice.saleCondition === 'credito' ? 'Crédito' : 'Contado' }}
             </p>
+            @if (invoice.saleCondition === 'credito') {
+              <p class="text-[11px] text-stone-600 mt-0.5">
+                Crédito a {{ invoice.creditDays || 0 }} días
+              </p>
+              @if (invoiceDueDate(invoice); as dueDate) {
+                <p class="text-[11px] font-semibold text-amber-800 mt-0.5">Vence: {{ dueDate }}</p>
+              }
+            }
             <p class="text-[11px] text-stone-600 mt-0.5">Forma de pago: {{ paymentMethodLabel(invoice.paymentMethod) }}</p>
             <p class="text-[11px] text-stone-600 mt-0.5">Período: {{ monthLabel(invoice.periodMonth) }} {{ invoice.periodYear }}</p>
             <p class="text-[11px] text-stone-600 mt-0.5">Tasa usada: {{ invoice.exchangeRateUsed | veCurrency: 'Bs.' }}</p>
@@ -571,6 +673,17 @@
           </div>
         </div>
 
+        <!-- Pie de página / Leyenda fiscal -->
+        @if (invoicePrintNotes(invoice)) {
+          <div class="mt-5 p-3 rounded-lg bg-amber-50 border border-amber-200">
+            <p class="text-[10px] uppercase tracking-wide font-bold text-amber-800 flex items-center gap-1">
+              <mat-icon class="text-sm">description</mat-icon>
+              Pie de página / Leyenda fiscal
+            </p>
+            <p class="text-[11px] text-amber-900 mt-1 whitespace-pre-line">{{ invoicePrintNotes(invoice) }}</p>
+          </div>
+        }
+
         <!-- Pie legal -->
         <div class="mt-5 pt-4 border-t border-stone-200 text-[10px] text-stone-500 space-y-1">
           <p class="font-semibold text-stone-600">Documento fiscal generado automáticamente por Mermelada ERP.</p>
@@ -580,8 +693,8 @@
           @if (invoice.emitterSnapshot.authorizationValidUntil) {
             <p>Vigencia de autorización: {{ invoice.emitterSnapshot.authorizationValidUntil }}</p>
           }
-          @if (invoice.emitterSnapshot.printNotes) {
-            <p>{{ invoice.emitterSnapshot.printNotes }}</p>
+          @if (invoicePrintNotes(invoice)) {
+            <p>{{ invoicePrintNotes(invoice) }}</p>
           }
         </div>
       </div>

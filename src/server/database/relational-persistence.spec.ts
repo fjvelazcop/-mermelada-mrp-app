@@ -50,6 +50,8 @@ describe('normalized SQLite schema', () => {
     expect(tables).toEqual(
       expect.arrayContaining([
         'schema_migrations',
+        'supplier_types',
+        'material_categories',
         'raw_materials',
         'inventory_movements',
         'finished_goods',
@@ -67,6 +69,14 @@ describe('normalized SQLite schema', () => {
         'payroll_payments',
         'expenses',
         'expense_categories',
+        'payables',
+        'payable_payments',
+        'accounts',
+        'accounting_entries',
+        'accounting_entry_lines',
+        'accounting_periods',
+        'fiscal_reference_values',
+        'accounting_book_settings',
         'fiscal_settings',
         'exchange_rates',
         'exchange_rate_history',
@@ -87,12 +97,185 @@ describe('normalized SQLite schema', () => {
         .all() as { version: number }[]
     ).map((row) => row.version);
 
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  });
+
+  it('persists the fiscal invoice credit days introduced by migration v11', () => {
+    const customer = dbInstance.getCustomers()[0];
+    const good = dbInstance.getFinishedGoods()[0];
+    const order = dbInstance.addSalesOrder({
+      customerId: customer.id,
+      customerName: customer.businessName,
+      customerTaxId: customer.taxId,
+      orderDate: '2026-11-10',
+      deliveryDate: '2026-11-12',
+      status: 'pendiente',
+      saleCondition: 'credito',
+      paymentMethod: 'credito',
+      creditDays: 45,
+      exchangeRateUsed: 50,
+      items: [
+        {
+          finishedGoodId: good.id,
+          flavor: good.flavor,
+          presentation: good.presentation,
+          presentationLabel: good.presentationLabel,
+          quantity: 1,
+          unitPrice: good.suggestedWholesalePrice,
+          subtotal: good.suggestedWholesalePrice,
+          taxCategory: 'exento',
+          taxRatePercent: 0,
+        },
+      ],
+      subtotal: good.suggestedWholesalePrice,
+      taxAmount: 0,
+      total: good.suggestedWholesalePrice,
+    } as Parameters<typeof dbInstance.addSalesOrder>[0]);
+
+    const invoice = dbInstance
+      .getFiscalInvoices()
+      .find((entry) => entry.salesOrderId === order.id)!;
+    expect(invoice).toBeTruthy();
+    expect(invoice.creditDays).toBe(45);
+
+    const row = getDb()
+      .prepare('SELECT credit_days FROM fiscal_invoices WHERE id = ?')
+      .get(invoice.id) as { credit_days: number };
+    expect(row.credit_days).toBe(45);
+  });
+
+  it('persists supplier links added by migration v13 on expenses and inventory movements', () => {
+    const supplier = dbInstance.getSuppliers()[0];
+    const material = dbInstance.getRawMaterials()[0];
+
+    const expense = dbInstance.addExpense({
+      date: '2026-11-15',
+      concept: 'Compra de insumos con proveedor maestro',
+      category: 'alquiler_instalaciones',
+      categoryLabel: 'Alquileres de Planta de Producción',
+      amountUsd: 100,
+      exchangeRateUsed: 50,
+      amountBs: 5000,
+      supplierOrBeneficiary: supplier.businessName,
+      supplierId: supplier.id,
+      taxId: supplier.taxId,
+      documentType: 'factura_fiscal',
+      paymentMethod: 'transferencia_bancaria',
+      registeredBy: 'Prueba',
+      taxCategory: 'con_factura_iva',
+      fiscalBookEligible: true,
+    } as Parameters<typeof dbInstance.addExpense>[0]);
+
+    const movement = dbInstance.addInventoryMovement({
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 2,
+      costPerUnit: 50,
+      totalCost: 100,
+      exchangeRateUsed: 50,
+      referenceDoc: 'F-TEST-001',
+      supplierId: supplier.id,
+      supplierNameSnapshot: supplier.businessName,
+      supplierTaxIdSnapshot: supplier.taxId,
+      date: '2026-11-15',
+      performedBy: 'Prueba',
+    } as Parameters<typeof dbInstance.addInventoryMovement>[0]);
+
+    dbInstance.persist();
+
+    const state = loadRelationalState()!;
+    expect(state.expenses.find((e) => e.id === expense.id)).toMatchObject({
+      supplierId: supplier.id,
+      supplierOrBeneficiary: supplier.businessName,
+      taxId: supplier.taxId,
+    });
+    expect(state.inventoryMovements.find((m) => m.id === movement.id)).toMatchObject({
+      supplierId: supplier.id,
+      supplierNameSnapshot: supplier.businessName,
+      supplierTaxIdSnapshot: supplier.taxId,
+    });
+
+    const expenseRow = getDb()
+      .prepare('SELECT supplier_id FROM expenses WHERE id = ?')
+      .get(expense.id) as { supplier_id: string };
+    const movementRow = getDb()
+      .prepare(
+        'SELECT supplier_id, supplier_name_snapshot, supplier_tax_id_snapshot FROM inventory_movements WHERE id = ?'
+      )
+      .get(movement.id) as {
+      supplier_id: string;
+      supplier_name_snapshot: string;
+      supplier_tax_id_snapshot: string;
+    };
+    expect(expenseRow.supplier_id).toBe(supplier.id);
+    expect(movementRow.supplier_id).toBe(supplier.id);
+    expect(movementRow.supplier_name_snapshot).toBe(supplier.businessName);
+    expect(movementRow.supplier_tax_id_snapshot).toBe(supplier.taxId);
+  });
+
+  it('persists accounts, double-entry lines and periods added by migration v14', () => {
+    const account = dbInstance.addAccount({
+      code: '5.01.04',
+      name: 'Papelería y Oficina',
+      type: 'gasto',
+      nature: 'debito',
+      parentCode: '5.01',
+      active: true,
+    });
+
+    const entry = dbInstance.createAccountingEntry({
+      date: '2026-07-20',
+      description: 'Asiento de prueba v14',
+      lines: [
+        {accountCode: account.code, debit: 100},
+        {accountCode: '1.01.02', credit: 100},
+      ],
+    });
+    dbInstance.confirmAccountingEntry(entry.id);
+    dbInstance.closeAccountingPeriod('2026-07');
+    dbInstance.persist();
+
+    const state = loadRelationalState()!;
+    expect(state.accounts.find((item) => item.id === account.id)).toMatchObject({
+      code: '5.01.04',
+      isSystem: false,
+    });
+    const stored = state.accountingEntries.find((item) => item.id === entry.id);
+    expect(stored).toMatchObject({
+      entryNumber: entry.entryNumber,
+      status: 'confirmado',
+      totalDebit: 100,
+      totalCredit: 100,
+      periodKey: '2026-07',
+    });
+    expect(stored?.lines).toHaveLength(2);
+    expect(state.accountingPeriods.find((item) => item.key === '2026-07')?.status).toBe('cerrado');
+
+    const lines = getDb()
+      .prepare('SELECT COUNT(*) AS count FROM accounting_entry_lines WHERE entry_id = ?')
+      .get(entry.id) as { count: number };
+    expect(lines.count).toBe(2);
   });
 
   it('writes the seed data into the relational tables', () => {
+    expect(rowCount('supplier_types')).toBe(dbInstance.getSupplierTypes().length);
+    expect(rowCount('material_categories')).toBe(dbInstance.getMaterialCategories().length);
     expect(rowCount('raw_materials')).toBe(dbInstance.getRawMaterials().length);
     expect(rowCount('finished_goods')).toBe(dbInstance.getFinishedGoods().length);
+
+    expect(dbInstance.getRawMaterials()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({code: 'MP-EMP-15', category: 'envases'}),
+        expect.objectContaining({code: 'MP-EMP-16', category: 'cajas'}),
+      ])
+    );
+    expect(dbInstance.getFinishedGoods()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({code: 'PT-GUA-300', presentation: 'pequena_300g'}),
+        expect.objectContaining({code: 'PT-GUA-6KG', presentation: 'caja_6kg'}),
+      ])
+    );
     expect(rowCount('recipes')).toBe(dbInstance.getRecipes().length);
     expect(rowCount('customers')).toBe(dbInstance.getCustomers().length);
     expect(rowCount('sales_orders')).toBe(dbInstance.getSalesOrders().length);
@@ -127,6 +310,8 @@ describe('normalized SQLite schema', () => {
     const state = loadRelationalState();
     expect(state).not.toBeNull();
 
+    expect(state?.supplierTypes).toEqual(dbInstance.getSupplierTypes());
+    expect(state?.materialCategories).toEqual(dbInstance.getMaterialCategories());
     expect(state?.rawMaterials).toEqual(dbInstance.getRawMaterials());
     expect(state?.inventoryMovements).toEqual(dbInstance.getMovements());
     expect(state?.finishedGoods).toEqual(dbInstance.getFinishedGoods());
@@ -139,6 +324,8 @@ describe('normalized SQLite schema', () => {
     expect(state?.payrollWeeks).toEqual(dbInstance.getPayrollWeeks());
     expect(state?.expenses).toEqual(dbInstance.getExpenses());
     expect(state?.expenseCategories).toEqual(dbInstance.getExpenseCategories());
+    expect(state?.payables).toEqual(dbInstance.getPayables());
+    expect(state?.payablePayments).toEqual(dbInstance.getPayablePayments());
     expect(state?.fiscalSettings).toEqual(dbInstance.getFiscalSettings());
     // `getExchangeRates()` recalculates the active time window in memory, so
     // only the persisted/stored fields are compared here.
@@ -148,6 +335,25 @@ describe('normalized SQLite schema', () => {
     expect(state?.exchangeRates.lastUpdated).toBe(liveRates.lastUpdated);
     expect(state?.exchangeRates.history).toEqual(liveRates.history);
     expect(state?.auditLogs).toEqual(dbInstance.getAuditLogs());
+  });
+
+  it('backfills presentation finished goods into an existing relational database', () => {
+    getDb()
+      .prepare("DELETE FROM finished_goods WHERE code IN ('PT-GUA-300', 'PT-GUA-6KG')")
+      .run();
+
+    const reopened = new ErpDatabase();
+    const codes = reopened.getFinishedGoods().map((item) => item.code);
+
+    expect(codes).toContain('PT-GUA-300');
+    expect(codes).toContain('PT-GUA-6KG');
+    expect(
+      getDb()
+        .prepare(
+          "SELECT COUNT(*) AS count FROM finished_goods WHERE code IN ('PT-GUA-300', 'PT-GUA-6KG')"
+        )
+        .get()
+    ).toEqual({count: 2});
   });
 });
 
@@ -181,6 +387,82 @@ describe('mutations and restart persistence', () => {
       name: testMaterial.name,
       current_stock: testMaterial.currentStock,
     });
+  });
+
+  it('persists the partial collection history added by migration v10', () => {
+    const order = dbInstance
+      .getSalesOrders()
+      .find((candidate) => !candidate.collection && candidate.total >= 10)!;
+    expect(order).toBeTruthy();
+
+    const updated = dbInstance.collectSalesOrder(order.id, {
+      bankCode: '0108',
+      bankName: 'Banco Provincial (BBVA)',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'REF-PERSIST-001',
+      amountUsd: 5,
+    });
+    expect(updated.status).toBe('cobrado_parcial');
+    expect(updated.collections?.length).toBe(1);
+
+    const row = getDb()
+      .prepare('SELECT collections_json FROM sales_orders WHERE id = ?')
+      .get(order.id) as { collections_json: string };
+    expect(JSON.parse(row.collections_json).length).toBe(1);
+
+    const reloaded = loadRelationalState();
+    const persisted = reloaded?.salesOrders.find((candidate) => candidate.id === order.id);
+    expect(persisted?.collections?.length).toBe(1);
+    expect(persisted?.collection?.reference).toBe('REF-PERSIST-001');
+  });
+
+  it('persists payables, payments and the generated expense linkage', () => {
+    const payable = dbInstance.addPayable({
+      supplierId: '',
+      supplierName: 'Insumos del Llano C.A.',
+      taxId: 'J-12345678-9',
+      invoiceNumber: 'F-REL-001',
+      issueDate: '2026-11-01',
+      dueDate: '2026-12-01',
+      amountUsd: 100,
+      exchangeRateUsed: 50,
+      amountBs: 5000,
+      category: 'materia_prima',
+      status: 'pendiente',
+    });
+
+    const partial = dbInstance.recordPayablePayment(payable.id, {
+      bankCode: '0108',
+      bankName: 'Banco Provincial (BBVA)',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'REF-REL-001',
+      amountUsd: 40,
+    });
+    expect(partial.expense).toBeUndefined();
+
+    const final = dbInstance.recordPayablePayment(payable.id, {
+      bankCode: '0108',
+      bankName: 'Banco Provincial (BBVA)',
+      paymentMethod: 'transferencia_bancaria',
+      reference: 'REF-REL-002',
+      amountUsd: 60,
+    });
+    expect(final.expense).toBeTruthy();
+    expect(final.payable.status).toBe('pagada');
+
+    expect(rowCount('payables')).toBe(dbInstance.getPayables().length);
+    expect(rowCount('payable_payments')).toBe(2);
+    const expenseRow = getDb()
+      .prepare('SELECT payable_id FROM expenses WHERE payable_id = ?')
+      .get(payable.id) as { payable_id: string } | undefined;
+    expect(expenseRow?.payable_id).toBe(payable.id);
+
+    const reloaded = loadRelationalState();
+    expect(reloaded?.payables.find((item) => item.id === payable.id)?.status).toBe('pagada');
+    expect(reloaded?.payablePayments.length).toBe(2);
+    expect(reloaded?.expenses.find((item) => item.id === final.expense?.id)?.payableId).toBe(
+      payable.id
+    );
   });
 
   it('reloads the state from disk after closing the connection', () => {

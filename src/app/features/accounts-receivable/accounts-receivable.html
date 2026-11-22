@@ -1,0 +1,362 @@
+<!-- CUENTAS POR COBRAR -->
+<section class="bg-white border border-stone-200 rounded-xl p-5 shadow-xs">
+  <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-3 mb-5">
+    <div>
+      <h2 class="text-lg font-bold text-stone-900 flex items-center gap-2">
+        <mat-icon class="text-amber-700">account_balance_wallet</mat-icon>
+        Cuentas por cobrar
+      </h2>
+      <p class="text-xs text-stone-500 mt-1">
+        Saldos pendientes por pedido/factura, vencimientos y antigüedad de la deuda al {{ reportDate }}.
+      </p>
+    </div>
+
+    @if (canExport()) {
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          (click)="export('csv')"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-lg"
+        >
+          <mat-icon class="text-sm">file_download</mat-icon>
+          CSV
+        </button>
+        <button
+          type="button"
+          (click)="export('excel')"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg"
+        >
+          <mat-icon class="text-sm">table_view</mat-icon>
+          Excel
+        </button>
+        <button
+          type="button"
+          (click)="export('pdf')"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-rose-700 hover:bg-rose-800 text-white rounded-lg"
+        >
+          <mat-icon class="text-sm">picture_as_pdf</mat-icon>
+          PDF
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-amber-800 block">Total por cobrar</span>
+      <span class="text-lg font-bold font-mono text-amber-950 block mt-1">
+        {{ displayTotal(totals().balanceUsd, totals().balanceBs) | veCurrency: currency() }}
+      </span>
+      <span class="text-[10px] text-amber-700">{{ totals().documentCount }} documentos</span>
+    </div>
+    <div class="bg-rose-50 border border-rose-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-rose-800 block">Vencido</span>
+      <span class="text-lg font-bold font-mono text-rose-950 block mt-1">
+        {{ displayTotal(totals().overdueUsd, totals().overdueBs) | veCurrency: currency() }}
+      </span>
+      <span class="text-[10px] text-rose-700">{{ totals().overduePercent }}% del saldo</span>
+    </div>
+    <div class="bg-stone-50 border border-stone-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-stone-500 block">Clientes con saldo</span>
+      <span class="text-lg font-bold font-mono text-stone-900 block mt-1">{{ totals().customerCount }}</span>
+      <span class="text-[10px] text-stone-500">con deuda pendiente</span>
+    </div>
+    <div class="bg-stone-50 border border-stone-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-stone-500 block">Saldo a favor</span>
+      <span class="text-lg font-bold font-mono text-stone-900 block mt-1">
+        {{ totals().creditBalanceUsd | veCurrency: '$' }}
+      </span>
+      <span class="text-[10px] text-stone-500">crédito para clientes</span>
+    </div>
+    <div class="bg-stone-50 border border-stone-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-stone-500 block">Tasa de referencia</span>
+      <span class="text-lg font-bold font-mono text-stone-900 block mt-1">
+        {{ (api.exchangeRates()?.currentUsd || 48.35) | veCurrency: 'Bs.' }}
+      </span>
+      <span class="text-[10px] text-stone-500">Bs. por USD</span>
+    </div>
+  </div>
+
+  <!-- Aging -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-5">
+    @for (bucket of agingBuckets; track bucket) {
+      <button
+        type="button"
+        (click)="bucketFilter.set(bucketFilter() === bucket ? 'todos' : bucket)"
+        class="text-left border rounded-lg px-3 py-2 transition-colors"
+        [class.border-amber-500]="bucketFilter() === bucket"
+        [class.bg-amber-50]="bucketFilter() === bucket"
+        [class.border-stone-200]="bucketFilter() !== bucket"
+        [class.bg-stone-50]="bucketFilter() !== bucket"
+      >
+        <span class="text-[10px] font-bold uppercase text-stone-500 block">{{ bucketLabel(bucket) }}</span>
+        <span class="text-sm font-bold font-mono text-stone-900 block">
+          {{ bucketTotals(bucket).usd | veCurrency: currency() }}
+        </span>
+        <span class="text-[10px] text-stone-500">{{ bucketTotals(bucket).count }} doc.</span>
+      </button>
+    }
+  </div>
+
+  <!-- Filtros -->
+  <div class="border-t border-stone-200 pt-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div>
+      <label for="cxc-search" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Buscar</label>
+      <input
+        id="cxc-search"
+        type="text"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+        placeholder="Cliente, RIF, pedido o factura"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      />
+    </div>
+    <div>
+      <label for="cxc-status" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Estado</label>
+      <select
+        id="cxc-status"
+        [value]="statusFilter()"
+        (change)="statusFilter.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        <option value="todos">Todos</option>
+        <option value="vigentes">Vigentes</option>
+        <option value="vencidos">Vencidos</option>
+        <option value="parciales">Parciales</option>
+      </select>
+    </div>
+    <div>
+      <label for="cxc-bucket" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Antigüedad</label>
+      <select
+        id="cxc-bucket"
+        [value]="bucketFilter()"
+        (change)="bucketFilter.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        @for (option of bucketOptions; track option) {
+          <option [value]="option">{{ filterBucketLabel(option) }}</option>
+        }
+      </select>
+    </div>
+    <div>
+      <label for="cxc-sort" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Ordenar por</label>
+      <select
+        id="cxc-sort"
+        [value]="sortBy()"
+        (change)="sortBy.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        @for (option of sortOptions; track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-4 mb-4">
+    <label class="inline-flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
+      <input
+        type="checkbox"
+        [checked]="creditOnly()"
+        (change)="creditOnly.set($any($event.target).checked)"
+        class="accent-amber-700"
+      />
+      Solo crédito
+    </label>
+    <label class="inline-flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
+      <input
+        type="checkbox"
+        [checked]="groupByCustomer()"
+        (change)="groupByCustomer.set($any($event.target).checked)"
+        class="accent-amber-700"
+      />
+      Agrupar por cliente
+    </label>
+    <div class="inline-flex rounded-lg border border-stone-200 overflow-hidden">
+      <button
+        type="button"
+        (click)="currencyMode.set('USD')"
+        class="px-3 py-1.5 text-xs font-semibold"
+        [class.bg-stone-900]="currencyMode() === 'USD'"
+        [class.text-white]="currencyMode() === 'USD'"
+        [class.text-stone-600]="currencyMode() !== 'USD'"
+      >
+        USD
+      </button>
+      <button
+        type="button"
+        (click)="currencyMode.set('Bs')"
+        class="px-3 py-1.5 text-xs font-semibold"
+        [class.bg-stone-900]="currencyMode() === 'Bs'"
+        [class.text-white]="currencyMode() === 'Bs'"
+        [class.text-stone-600]="currencyMode() !== 'Bs'"
+      >
+        Bs.
+      </button>
+    </div>
+    <button
+      type="button"
+      (click)="resetFilters()"
+      class="ml-auto text-xs font-semibold text-stone-500 hover:text-stone-900"
+    >
+      Limpiar filtros
+    </button>
+  </div>
+
+  @if (!filteredRows().length) {
+    <div class="border border-dashed border-stone-300 rounded-xl p-8 text-center">
+      <mat-icon class="text-stone-400">receipt_long</mat-icon>
+      <p class="text-sm font-semibold text-stone-700 mt-2">No hay saldos pendientes con los filtros actuales.</p>
+      <p class="text-xs text-stone-500 mt-1">Prueba con otro cliente, estado o bucket de antigüedad.</p>
+    </div>
+  } @else if (groupByCustomer()) {
+    <!-- RESUMEN POR CLIENTE -->
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[760px] text-left text-xs border-collapse">
+        <thead>
+          <tr class="border-b border-stone-200 text-[10px] uppercase tracking-wide text-stone-500">
+            <th class="py-2 px-2 font-semibold">Cliente</th>
+            <th class="py-2 px-2 font-semibold">RIF</th>
+            <th class="py-2 px-2 text-right font-semibold">Límite</th>
+            <th class="py-2 px-2 text-right font-semibold">Saldo</th>
+            <th class="py-2 px-2 text-right font-semibold">Disponible</th>
+            <th class="py-2 px-2 text-right font-semibold">Vencido</th>
+            <th class="py-2 px-2 text-right font-semibold">Docs.</th>
+            <th class="py-2 px-2 font-semibold">Venc. más antiguo</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (summary of customerSummaries(); track summary.customerId) {
+            <tr class="border-b border-stone-100 hover:bg-stone-50/60">
+              <td class="py-2.5 px-2 font-semibold text-stone-900">{{ summary.customerName }}</td>
+              <td class="py-2.5 px-2 font-mono text-stone-500">{{ summary.customerTaxId }}</td>
+              <td class="py-2.5 px-2 text-right font-mono text-stone-600">{{ summary.creditLimitUsd | veCurrency: '$' }}</td>
+              <td class="py-2.5 px-2 text-right font-mono font-bold text-amber-900">{{ summary.balanceUsd | veCurrency: '$' }}</td>
+              <td class="py-2.5 px-2 text-right font-mono" [class.text-rose-700]="summary.availableCreditUsd < 0" [class.text-emerald-700]="summary.availableCreditUsd >= 0">
+                {{ summary.availableCreditUsd | veCurrency: '$' }}
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono font-semibold text-rose-800">{{ summary.overdueUsd | veCurrency: '$' }}</td>
+              <td class="py-2.5 px-2 text-right font-mono text-stone-600">{{ summary.documentCount }}</td>
+              <td class="py-2.5 px-2 font-mono text-stone-600">{{ summary.oldestDueDate || 'N/D' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <!-- DETALLE POR DOCUMENTO -->
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[1120px] text-left text-xs border-collapse">
+        <thead>
+          <tr class="border-b border-stone-200 text-[10px] uppercase tracking-wide text-stone-500">
+            <th class="py-2 px-2 font-semibold">Cliente / RIF</th>
+            <th class="py-2 px-2 font-semibold">Pedido / Factura</th>
+            <th class="py-2 px-2 font-semibold">Condición</th>
+            <th class="py-2 px-2 font-semibold">Vencimiento</th>
+            <th class="py-2 px-2 text-right font-semibold">Días</th>
+            <th class="py-2 px-2 text-right font-semibold">Total</th>
+            <th class="py-2 px-2 text-right font-semibold">Cobrado acumulado</th>
+            <th class="py-2 px-2 text-right font-semibold">Notas</th>
+            <th class="py-2 px-2 text-right font-semibold">Saldo</th>
+            <th class="py-2 px-2 font-semibold">Estado</th>
+            <th class="py-2 px-2 font-semibold">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of sortedRows(); track row.id) {
+            <tr class="border-b border-stone-100 hover:bg-stone-50/60">
+              <td class="py-2.5 px-2">
+                <span class="font-semibold text-stone-900 block">{{ row.customerName }}</span>
+                <span class="font-mono text-[10px] text-stone-500">{{ row.customerTaxId }}</span>
+              </td>
+              <td class="py-2.5 px-2">
+                <span class="font-mono font-semibold text-stone-800 block">{{ row.orderNumber }}</span>
+                <span class="font-mono text-[10px] text-stone-500">{{ row.invoiceNumber || 'Sin factura' }}</span>
+              </td>
+              <td class="py-2.5 px-2">
+                <span class="text-[10px] px-1.5 py-0.5 rounded border"
+                  [class.bg-indigo-50]="row.saleCondition === 'credito'"
+                  [class.text-indigo-800]="row.saleCondition === 'credito'"
+                  [class.border-indigo-200]="row.saleCondition === 'credito'"
+                  [class.bg-stone-100]="row.saleCondition === 'contado'"
+                  [class.text-stone-700]="row.saleCondition === 'contado'"
+                  [class.border-stone-200]="row.saleCondition === 'contado'"
+                >
+                  {{ row.saleCondition === 'credito' ? 'Crédito ' + row.creditDays + 'd' : 'Contado' }}
+                </span>
+              </td>
+              <td class="py-2.5 px-2 font-mono text-stone-700">{{ row.dueDate || 'N/D' }}</td>
+              <td class="py-2.5 px-2 text-right font-mono" [class.text-rose-700]="row.daysOverdue > 0" [class.text-stone-600]="row.daysOverdue === 0">
+                {{ row.daysOverdue | veNumber:0 }}
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono text-stone-700">
+                {{ displayAmount(row.totalUsd, row) | veCurrency: currency() }}
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono text-emerald-800">
+                {{ displayAmount(row.collectedUsd, row) | veCurrency: currency() }}
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono text-stone-600">
+                <span class="block">C {{ displayAmount(row.creditNotesUsd, row) | veCurrency: currency() }}</span>
+                <span class="block">D {{ displayAmount(row.debitNotesUsd, row) | veCurrency: currency() }}</span>
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono font-bold text-amber-950 bg-amber-50/30">
+                {{ displayAmount(row.balanceUsd, row) | veCurrency: currency() }}
+                @if (row.creditBalanceUsd > 0) {
+                  <span class="block text-[10px] font-semibold text-sky-700">A favor {{ row.creditBalanceUsd | veCurrency: '$' }}</span>
+                }
+              </td>
+              <td class="py-2.5 px-2">
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                  [class.bg-rose-50]="row.status === 'vencido'"
+                  [class.text-rose-800]="row.status === 'vencido'"
+                  [class.border-rose-200]="row.status === 'vencido'"
+                  [class.bg-emerald-50]="row.status === 'cobrado'"
+                  [class.text-emerald-800]="row.status === 'cobrado'"
+                  [class.border-emerald-200]="row.status === 'cobrado'"
+                  [class.bg-stone-100]="row.status === 'vigente'"
+                  [class.text-stone-700]="row.status === 'vigente'"
+                  [class.border-stone-200]="row.status === 'vigente'"
+                >
+                  {{ statusLabel(row) }}
+                </span>
+                <span class="block text-[10px] text-stone-500 mt-0.5">{{ bucketLabel(row.agingBucket) }}</span>
+              </td>
+              <td class="py-2.5 px-2">
+                <div class="flex flex-col items-start gap-1">
+                  @if (row.collectedUsd > 0) {
+                    <button
+                      type="button"
+                      (click)="requestHistory(row)"
+                      class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 rounded-lg hover:bg-sky-100"
+                      [title]="'Ver abonos de ' + row.orderNumber"
+                    >
+                      <mat-icon class="text-xs">receipt_long</mat-icon>
+                      Ver cobros
+                    </button>
+                  }
+                  @if (canCollect() && row.balanceUsd > 0) {
+                    <button
+                      type="button"
+                      (click)="requestCollection(row)"
+                      class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-emerald-700 text-white rounded-lg hover:bg-emerald-800"
+                      [title]="'Registrar abono de ' + row.orderNumber"
+                    >
+                      <mat-icon class="text-xs">payments</mat-icon>
+                      {{ row.partialCollection ? 'Abonar' : 'Cobrar' }}
+                    </button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <p class="text-[10px] text-stone-400 mt-4">
+    Los saldos se calculan con facturas vigentes, notas de crédito/débito y cobros registrados. Los pedidos cobrados
+    aparecen con saldo 0 y un cobro por un monto inferior al total se marca como «Cobro parcial».
+  </p>
+</section>

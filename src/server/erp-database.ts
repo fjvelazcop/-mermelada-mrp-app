@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { isValidVenezuelanRif } from '../app/core/utils/venezuela-rif.js';
 import {
   RawMaterial,
+  AccountingBookSettings,
+  AccountingBookSettingsInput,
   InventoryMovement,
   FinishedGood,
   RecipeBOM,
@@ -15,6 +17,7 @@ import {
   PresentationType,
   Customer,
   SalesOrder,
+  SalesCollection,
   SalesTaxCategory,
   DeliveryNote,
   Employee,
@@ -24,6 +27,8 @@ import {
   FiscalObligationHistoryEntry,
   FiscalObligationKey,
   FISCAL_OBLIGATION_DEFINITIONS,
+  FiscalReferenceInput,
+  FiscalReferenceValue,
   FiscalInvoice,
   FiscalAdjustmentNote,
   FiscalAdjustmentReason,
@@ -42,14 +47,29 @@ import {
   AuditLogEntry,
   Expense,
   ExpenseCategoryConfig,
+  MaterialCategoryConfig,
+  Payable,
+  PayablePayment,
+  PayableStatus,
   Supplier,
   SupplierPrice,
+  SupplierTypeConfig,
+  DEFAULT_MATERIAL_CATEGORIES,
+  DEFAULT_SUPPLIER_TYPES,
+  Account,
+  AccountingBookReport,
+  AccountingBookType,
+  AccountingEntry,
+  AccountingEntryLine,
+  AccountingEntrySource,
+  AccountingPeriod,
 } from '../app/core/models/erp.models.js';
 import { loadState } from './database/persistence.js';
 import {
   loadRelationalState,
   saveRelationalState,
 } from './database/relational-persistence.js';
+import { buildAccountingBook } from './accounting-books.js';
 
 export interface DatabaseState {
   rawMaterials: RawMaterial[];
@@ -59,6 +79,8 @@ export interface DatabaseState {
   productionOrders: ProductionOrder[];
   customers: Customer[];
   salesOrders: SalesOrder[];
+  supplierTypes: SupplierTypeConfig[];
+  materialCategories: MaterialCategoryConfig[];
   suppliers: Supplier[];
   supplierPrices: SupplierPrice[];
   deliveryNotes: DeliveryNote[];
@@ -66,9 +88,16 @@ export interface DatabaseState {
   payrollWeeks: PayrollWeek[];
   expenses: Expense[];
   expenseCategories: ExpenseCategoryConfig[];
+  payables: Payable[];
+  payablePayments: PayablePayment[];
+  accounts: Account[];
+  accountingEntries: AccountingEntry[];
+  accountingPeriods: AccountingPeriod[];
   fiscalSettings: FiscalSettings;
   fiscalObligations: FiscalObligationRecord[];
   fiscalObligationHistory: FiscalObligationHistoryEntry[];
+  fiscalReferenceValues: FiscalReferenceValue[];
+  accountingBookSettings: AccountingBookSettings;
   fiscalInvoices: FiscalInvoice[];
   fiscalAdjustmentNotes: FiscalAdjustmentNote[];
   fiscalPeriodClosures: FiscalPeriodClosure[];
@@ -76,7 +105,48 @@ export interface DatabaseState {
   auditLogs: AuditLogEntry[];
 }
 
+interface CatalogInput {
+  code: string;
+  label: string;
+  description?: string;
+  color?: string;
+  active?: boolean;
+  isSystem?: boolean;
+}
+
 function createInitialFiscalObligations(): FiscalObligationRecord[] {
+  const confirmed: Partial<Record<string, Partial<FiscalObligationRecord>>> = {
+    tax_regime: {
+      applicability: 'aplica',
+      normativeReference: 'Contribuyente ordinario confirmado por el usuario',
+      reviewedAt: '2026-11-22',
+      notes: 'Contribuyente ordinario, giro: fabricación de mermelada. Confirmado por el usuario el 2026-11-22; pendiente de ratificación por el contador en #13.',
+    },
+    special_taxpayer: {
+      applicability: 'no_aplica',
+      normativeReference: 'Contribuyente ordinario (fabricación de mermelada)',
+      reviewedAt: '2026-11-22',
+      notes: 'No aplica mientras seamos ordinarios. La condición de SPE solo se registra al dejar de ser ordinario y no enciende retenciones.',
+    },
+    vat_withholding: {
+      applicability: 'no_aplica',
+      normativeReference: 'Contribuyente ordinario (no agente de retención de IVA)',
+      reviewedAt: '2026-11-22',
+      notes: 'Como ordinarios no practicamos retenciones de IVA al pagar (vatWithholdingEnabled=false). Solo se contempla el registro/control de comprobantes de retención que clientes SPE nos practiquen al cobrar; sin cálculo real ni consecutivos hasta cerrar #13. La cuenta definitiva para retenciones recibidas queda pendiente del contador; no se crean cuentas ni se alteran asientos.',
+    },
+    islr_withholding: {
+      applicability: 'no_aplica',
+      normativeReference: 'Contribuyente ordinario (no agente de retención de ISLR)',
+      reviewedAt: '2026-11-22',
+      notes: 'Como ordinarios no practicamos retenciones de ISLR al pagar (islrWithholdingEnabled=false). Solo se contempla el registro/control de comprobantes de retención que clientes SPE nos practiquen al cobrar. Catálogo de referencia: seis rubros del giro con persona natural/jurídica y UT Bs. 43,00; sustraendo y alícuotas del art. 9 del Decreto 1.808 pendientes del contador en #13. La cuenta definitiva para retenciones recibidas de clientes SPE al cobrar queda pendiente; no se crean cuentas ni se alteran asientos.',
+    },
+    igtf: {
+      applicability: 'no_aplica',
+      normativeReference: 'Ley IGTF G.O.E. 6.687 / Decreto 4.972',
+      reviewedAt: '2026-11-22',
+      notes: 'IGTF=false confirmado: no recibimos pagos en divisa y somos contribuyentes ordinarios. Revisar si cambia la condición de contribuyente o el manejo de divisas. Sin cálculo activo.',
+    },
+  };
   return FISCAL_OBLIGATION_DEFINITIONS.map((obligation) => ({
     ...obligation,
     applicability: 'pendiente',
@@ -86,7 +156,111 @@ function createInitialFiscalObligations(): FiscalObligationRecord[] {
     updatedAt: '',
     updatedBy: '',
     updatedByRole: '',
+    ...confirmed[obligation.key],
   }));
+}
+
+const DEFAULT_ACCOUNTING_BOOK_SETTINGS: AccountingBookSettings = {
+  id: 1,
+  approvedFormats: 'xlsx,pdf',
+  auxiliaryFormat: 'csv',
+  pagination: '',
+  signatureText: '',
+  signatureRole: '',
+  exchangeRatePolicy: 'documento_con_fallback',
+  notes: 'Orden de columnas aprobado. Paginación y firma pendientes de indicar por el contador (#13). Plan base de 35 cuentas y cuenta para retenciones recibidas pendientes de validación; no se crean cuentas ni se alteran asientos.',
+  approvedAt: '2026-11-22',
+  updatedAt: '',
+  updatedBy: '',
+};
+
+function createInitialFiscalReferenceValues(): FiscalReferenceValue[] {
+  const now = new Date().toISOString();
+  const base = {
+    effectiveTo: '',
+    status: 'referencia' as const,
+    confirmedByAccountant: false,
+    supportDocument: '',
+    createdAt: now,
+    createdBy: 'sistema',
+    updatedAt: now,
+    annulledAt: '',
+    annulledReason: '',
+    annulledBy: '',
+  };
+  return [
+    {
+      ...base,
+      id: 'frv-iva-16-2020',
+      kind: 'iva',
+      value: 16,
+      valueUnit: 'percent',
+      effectiveFrom: '2020-01-01',
+      instrumentType: 'decreto',
+      instrumentNumber: '4.079',
+      officialGazette: 'G.O. N° 41.788 del 26/12/2019',
+      publicationDate: '2019-12-26',
+      legalBasis: 'Ley de IVA G.O.E. N° 6.507, arts. 27 y 63; Decreto N° 4.079',
+      notes: 'IVA 16% general por defecto para mermelada procesada/envasada, azúcar, empaques/envases y gastos generales. Exento 0% previsto para materias primas agrícolas primarias en estado natural (según aplique) y 8% solo para supuestos taxativos confirmados por el contador. Libros separan base imponible, exento e impuesto; sin cálculo de 0%/8% hasta cerrar Fase 0 / #13.',
+    },
+    {
+      ...base,
+      id: 'frv-ut-43-2025',
+      kind: 'ut',
+      value: 43,
+      valueUnit: 'bs',
+      effectiveFrom: '2025-06-02',
+      instrumentType: 'providencia',
+      instrumentNumber: 'SNAT/2025/000048',
+      officialGazette: 'G.O. N° 43.140',
+      publicationDate: '2025-06-02',
+      legalBasis: 'Providencia SNAT/2025/000048',
+      notes: 'UT Bs. 43,00 de referencia para sustraendos y conceptos de ISLR del giro: honorarios profesionales, servicios técnicos/especializados, obras y servicios en general, fletes/transporte, publicidad y arrendamientos. Alícuotas del art. 9 del Decreto 1.808 y sustraendo pendientes del contador; sin cálculo de retenciones hasta cerrar Fase 0 / #13.',
+    },
+  ];
+}
+
+/** Completa decisiones y valores base en bases creadas antes de la v16. */
+function ensureFiscalPhaseZeroSeeds(state: DatabaseState): boolean {
+  let changed = false;
+  if (!state.fiscalReferenceValues?.length) {
+    state.fiscalReferenceValues = createInitialFiscalReferenceValues();
+    changed = true;
+  }
+  if (!state.fiscalReferenceValues.some((item) => item.kind === 'iva')) {
+    state.fiscalReferenceValues.push(
+      ...createInitialFiscalReferenceValues().filter((item) => item.kind === 'iva')
+    );
+    changed = true;
+  }
+  if (!state.fiscalReferenceValues.some((item) => item.kind === 'ut')) {
+    state.fiscalReferenceValues.push(
+      ...createInitialFiscalReferenceValues().filter((item) => item.kind === 'ut')
+    );
+    changed = true;
+  }
+  if (!state.accountingBookSettings) {
+    state.accountingBookSettings = {...DEFAULT_ACCOUNTING_BOOK_SETTINGS};
+    changed = true;
+  }
+  const initial = createInitialFiscalObligations();
+  for (const expected of initial) {
+    if (expected.applicability === 'pendiente') continue;
+    const current = state.fiscalObligations?.find((item) => item.key === expected.key);
+    if (current && current.applicability === 'pendiente' && !current.reviewedAt) {
+      Object.assign(current, {
+        applicability: expected.applicability,
+        normativeReference: expected.normativeReference,
+        reviewedAt: expected.reviewedAt,
+        notes: expected.notes,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'sistema',
+        updatedByRole: 'sistema',
+      });
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /**
@@ -122,10 +296,79 @@ const PRODUCTION_SHEET_MATERIALS: RawMaterial[] = [
   },
 ];
 
+/** New packaging materials used by the added presentations (300 g / 6 kg). */
+const PRESENTATION_PACKAGING_MATERIALS: RawMaterial[] = [
+  {
+    id: 'rm-22',
+    code: 'MP-EMP-15',
+    name: 'Frasco 300 g con Tapa para Mermelada',
+    category: 'envases',
+    currentStock: 0,
+    minStock: 50,
+    unit: 'unidades',
+    costPerUnit: 0.34,
+    supplier: 'Plásticos Industriales del Centro',
+    lastRestockDate: '',
+    notes: 'Envase para la presentación de 300 gramos; stock inicial cero',
+  },
+  {
+    id: 'rm-23',
+    code: 'MP-EMP-16',
+    name: 'Caja de Cartón 6 kg con Bolsa Interna',
+    category: 'cajas',
+    currentStock: 0,
+    minStock: 20,
+    unit: 'unidades',
+    costPerUnit: 1.35,
+    supplier: 'Cartones del Centro',
+    lastRestockDate: '',
+    notes: 'Empaque para la presentación de 6 kg; stock inicial cero',
+  },
+];
+
+/** Finished goods for the added presentations, with zero opening stock. */
+const PRESENTATION_FINISHED_GOODS: FinishedGood[] = [
+  {
+    id: 'fg-10',
+    code: 'PT-GUA-300',
+    flavor: 'Guayaba Criolla',
+    presentation: 'pequena_300g',
+    presentationLabel: 'Frasco 300 g',
+    weightGrams: 300,
+    stockUnits: 0,
+    reservedUnits: 0,
+    availableUnits: 0,
+    baseCost: 1.12,
+    suggestedWholesalePrice: 1.9,
+    suggestedRetailPrice: 2.55,
+    suggestedSpecialPrice: 1.65,
+    minStock: 40,
+  },
+  {
+    id: 'fg-11',
+    code: 'PT-GUA-6KG',
+    flavor: 'Guayaba Criolla',
+    presentation: 'caja_6kg',
+    presentationLabel: 'Caja 6 kg',
+    weightGrams: 6000,
+    stockUnits: 0,
+    reservedUnits: 0,
+    availableUnits: 0,
+    baseCost: 12.4,
+    suggestedWholesalePrice: 18,
+    suggestedRetailPrice: 22.5,
+    suggestedSpecialPrice: 16,
+    minStock: 8,
+  },
+];
+
 /** Add the sheet materials when a persisted database predates them. */
 function ensureProductionSheetMaterials(state: DatabaseState): boolean {
   let changed = false;
-  for (const material of PRODUCTION_SHEET_MATERIALS) {
+  for (const material of [
+    ...PRODUCTION_SHEET_MATERIALS,
+    ...PRESENTATION_PACKAGING_MATERIALS,
+  ]) {
     const exists = state.rawMaterials.some(
       (item) => item.id === material.id || item.code === material.code
     );
@@ -136,6 +379,91 @@ function ensureProductionSheetMaterials(state: DatabaseState): boolean {
   }
   return changed;
 }
+
+/** Backfill finished goods for the added presentations on older databases. */
+function ensurePresentationFinishedGoods(state: DatabaseState): boolean {
+  let changed = false;
+  for (const product of PRESENTATION_FINISHED_GOODS) {
+    const exists = state.finishedGoods.some(
+      (item) => item.id === product.id || item.code === product.code
+    );
+    if (!exists) {
+      state.finishedGoods.push({ ...product });
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Backfill editable catalogs on databases created before migration v9. */
+function ensureCatalogs(state: DatabaseState): boolean {
+  let changed = false;
+  if (!state.supplierTypes?.length) {
+    state.supplierTypes = DEFAULT_SUPPLIER_TYPES.map((value) => ({ ...value }));
+    changed = true;
+  }
+  if (!state.materialCategories?.length) {
+    state.materialCategories = DEFAULT_MATERIAL_CATEGORIES.map((value) => ({ ...value }));
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Plan de cuentas base, provisional hasta la validación contable de #13.
+ * Las cuentas de control son suficientes para generar los primeros asientos
+ * automáticos sin inventar obligaciones fiscales adicionales.
+ */
+const DEFAULT_ACCOUNTS: Account[] = [
+  ['1', 'ACTIVO', 'activo', 'debito', undefined],
+  ['1.01', 'Disponible', 'activo', 'debito', '1'],
+  ['1.01.01', 'Caja', 'activo', 'debito', '1.01'],
+  ['1.01.02', 'Bancos', 'activo', 'debito', '1.01'],
+  ['1.02', 'Cuentas por Cobrar', 'activo', 'debito', '1'],
+  ['1.02.01', 'Clientes', 'activo', 'debito', '1.02'],
+  ['1.03', 'Inventarios', 'activo', 'debito', '1'],
+  ['1.03.01', 'Materia Prima', 'activo', 'debito', '1.03'],
+  ['1.03.02', 'Producto Terminado', 'activo', 'debito', '1.03'],
+  ['1.04', 'Créditos Fiscales', 'activo', 'debito', '1'],
+  ['1.04.01', 'Crédito Fiscal IVA', 'activo', 'debito', '1.04'],
+  ['2', 'PASIVO', 'pasivo', 'credito', undefined],
+  ['2.01', 'Cuentas por Pagar', 'pasivo', 'credito', '2'],
+  ['2.01.01', 'Proveedores', 'pasivo', 'credito', '2.01'],
+  ['2.02', 'Obligaciones Tributarias', 'pasivo', 'credito', '2'],
+  ['2.02.01', 'IVA por Pagar', 'pasivo', 'credito', '2.02'],
+  ['2.02.02', 'Retenciones por Pagar', 'pasivo', 'credito', '2.02'],
+  ['3', 'PATRIMONIO', 'patrimonio', 'credito', undefined],
+  ['3.01', 'Capital Social', 'patrimonio', 'credito', '3'],
+  ['3.02', 'Utilidades Acumuladas', 'patrimonio', 'credito', '3'],
+  ['4', 'INGRESOS', 'ingreso', 'credito', undefined],
+  ['4.01', 'Ventas Nacionales', 'ingreso', 'credito', '4'],
+  ['4.01.01', 'Ventas Nacionales Gravadas', 'ingreso', 'credito', '4.01'],
+  ['4.02', 'Ventas Exentas', 'ingreso', 'credito', '4'],
+  ['4.02.01', 'Ventas Exentas Nacionales', 'ingreso', 'credito', '4.02'],
+  ['5', 'GASTOS', 'gasto', 'debito', undefined],
+  ['5.01', 'Gastos de Operación', 'gasto', 'debito', '5'],
+  ['5.01.01', 'Alquileres', 'gasto', 'debito', '5.01'],
+  ['5.01.02', 'Servicios', 'gasto', 'debito', '5.01'],
+  ['5.01.03', 'Transporte', 'gasto', 'debito', '5.01'],
+  ['5.02', 'Gastos de Personal', 'gasto', 'debito', '5'],
+  ['5.02.01', 'Sueldos y Salarios', 'gasto', 'debito', '5.02'],
+  ['6', 'COSTOS', 'costo', 'debito', undefined],
+  ['6.01', 'Costo de Producción', 'costo', 'debito', '6'],
+  ['6.01.01', 'Materia Prima Consumida', 'costo', 'debito', '6.01'],
+].map(([code, name, type, nature, parentCode]) => ({
+  id: `acc-${String(code).replace(/\./g, '-')}`,
+  code: code as string,
+  name: name as string,
+  type: type as Account['type'],
+  nature: nature as Account['nature'],
+  parentCode: parentCode as string | undefined,
+  level: (code as string).split('.').length,
+  active: true,
+  isSystem: true,
+  description: 'Plan de cuentas base — validar con contador (#13).',
+  createdAt: '',
+  updatedAt: '',
+}));
 
 export function createInitialDatabase(): DatabaseState {
   const rawMaterials: RawMaterial[] = [
@@ -387,6 +715,7 @@ export function createInitialDatabase(): DatabaseState {
       notes: 'Identificación institucional de gran formato',
     },
     ...PRODUCTION_SHEET_MATERIALS,
+    ...PRESENTATION_PACKAGING_MATERIALS,
   ];
 
   const finishedGoods: FinishedGood[] = [
@@ -534,6 +863,7 @@ export function createInitialDatabase(): DatabaseState {
       suggestedSpecialPrice: 48.00,
       minStock: 4,
     },
+    ...PRESENTATION_FINISHED_GOODS,
   ];
 
   const recipes: RecipeBOM[] = [
@@ -1093,9 +1423,21 @@ export function createInitialDatabase(): DatabaseState {
     islrWithholdingAgent: false,
     islrWithholdingPercent: 0,
     specialTaxpayer: false,
+    accountingEnabled: true,
+    vatWithholdingEnabled: false,
+    islrWithholdingEnabled: false,
     booksFormat: 'xlsx',
     historicalOrdersTreatment: 'revisar',
     printNotes: 'Contribuyente Ordinario. Retención de IVA aplicable según normativa fiscal vigente.',
+    digitalInvoicingEnabled: false,
+    digitalInvoicingProvider: '',
+    digitalInvoicingProviderTaxId: '',
+    digitalInvoicingApiUrl: '',
+    digitalInvoicingEnvironment: 'pruebas',
+    digitalInvoicingCertificateLabel: '',
+    digitalInvoicingCertificateExpiry: '',
+    digitalInvoicingStartDate: '',
+    digitalInvoicingNotes: 'Configuración de preparación. No emite ni envía al SENIAT.',
   };
 
   const inventoryMovements: InventoryMovement[] = [
@@ -1669,6 +2011,8 @@ export function createInitialDatabase(): DatabaseState {
     productionOrders,
     customers,
     salesOrders,
+    supplierTypes: DEFAULT_SUPPLIER_TYPES.map((value) => ({ ...value })),
+    materialCategories: DEFAULT_MATERIAL_CATEGORIES.map((value) => ({ ...value })),
     suppliers,
     supplierPrices,
     deliveryNotes,
@@ -1676,9 +2020,16 @@ export function createInitialDatabase(): DatabaseState {
     payrollWeeks,
     expenses,
     expenseCategories,
+    payables: [],
+    payablePayments: [],
+    accounts: DEFAULT_ACCOUNTS.map((account) => ({...account})),
+    accountingEntries: [],
+    accountingPeriods: [],
     fiscalSettings,
     fiscalObligations: createInitialFiscalObligations(),
     fiscalObligationHistory: [],
+    fiscalReferenceValues: createInitialFiscalReferenceValues(),
+    accountingBookSettings: {...DEFAULT_ACCOUNTING_BOOK_SETTINGS},
     fiscalInvoices: [],
     fiscalAdjustmentNotes: [],
     fiscalPeriodClosures: [],
@@ -1700,10 +2051,52 @@ export class ErpDatabase {
             ? persisted.fiscalObligations
             : createInitialFiscalObligations(),
         fiscalObligationHistory: persisted.fiscalObligationHistory || [],
+        payables: persisted.payables || [],
+        payablePayments: persisted.payablePayments || [],
+        accounts:
+          persisted.accounts?.length > 0
+            ? persisted.accounts
+            : DEFAULT_ACCOUNTS.map((account) => ({...account})),
+        accountingEntries: persisted.accountingEntries || [],
+        accountingPeriods: persisted.accountingPeriods || [],
+        fiscalSettings: {
+          ...persisted.fiscalSettings,
+          accountingEnabled: persisted.fiscalSettings.accountingEnabled ?? true,
+          vatWithholdingEnabled:
+            persisted.fiscalSettings.vatWithholdingEnabled ?? false,
+          islrWithholdingEnabled:
+            persisted.fiscalSettings.islrWithholdingEnabled ?? false,
+          digitalInvoicingEnabled:
+            persisted.fiscalSettings.digitalInvoicingEnabled ?? false,
+          digitalInvoicingProvider:
+            persisted.fiscalSettings.digitalInvoicingProvider ?? '',
+          digitalInvoicingProviderTaxId:
+            persisted.fiscalSettings.digitalInvoicingProviderTaxId ?? '',
+          digitalInvoicingApiUrl:
+            persisted.fiscalSettings.digitalInvoicingApiUrl ?? '',
+          digitalInvoicingEnvironment:
+            persisted.fiscalSettings.digitalInvoicingEnvironment ?? 'pruebas',
+          digitalInvoicingCertificateLabel:
+            persisted.fiscalSettings.digitalInvoicingCertificateLabel ?? '',
+          digitalInvoicingCertificateExpiry:
+            persisted.fiscalSettings.digitalInvoicingCertificateExpiry ?? '',
+          digitalInvoicingStartDate:
+            persisted.fiscalSettings.digitalInvoicingStartDate ?? '',
+          digitalInvoicingNotes:
+            persisted.fiscalSettings.digitalInvoicingNotes ?? '',
+        },
       };
+      const catalogsChanged = ensureCatalogs(this.state);
+      const materialsChanged = ensureProductionSheetMaterials(this.state);
+      const finishedGoodsChanged = ensurePresentationFinishedGoods(this.state);
+      const phaseZeroChanged = ensureFiscalPhaseZeroSeeds(this.state);
       if (
         !persisted.fiscalObligations?.length ||
-        ensureProductionSheetMaterials(this.state)
+        !persisted.accounts?.length ||
+        catalogsChanged ||
+        materialsChanged ||
+        finishedGoodsChanged ||
+        phaseZeroChanged
       ) {
         this.persist();
       }
@@ -1722,9 +2115,46 @@ export class ErpDatabase {
           fiscalObligationHistory: legacy.fiscalObligationHistory || [],
           fiscalAdjustmentNotes: legacy.fiscalAdjustmentNotes || [],
           fiscalPeriodClosures: legacy.fiscalPeriodClosures || [],
+          payables: legacy.payables || [],
+          payablePayments: legacy.payablePayments || [],
+          accounts:
+            legacy.accounts?.length > 0
+              ? legacy.accounts
+              : DEFAULT_ACCOUNTS.map((account) => ({...account})),
+          accountingEntries: legacy.accountingEntries || [],
+          accountingPeriods: legacy.accountingPeriods || [],
+          fiscalSettings: {
+            ...legacy.fiscalSettings,
+            accountingEnabled: legacy.fiscalSettings.accountingEnabled ?? true,
+            vatWithholdingEnabled:
+              legacy.fiscalSettings.vatWithholdingEnabled ?? false,
+            islrWithholdingEnabled:
+              legacy.fiscalSettings.islrWithholdingEnabled ?? false,
+            digitalInvoicingEnabled:
+              legacy.fiscalSettings.digitalInvoicingEnabled ?? false,
+            digitalInvoicingProvider:
+              legacy.fiscalSettings.digitalInvoicingProvider ?? '',
+            digitalInvoicingProviderTaxId:
+              legacy.fiscalSettings.digitalInvoicingProviderTaxId ?? '',
+            digitalInvoicingApiUrl:
+              legacy.fiscalSettings.digitalInvoicingApiUrl ?? '',
+            digitalInvoicingEnvironment:
+              legacy.fiscalSettings.digitalInvoicingEnvironment ?? 'pruebas',
+            digitalInvoicingCertificateLabel:
+              legacy.fiscalSettings.digitalInvoicingCertificateLabel ?? '',
+            digitalInvoicingCertificateExpiry:
+              legacy.fiscalSettings.digitalInvoicingCertificateExpiry ?? '',
+            digitalInvoicingStartDate:
+              legacy.fiscalSettings.digitalInvoicingStartDate ?? '',
+            digitalInvoicingNotes:
+              legacy.fiscalSettings.digitalInvoicingNotes ?? '',
+          },
         }
       : createInitialDatabase();
+    ensureCatalogs(this.state);
     ensureProductionSheetMaterials(this.state);
+    ensurePresentationFinishedGoods(this.state);
+    ensureFiscalPhaseZeroSeeds(this.state);
     this.persist();
   }
 
@@ -1745,6 +2175,7 @@ export class ErpDatabase {
   }
 
   public addRawMaterial(mat: Omit<RawMaterial, 'id'>): RawMaterial {
+    this.assertCatalogValue(mat.category, this.getMaterialCategories(), 'categoría de materia prima');
     const newMat: RawMaterial = {
       ...mat,
       id: 'rm-' + Date.now(),
@@ -1756,6 +2187,9 @@ export class ErpDatabase {
   public updateRawMaterial(id: string, updates: Partial<RawMaterial>): RawMaterial | null {
     const idx = this.state.rawMaterials.findIndex(m => m.id === id);
     if (idx === -1) return null;
+    if (updates.category !== undefined) {
+      this.assertCatalogValue(updates.category, this.getMaterialCategories(), 'categoría de materia prima');
+    }
     this.state.rawMaterials[idx] = { ...this.state.rawMaterials[idx], ...updates };
     return this.state.rawMaterials[idx];
   }
@@ -1784,6 +2218,7 @@ export class ErpDatabase {
         mat.currentStock = Math.max(0, mat.currentStock - mov.quantity);
       }
     }
+    this.recordAutomaticEntryForMovement(newMov);
     return newMov;
   }
 
@@ -2001,6 +2436,8 @@ export class ErpDatabase {
     switch (presentation) {
       case 'pequena_250g':
         return 250;
+      case 'pequena_300g':
+        return 300;
       case 'grande_1000g':
         return 1000;
       case 'galon_5kg':
@@ -2010,6 +2447,8 @@ export class ErpDatabase {
       case 'pote_20kg':
       case 'caja_20kg':
         return 20000;
+      case 'caja_6kg':
+        return 6000;
       default:
         return 0;
     }
@@ -2019,6 +2458,8 @@ export class ErpDatabase {
     switch (presentation) {
       case 'pequena_250g':
         return 'Frasco 250g';
+      case 'pequena_300g':
+        return 'Frasco 300g';
       case 'grande_1000g':
         return 'Frasco 1000g';
       case 'galon_5kg':
@@ -2026,9 +2467,11 @@ export class ErpDatabase {
       case 'balde_15kg':
         return 'Balde 15kg';
       case 'pote_20kg':
-        return 'Pote 20kg';
+        return 'Cuñete 20kg';
       case 'caja_20kg':
         return 'Caja 20kg';
+      case 'caja_6kg':
+        return 'Caja 6kg';
       default:
         return 'Presentación especial';
     }
@@ -2787,6 +3230,18 @@ export class ErpDatabase {
           codes: ['MP-EMP-01'],
           pattern: /frasco.*250|envase.*250/i,
         };
+      case 'pequena_300g':
+        return {
+          ids: ['rm-22'],
+          codes: ['MP-EMP-15'],
+          pattern: /frasco.*300|envase.*300/i,
+        };
+      case 'caja_6kg':
+        return {
+          ids: ['rm-23'],
+          codes: ['MP-EMP-16'],
+          pattern: /caja.*6\s*kg/i,
+        };
       case 'grande_1000g':
         return {
           ids: ['rm-8'],
@@ -3073,6 +3528,22 @@ export class ErpDatabase {
       );
     }
 
+    // Merma is ingredient mass minus captured kilos. Water/gasoil is a process
+    // utility and never enters the mass balance.
+    const manualSheetMermaKg = (row: ProductionMarmitaSheetRow): number =>
+      Math.max(
+        0,
+        this.round(
+          row.guavaKg +
+            row.sugarKg +
+            row.starchKg +
+            row.chemicalG / 1000 +
+            row.acidG / 1000 -
+            row.totalKg,
+          4
+        )
+      );
+
     const totals: ProductionSheetTotals = marmitas.reduce(
       (acc, row) => ({
         guavaKg: this.round(acc.guavaKg + row.guavaKg, 4),
@@ -3083,6 +3554,7 @@ export class ErpDatabase {
         waterGasOil: this.round(acc.waterGasOil + row.waterGasOil, 4),
         obtainedUnits: this.round(acc.obtainedUnits + row.obtainedUnits, 4),
         totalKg: this.round(acc.totalKg + row.totalKg, 4),
+        mermaKg: this.round((acc.mermaKg || 0) + manualSheetMermaKg(row), 4),
       }),
       {
         guavaKg: 0,
@@ -3093,6 +3565,7 @@ export class ErpDatabase {
         waterGasOil: 0,
         obtainedUnits: 0,
         totalKg: 0,
+        mermaKg: 0,
       }
     );
 
@@ -3536,6 +4009,273 @@ export class ErpDatabase {
     return order;
   }
 
+  // --- EDITABLE CATALOGS (supplier types & material categories) ---
+  public getSupplierTypes(): SupplierTypeConfig[] {
+    if (!this.state.supplierTypes) this.state.supplierTypes = [];
+    return this.state.supplierTypes;
+  }
+
+  public getMaterialCategories(): MaterialCategoryConfig[] {
+    if (!this.state.materialCategories) this.state.materialCategories = [];
+    return this.state.materialCategories;
+  }
+
+  private assertCatalogValue(
+    code: string,
+    values: SupplierTypeConfig[] | MaterialCategoryConfig[],
+    label: string
+  ): void {
+    const normalized = String(code || '').trim();
+    if (!normalized) throw new Error(`Debe indicar ${label}`);
+    if (!values.some((value) => value.code === normalized && value.active)) {
+      throw new Error(`El ${label} "${normalized}" no existe o está inactivo`);
+    }
+  }
+
+  public addSupplierType(
+    data: CatalogInput,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): SupplierTypeConfig {
+    const actor = this.manualOrderActor(actorInput);
+    const code = data.code.trim();
+    const label = data.label.trim();
+    if (!code || !label) throw new Error('Código y etiqueta son obligatorios');
+    if (!/^[a-z0-9_-]+$/.test(code)) {
+      throw new Error('El código solo admite letras minúsculas, números, guiones y guiones bajos');
+    }
+    if (this.getSupplierTypes().some((value) => value.code.toLowerCase() === code.toLowerCase())) {
+      throw new Error(`Ya existe un tipo de proveedor con el código ${code}`);
+    }
+    const now = new Date().toISOString();
+    const value: SupplierTypeConfig = {
+      id: `st-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code,
+      label,
+      description: (data.description || '').trim(),
+      color: data.color || 'stone',
+      active: data.active !== false,
+      isSystem: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.getSupplierTypes().push(value);
+    this.addAuditLog({
+      module: 'compras',
+      actionType: 'tipo_proveedor_creado',
+      title: `Tipo de proveedor ${code} registrado`,
+      description: `${label} (${code}).`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: value.id, targetCode: code, itemName: label },
+    });
+    return value;
+  }
+
+  public updateSupplierType(
+    id: string,
+    updates: Partial<CatalogInput>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): SupplierTypeConfig {
+    const actor = this.manualOrderActor(actorInput);
+    const value = this.getSupplierTypes().find((entry) => entry.id === id);
+    if (!value) throw new Error('Tipo de proveedor no encontrado');
+    if (updates.code && updates.code !== value.code) {
+      throw new Error('El código del tipo de proveedor no se puede modificar');
+    }
+    const changed: string[] = [];
+    for (const key of ['label', 'description', 'color', 'active'] as const) {
+      const next = updates[key];
+      if (next !== undefined && value[key] !== next) {
+        (value as unknown as Record<string, unknown>)[key] = next;
+        changed.push(key);
+      }
+    }
+    if (changed.length) value.updatedAt = new Date().toISOString();
+    this.addAuditLog({
+      module: 'compras',
+      actionType: 'tipo_proveedor_actualizado',
+      title: `Tipo de proveedor ${value.code} actualizado`,
+      description: `Se actualizaron ${changed.length} campo(s): ${changed.join(', ') || 'sin cambios'}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: value.id, targetCode: value.code, changes: changed },
+    });
+    return value;
+  }
+
+  public deleteSupplierType(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): boolean {
+    const actor = this.manualOrderActor(actorInput);
+    const values = this.getSupplierTypes();
+    const index = values.findIndex((entry) => entry.id === id);
+    if (index === -1) throw new Error('Tipo de proveedor no encontrado');
+    const value = values[index];
+    const inUse = this.getSuppliers().filter((supplier) => supplier.supplierType === value.code);
+    if (inUse.length) {
+      throw new Error(
+        `No se puede eliminar el tipo ${value.code}: está asociado a ${inUse.length} proveedor(es)`
+      );
+    }
+    values.splice(index, 1);
+    this.addAuditLog({
+      module: 'compras',
+      actionType: 'tipo_proveedor_eliminado',
+      title: `Tipo de proveedor ${value.code} eliminado`,
+      description: `${value.label} (${value.code}) fue eliminado del catálogo.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: { targetId: value.id, targetCode: value.code },
+    });
+    return true;
+  }
+
+  public addMaterialCategory(
+    data: CatalogInput,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): MaterialCategoryConfig {
+    const actor = this.manualOrderActor(actorInput);
+    const code = data.code.trim();
+    const label = data.label.trim();
+    if (!code || !label) throw new Error('Código y etiqueta son obligatorios');
+    if (!/^[a-z0-9_-]+$/.test(code)) {
+      throw new Error('El código solo admite letras minúsculas, números, guiones y guiones bajos');
+    }
+    if (this.getMaterialCategories().some((value) => value.code.toLowerCase() === code.toLowerCase())) {
+      throw new Error(`Ya existe una categoría de materia prima con el código ${code}`);
+    }
+    const now = new Date().toISOString();
+    const value: MaterialCategoryConfig = {
+      id: `mc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code,
+      label,
+      description: (data.description || '').trim(),
+      color: data.color || 'stone',
+      active: data.active !== false,
+      isSystem: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.getMaterialCategories().push(value);
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'categoria_materia_prima_creada',
+      title: `Categoría de materia prima ${code} registrada`,
+      description: `${label} (${code}).`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: value.id, targetCode: code, itemName: label },
+    });
+    return value;
+  }
+
+  public updateMaterialCategory(
+    id: string,
+    updates: Partial<CatalogInput>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): MaterialCategoryConfig {
+    const actor = this.manualOrderActor(actorInput);
+    const value = this.getMaterialCategories().find((entry) => entry.id === id);
+    if (!value) throw new Error('Categoría de materia prima no encontrada');
+    if (updates.code && updates.code !== value.code) {
+      throw new Error('El código de la categoría no se puede modificar');
+    }
+    const changed: string[] = [];
+    for (const key of ['label', 'description', 'color', 'active'] as const) {
+      const next = updates[key];
+      if (next !== undefined && value[key] !== next) {
+        (value as unknown as Record<string, unknown>)[key] = next;
+        changed.push(key);
+      }
+    }
+    if (changed.length) value.updatedAt = new Date().toISOString();
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'categoria_materia_prima_actualizada',
+      title: `Categoría de materia prima ${value.code} actualizada`,
+      description: `Se actualizaron ${changed.length} campo(s): ${changed.join(', ') || 'sin cambios'}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: value.id, targetCode: value.code, changes: changed },
+    });
+    return value;
+  }
+
+  public deleteMaterialCategory(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): boolean {
+    const actor = this.manualOrderActor(actorInput);
+    const values = this.getMaterialCategories();
+    const index = values.findIndex((entry) => entry.id === id);
+    if (index === -1) throw new Error('Categoría de materia prima no encontrada');
+    const value = values[index];
+    const inUse = this.getRawMaterials().filter((material) => material.category === value.code);
+    if (inUse.length) {
+      throw new Error(
+        `No se puede eliminar la categoría ${value.code}: está asociada a ${inUse.length} materia(s) prima`
+      );
+    }
+    values.splice(index, 1);
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'categoria_materia_prima_eliminada',
+      title: `Categoría de materia prima ${value.code} eliminada`,
+      description: `${value.label} (${value.code}) fue eliminada del catálogo.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: { targetId: value.id, targetCode: value.code },
+    });
+    return true;
+  }
+
+  /** Reset operativo: Vacía transacciones y deja las existencias en cero. */
+  public resetOperationalData(
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): void {
+    const actor = this.manualOrderActor(actorInput);
+    const expenses = this.state.expenses?.length || 0;
+    const orders = this.state.productionOrders?.length || 0;
+    const movements = this.state.inventoryMovements?.length || 0;
+    const materials = this.state.rawMaterials?.length || 0;
+    const products = this.state.finishedGoods?.length || 0;
+
+    this.state.expenses = [];
+    this.state.productionOrders = [];
+    this.state.inventoryMovements = [];
+    for (const material of this.state.rawMaterials || []) material.currentStock = 0;
+    for (const product of this.state.finishedGoods || []) {
+      product.stockUnits = 0;
+      product.reservedUnits = 0;
+      product.availableUnits = 0;
+    }
+
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'operacion_reseteada',
+      title: 'Reset operativo ejecutado',
+      description: `Se eliminaron ${expenses} gasto(s), ${orders} orden(es) de producción y ${movements} movimiento(s); se zeroaron ${materials} materia(s) prima y ${products} producto(s).`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: { expenses, orders, movements, materials, products },
+    });
+  }
+
   // --- SUPPLIERS & PRICE HISTORY ---
   public getSuppliers(): Supplier[] {
     if (!this.state.suppliers) this.state.suppliers = [];
@@ -3569,6 +4309,7 @@ export class ErpDatabase {
   ): Supplier {
     const actor = this.manualOrderActor(actorInput);
     const suppliers = this.getSuppliers();
+    this.assertCatalogValue(data.supplierType, this.getSupplierTypes(), 'tipo de proveedor');
     const code = (data.code || this.nextSupplierCode()).trim();
     if (suppliers.some((s) => s.code.toLowerCase() === code.toLowerCase())) {
       throw new Error(`Ya existe un proveedor con el código ${code}`);
@@ -3621,6 +4362,9 @@ export class ErpDatabase {
     const actor = this.manualOrderActor(actorInput);
     const supplier = this.getSuppliers().find((s) => s.id === id);
     if (!supplier) throw new Error('Proveedor no encontrado');
+    if (updates.supplierType !== undefined) {
+      this.assertCatalogValue(updates.supplierType, this.getSupplierTypes(), 'tipo de proveedor');
+    }
 
     const changedFields: string[] = [];
     for (const [key, value] of Object.entries(updates)) {
@@ -3789,6 +4533,22 @@ export class ErpDatabase {
     return this.state.salesOrders;
   }
 
+  public getSalesOrder(id: string): SalesOrder | null {
+    return this.state.salesOrders.find((order) => order.id === id) ?? null;
+  }
+
+  /** Historial de abonos; pedidos anteriores a v10 pueden tener solo `collection`. */
+  public getSalesOrderCollections(id: string): SalesCollection[] {
+    const order = this.getSalesOrder(id);
+    if (!order) return [];
+    const history = order.collections?.length
+      ? [...order.collections]
+      : order.collection
+        ? [order.collection]
+        : [];
+    return history.sort((a, b) => (a.collectedAt || '').localeCompare(b.collectedAt || ''));
+  }
+
   public addSalesOrder(
     data: Omit<SalesOrder, 'id' | 'orderNumber' | 'hasDeliveryNote'>,
     actorInput?: { userId?: string; userName?: string; userRole?: string }
@@ -3921,10 +4681,51 @@ export class ErpDatabase {
     return order;
   }
 
+  /** Saldo pendiente del pedido según factura vigente, notas y abonos acumulados. */
+  private salesOrderBalance(order: SalesOrder): {
+    totalUsd: number;
+    collectedUsd: number;
+    balanceUsd: number;
+    creditBalanceUsd: number;
+  } {
+    const round = (value: number): number =>
+      Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
+    const invoice = (this.state.fiscalInvoices || [])
+      .filter((entry) => entry.salesOrderId === order.id && entry.status !== 'anulada')
+      .sort((a, b) => (b.issuedAt || '').localeCompare(a.issuedAt || ''))[0];
+    const totalUsd = round(invoice ? Number(invoice.total) || 0 : Number(order.total) || 0);
+    const notes = invoice
+      ? (this.state.fiscalAdjustmentNotes || []).filter(
+          (note) => note.fiscalInvoiceId === invoice.id
+        )
+      : [];
+    const notesTotal = (type: FiscalAdjustmentType): number =>
+      round(
+        notes
+          .filter((note) => note.type === type)
+          .reduce((sum, note) => sum + (Number(note.total) || 0), 0)
+      );
+    const collectedUsd = round(
+      this.getSalesOrderCollections(order.id).reduce(
+        (sum, entry) => sum + (Number(entry.amountUsd) || 0),
+        0
+      )
+    );
+    const raw = round(
+      totalUsd + notesTotal('nota_debito') - notesTotal('nota_credito') - collectedUsd
+    );
+    return {
+      totalUsd,
+      collectedUsd,
+      balanceUsd: Math.max(0, raw),
+      creditBalanceUsd: Math.max(0, -raw),
+    };
+  }
+
   /**
-   * Register the collection of a sales order. The receiving bank is mandatory
-   * because every outgoing/incoming payment must be traceable to an official
-   * SUDEBAN institution.
+   * Registra un abono bancario. El pedido pasa a `cobrado_parcial` mientras
+   * quede saldo y a `cobrado` solo cuando se cancela por completo. El banco
+   * receptor es obligatorio y toda referencia debe ser única por pedido.
    */
   public collectSalesOrder(
     id: string,
@@ -3939,37 +4740,60 @@ export class ErpDatabase {
     actorInput?: { userId?: string; userName?: string; userRole?: string }
   ): SalesOrder {
     const actor = this.manualOrderActor(actorInput);
-    const order = this.state.salesOrders.find((s) => s.id === id);
+    const order = this.getSalesOrder(id);
     if (!order) throw new Error('Pedido de venta no encontrado');
-    if (order.status === 'cobrado') {
-      throw new Error('Este pedido ya fue cobrado');
+
+    const balance = this.salesOrderBalance(order);
+    if (balance.balanceUsd <= 0.01) {
+      throw new Error('El pedido ya fue cobrado en su totalidad');
+    }
+
+    const reference = data.reference.trim();
+    const history = this.getSalesOrderCollections(order.id);
+    if (
+      history.some(
+        (entry) => entry.reference.trim().toLowerCase() === reference.toLowerCase()
+      )
+    ) {
+      throw new Error('La referencia de cobro ya fue registrada para este pedido');
     }
 
     const rate =
       data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
-    const amountUsd = Number((data.amountUsd ?? order.total).toFixed(2));
-    if (amountUsd <= 0) {
+    const amountUsd = Number((data.amountUsd ?? balance.balanceUsd).toFixed(2));
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
       throw new Error('El monto del cobro debe ser mayor a cero');
     }
+    if (amountUsd > balance.balanceUsd + 0.01) {
+      throw new Error(
+        `El monto supera el saldo pendiente ($${balance.balanceUsd.toFixed(2)})`
+      );
+    }
 
-    order.collection = {
+    const collection: SalesCollection = {
+      id: `COL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       bankCode: data.bankCode,
       bankName: data.bankName,
       paymentMethod: data.paymentMethod,
-      reference: data.reference.trim(),
+      reference,
       amountUsd,
       amountBs: Number((amountUsd * rate).toFixed(2)),
       exchangeRateUsed: rate,
       collectedAt: new Date().toISOString(),
       collectedBy: actor.userName,
     };
-    order.status = 'cobrado';
+    order.collections = [...history, collection];
+    order.collection = collection;
+    const remaining = Number((balance.balanceUsd - amountUsd).toFixed(2));
+    const fullyPaid = remaining <= 0.01;
+    order.status = fullyPaid ? 'cobrado' : 'cobrado_parcial';
+    this.recordAutomaticEntryForCollection(order, collection);
 
     this.addAuditLog({
       module: 'ventas',
-      actionType: 'cobro_registrado',
-      title: `Cobro registrado: ${order.orderNumber}`,
-      description: `$${amountUsd.toFixed(2)} recibidos de ${order.customerName} en ${data.bankName} (${data.bankCode}) · Ref. ${data.reference}.`,
+      actionType: fullyPaid ? 'cobro_registrado' : 'cobro_parcial_registrado',
+      title: `${fullyPaid ? 'Cobro registrado' : 'Cobro parcial registrado'}: ${order.orderNumber}`,
+      description: `$${amountUsd.toFixed(2)} recibidos de ${order.customerName} en ${data.bankName} (${data.bankCode}) · Ref. ${reference}. Saldo restante: $${Math.max(0, remaining).toFixed(2)}.`,
       userId: actor.userId,
       userName: actor.userName,
       userRole: actor.userRole,
@@ -3979,9 +4803,11 @@ export class ErpDatabase {
         targetCode: order.orderNumber,
         itemName: order.customerName,
         costUsd: amountUsd,
+        remainingUsd: Math.max(0, remaining),
+        collectionCount: order.collections.length,
         bankCode: data.bankCode,
         bankName: data.bankName,
-        referenceDoc: data.reference,
+        referenceDoc: reference,
         salesOrderId: order.id,
       },
     });
@@ -3998,7 +4824,11 @@ export class ErpDatabase {
     const so = this.state.salesOrders.find(s => s.id === salesOrderId);
     if (!so) throw new Error('Pedido de venta no encontrado');
 
-    const nextNoteNum = 'NE-000' + (this.state.deliveryNotes.length + 125);
+    const lastNoteNumber = this.state.deliveryNotes.reduce((max, note) => {
+      const match = /^NE-(\d+)$/.exec(note.noteNumber);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+    const nextNoteNum = `NE-${String(lastNoteNumber + 1).padStart(6, '0')}`;
     const cust = this.state.customers.find(c => c.id === so.customerId);
     const rate = so.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35;
 
@@ -4137,7 +4967,23 @@ export class ErpDatabase {
     actor?: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
   ): FiscalSettings {
     const previousSettings = this.state.fiscalSettings;
-    const changes = Object.entries(settings)
+    const nextTaxRegime = settings.taxRegime ?? previousSettings.taxRegime;
+    const isSpecialTransition =
+      previousSettings.taxRegime === 'ordinario' && nextTaxRegime === 'especial';
+
+    // El paso a SPE implica actuar como agente de IVA e ISLR. Se pre-marca la
+    // condición, pero NO se activan los cálculos de retención: esos flags solo
+    // se encienden tras la validación contable del issue #13.
+    const effectiveSettings: Partial<FiscalSettings> = isSpecialTransition
+      ? {
+          ...settings,
+          specialTaxpayer: true,
+          vatWithholdingAgent: true,
+          islrWithholdingAgent: true,
+        }
+      : settings;
+
+    const changes = Object.entries(effectiveSettings)
       .filter(([key, value]) => !Object.is(previousSettings[key as keyof FiscalSettings], value))
       .map(([key, value]) => {
         const previousValue = previousSettings[key as keyof FiscalSettings];
@@ -4151,7 +4997,7 @@ export class ErpDatabase {
         return `${key}: ${formatValue(previousValue)} → ${formatValue(value)}`;
       });
 
-    this.state.fiscalSettings = { ...this.state.fiscalSettings, ...settings };
+    this.state.fiscalSettings = { ...this.state.fiscalSettings, ...effectiveSettings };
 
     if (actor && changes.length > 0) {
       this.addAuditLog({
@@ -4163,7 +5009,10 @@ export class ErpDatabase {
         userName: actor.userName,
         userRole: actor.userRole,
         severity: 'warning',
-        details: { changes },
+        details: {
+          changes,
+          ...(isSpecialTransition ? { autoSpecialTaxpayerTransition: true } : {}),
+        },
       });
     }
 
@@ -4236,6 +5085,183 @@ export class ErpDatabase {
     return obligation;
   }
 
+  // --- VALORES FISCALES HISTÓRICOS (IVA / UT) ---
+
+  public getFiscalReferenceValues(
+    kind?: FiscalReferenceValue['kind'],
+    includeAnnulled = true
+  ): FiscalReferenceValue[] {
+    return (this.state.fiscalReferenceValues || [])
+      .filter((item) => (!kind || item.kind === kind) && (includeAnnulled || item.status !== 'anulado'))
+      .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom) || a.id.localeCompare(b.id));
+  }
+
+  /** Valor vigente a una fecha. Solo consulta: no afecta cálculos activos. */
+  public getActiveFiscalReferenceValue(
+    kind: FiscalReferenceValue['kind'],
+    date: string
+  ): FiscalReferenceValue | null {
+    return (
+      this.getFiscalReferenceValues(kind)
+        .find(
+          (item) =>
+            item.status !== 'anulado' &&
+            item.effectiveFrom <= date &&
+            (!item.effectiveTo || item.effectiveTo >= date)
+        ) || null
+    );
+  }
+
+  private closeOverlappingFiscalReferenceValues(
+    value: FiscalReferenceValue,
+    actor: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
+  ): void {
+    const previousDay = new Date(`${value.effectiveFrom}T00:00:00.000Z`);
+    previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+    const effectiveTo = previousDay.toISOString().slice(0, 10);
+    for (const existing of this.state.fiscalReferenceValues || []) {
+      if (
+        existing.id === value.id ||
+        existing.kind !== value.kind ||
+        existing.status === 'anulado' ||
+        existing.effectiveTo
+      ) {
+        continue;
+      }
+      if (existing.effectiveFrom >= value.effectiveFrom) continue;
+      existing.effectiveTo = effectiveTo;
+      existing.status = 'historico';
+      existing.updatedAt = new Date().toISOString();
+      this.addAuditLog({
+        module: 'ventas',
+        actionType: 'valor_fiscal_referencia_vigencia_cerrada',
+        title: `Vigencia cerrada automáticamente: ${existing.kind.toUpperCase()}`,
+        description: `El registro ${existing.id} pasó a histórico con vigencia hasta ${effectiveTo}.`,
+        userId: actor.userId,
+        userName: actor.userName,
+        userRole: actor.userRole,
+        severity: 'info',
+        details: { targetId: existing.id, targetCode: existing.kind, changes: [`effectiveTo: ${effectiveTo}`] },
+      });
+    }
+  }
+
+  public createFiscalReferenceValue(
+    data: FiscalReferenceInput,
+    actor: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
+  ): FiscalReferenceValue {
+    const now = new Date().toISOString();
+    const created: FiscalReferenceValue = {
+      ...data,
+      id: `frv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: now,
+      createdBy: actor.userName,
+      updatedAt: now,
+      annulledAt: '',
+      annulledReason: '',
+      annulledBy: '',
+    };
+    this.state.fiscalReferenceValues = this.state.fiscalReferenceValues || [];
+    this.state.fiscalReferenceValues.push(created);
+    this.closeOverlappingFiscalReferenceValues(created, actor);
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'valor_fiscal_referencia_creado',
+      title: `Valor fiscal de referencia creado: ${created.kind.toUpperCase()}`,
+      description: `${created.value}${created.valueUnit === 'percent' ? '%' : ' Bs.'} vigente desde ${created.effectiveFrom}. Solo consulta (#13).`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: created.id, targetCode: created.kind, changes: [`value: ${created.value}`] },
+    });
+    return created;
+  }
+
+  public updateFiscalReferenceValue(
+    id: string,
+    data: FiscalReferenceInput,
+    actor: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
+  ): FiscalReferenceValue | null {
+    const existing = this.state.fiscalReferenceValues?.find((item) => item.id === id);
+    if (!existing) return null;
+    const previous = JSON.stringify(existing);
+    Object.assign(existing, data, { updatedAt: new Date().toISOString() });
+    this.closeOverlappingFiscalReferenceValues(existing, actor);
+    if (JSON.stringify(existing) === previous) return existing;
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'valor_fiscal_referencia_actualizado',
+      title: `Valor fiscal de referencia actualizado: ${existing.kind.toUpperCase()}`,
+      description: `Vigencia desde ${existing.effectiveFrom}; valor ${existing.value}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: existing.id, targetCode: existing.kind, changes: ['datos del valor de referencia'] },
+    });
+    return existing;
+  }
+
+  public annulFiscalReferenceValue(
+    id: string,
+    reason: string,
+    actor: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
+  ): FiscalReferenceValue | null {
+    const existing = this.state.fiscalReferenceValues?.find((item) => item.id === id);
+    if (!existing) return null;
+    if (existing.status === 'anulado') return existing;
+    existing.status = 'anulado';
+    existing.annulledAt = new Date().toISOString();
+    existing.annulledReason = reason;
+    existing.annulledBy = actor.userName;
+    existing.updatedAt = existing.annulledAt;
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'valor_fiscal_referencia_anulado',
+      title: `Valor fiscal de referencia anulado: ${existing.kind.toUpperCase()}`,
+      description: `Motivo: ${reason}. El registro se conserva para historial.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: { targetId: existing.id, targetCode: existing.kind, changes: [`status: anulado`, `motivo: ${reason}`] },
+    });
+    return existing;
+  }
+
+  public getAccountingBookSettings(): AccountingBookSettings {
+    ensureFiscalPhaseZeroSeeds(this.state);
+    return {...this.state.accountingBookSettings};
+  }
+
+  public updateAccountingBookSettings(
+    data: AccountingBookSettingsInput,
+    actor: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
+  ): AccountingBookSettings {
+    ensureFiscalPhaseZeroSeeds(this.state);
+    const updated: AccountingBookSettings = {
+      ...this.state.accountingBookSettings,
+      ...data,
+      id: 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: actor.userName,
+    };
+    this.state.accountingBookSettings = updated;
+    this.addAuditLog({
+      module: 'ventas',
+      actionType: 'configuracion_libros_actualizada',
+      title: 'Parámetros de libros contables actualizados',
+      description: `Formatos: ${updated.approvedFormats}; paginación: ${updated.pagination || 'pendiente'}; firma: ${updated.signatureText || 'pendiente'}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetCode: 'accounting_book_settings', changes: ['parámetros de libros'] },
+    });
+    return updated;
+  }
+
   // --- FISCAL INVOICES ---
   /** Invoices for a given period (or every invoice when no period is given). */
   public getFiscalInvoices(year?: number, month?: number): FiscalInvoice[] {
@@ -4279,6 +5305,17 @@ export class ErpDatabase {
       order.exchangeRateUsed <= 0
     ) {
       throw new Error('La factura requiere una tasa BCV positiva y válida.');
+    }
+
+    // Misma regla que al crear el pedido: el plazo solo aplica a crédito y
+    // debe ser positivo; en contado se fuerza a cero.
+    const invoiceSaleCondition = order.saleCondition ?? 'contado';
+    const invoiceCreditDays =
+      invoiceSaleCondition === 'credito'
+        ? Math.max(0, Math.round(Number(order.creditDays) || 0))
+        : 0;
+    if (invoiceSaleCondition === 'credito' && invoiceCreditDays <= 0) {
+      throw new Error('Una factura a crédito requiere un plazo mayor a cero.');
     }
 
     const serie = fiscal.invoiceSerie || 'A';
@@ -4332,6 +5369,9 @@ export class ErpDatabase {
       controlNumber,
       saleCondition: order.saleCondition ?? 'contado',
       paymentMethod: order.paymentMethod ?? 'efectivo_bs',
+      // El plazo se congela en la factura para que el vencimiento no cambie si
+      // luego se edita el pedido. Cero cuando es de contado.
+      creditDays: invoiceCreditDays,
       salesOrderId: order.id,
       salesOrderNumber: order.orderNumber,
       emitterSnapshot: {
@@ -4379,6 +5419,7 @@ export class ErpDatabase {
       nextInvoiceNumber: invoiceNumber + 1,
       nextControlNumber: controlNumber + 1,
     };
+    this.recordAutomaticEntryForInvoice(invoice);
 
     this.addAuditLog({
       module: 'ventas',
@@ -4936,6 +5977,13 @@ export class ErpDatabase {
       reconciliation: {
         salesDifference: Number((salesTotal - expectedSalesTotal).toFixed(2)),
         purchaseDifference: Number((purchaseTotals.total - eligibleExpenseTotal).toFixed(2)),
+        taxDebit: Number(salesTax.toFixed(2)),
+        taxCredit: Number(
+          Math.max(0, purchaseTotals.taxAmount - purchaseTotals.vatWithholding).toFixed(2)
+        ),
+        netTaxPayable: Number(
+          (salesTax - Math.max(0, purchaseTotals.taxAmount - purchaseTotals.vatWithholding)).toFixed(2)
+        ),
       },
     };
   }
@@ -5548,6 +6596,7 @@ export class ErpDatabase {
     };
 
     this.state.expenses.unshift(newExpense);
+    this.recordAutomaticEntryForExpense(newExpense);
     return newExpense;
   }
 
@@ -5559,6 +6608,343 @@ export class ErpDatabase {
     this.assertFiscalPeriodOpen(year, month);
     this.state.expenses.splice(idx, 1);
     return true;
+  }
+
+  /**
+   * Marks/unmarks an expense as a fiscal-book purchase source. Called from the
+   * Fiscal tab, so the change is audited and blocked for closed periods just
+   * like edits made in the expenses module.
+   */
+  public setExpenseFiscalEligibility(
+    id: string,
+    fiscalBookEligible: boolean,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Expense | null {
+    const expense = (this.state.expenses || []).find((item) => item.id === id);
+    if (!expense) return null;
+    const [year, month] = expense.date.split('-').map(Number);
+    this.assertFiscalPeriodOpen(year, month);
+    if (expense.fiscalBookEligible === fiscalBookEligible) return expense;
+    const previous = expense.fiscalBookEligible;
+    expense.fiscalBookEligible = fiscalBookEligible;
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'gasto_elegibilidad_actualizada',
+      title: `Elegibilidad fiscal actualizada: ${expense.expenseNumber}`,
+      description: `${expense.expenseNumber} ${fiscalBookEligible ? 'incluido' : 'excluido'} del Libro de Compras${fiscalBookEligible ? '' : ' (el crédito fiscal deja de computarse)'}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: expense.id,
+        targetCode: expense.expenseNumber,
+        referenceDoc: expense.documentNumber || '',
+        amount: expense.amountUsd,
+        year,
+        month,
+        changes: [`Libro de Compras: ${previous ? 'sí' : 'no'} → ${fiscalBookEligible ? 'sí' : 'no'}`],
+      },
+    });
+    return expense;
+  }
+
+  // --- CUENTAS POR PAGAR (facturas de proveedores) ---
+
+  public getPayables(): Payable[] {
+    return this.state.payables || [];
+  }
+
+  public getPayable(id: string): Payable | undefined {
+    return this.getPayables().find((payable) => payable.id === id);
+  }
+
+  public getPayablePayments(payableId?: string): PayablePayment[] {
+    const payments = this.state.payablePayments || [];
+    const filtered = payableId ? payments.filter((item) => item.payableId === payableId) : payments;
+    return [...filtered].sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  }
+
+  /** Saldo de una factura: total menos la suma de pagos registrados. */
+  public payableBalance(payable: Payable): {
+    totalUsd: number;
+    paidUsd: number;
+    balanceUsd: number;
+  } {
+    const round = (value: number): number =>
+      Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
+    const totalUsd = round(Number(payable.amountUsd) || 0);
+    const paidUsd = round(
+      this.getPayablePayments(payable.id).reduce(
+        (sum, payment) => sum + (Number(payment.amountUsd) || 0),
+        0
+      )
+    );
+    return {
+      totalUsd,
+      paidUsd,
+      balanceUsd: payable.status === 'anulada' ? 0 : Math.max(0, round(totalUsd - paidUsd)),
+    };
+  }
+
+  public addPayable(
+    data: Omit<
+      Payable,
+      'id' | 'payableNumber' | 'createdAt' | 'updatedAt' | 'status' | 'exchangeRateUsed' | 'amountBs'
+    > & {
+      status?: PayableStatus;
+      exchangeRateUsed?: number;
+      amountBs?: number;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Payable {
+    if (!this.state.payables) this.state.payables = [];
+    if (!this.state.payablePayments) this.state.payablePayments = [];
+
+    const amountUsd = Number(data.amountUsd);
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+      throw new Error('El monto de la factura debe ser mayor a cero');
+    }
+    if (data.dueDate < data.issueDate) {
+      throw new Error('El vencimiento no puede ser anterior a la emisión');
+    }
+
+    const supplier = data.supplierId
+      ? this.getSuppliers().find((candidate) => candidate.id === data.supplierId)
+      : undefined;
+    const year = data.issueDate.slice(0, 4) || String(new Date().getFullYear());
+    const next = this.getPayables().reduce((max, payable) => {
+      const match = new RegExp(`^FAP-${year}-(\\d+)$`).exec(payable.payableNumber);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0) + 1;
+    const now = new Date().toISOString();
+    const rate = Number(data.exchangeRateUsed) || this.state.exchangeRates.currentUsd || 48.35;
+    const actor = this.manualOrderActor(actorInput);
+
+    const payable: Payable = {
+      ...data,
+      id: 'pay-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5),
+      payableNumber: `FAP-${year}-${String(next).padStart(3, '0')}`,
+      supplierName: supplier?.businessName || data.supplierName,
+      taxId: supplier?.taxId || data.taxId,
+      amountUsd: Number(amountUsd.toFixed(2)),
+      exchangeRateUsed: rate,
+      amountBs: Number((amountUsd * rate).toFixed(2)),
+      status: data.status === 'anulada' ? 'anulada' : 'pendiente',
+      createdAt: now,
+      updatedAt: now,
+      createdBy: actor.userName,
+    };
+    this.state.payables.unshift(payable);
+
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'payable_registrado',
+      title: `Factura por pagar registrada: ${payable.payableNumber}`,
+      description: `${payable.supplierName} · Factura ${payable.invoiceNumber} por $${payable.amountUsd.toFixed(2)}. Vence ${payable.dueDate}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: payable.id,
+        targetCode: payable.payableNumber,
+        itemName: payable.supplierName,
+        costUsd: payable.amountUsd,
+        referenceDoc: payable.invoiceNumber,
+        payableId: payable.id,
+      },
+    });
+    return payable;
+  }
+
+  public updatePayable(
+    id: string,
+    updates: Partial<Payable>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Payable | null {
+    const payable = this.getPayable(id);
+    if (!payable) return null;
+    const actor = this.manualOrderActor(actorInput);
+    const previousStatus = payable.status;
+
+    if (updates.status === 'anulada') {
+      if (previousStatus === 'anulada') return payable;
+      const balance = this.payableBalance(payable);
+      if (balance.balanceUsd <= 0.01) {
+        throw new Error('No se puede anular una factura ya saldada');
+      }
+      payable.status = 'anulada';
+    } else if (updates.status && updates.status !== previousStatus) {
+      if (previousStatus === 'anulada') {
+        throw new Error('No se puede reactivar una factura anulada');
+      }
+      if (updates.status === 'pagada' && this.payableBalance(payable).balanceUsd > 0.01) {
+        throw new Error('La factura aún tiene saldo pendiente');
+      }
+      payable.status = updates.status;
+    }
+
+    for (const field of ['dueDate', 'notes', 'category', 'taxAmountUsd'] as const) {
+      if (updates[field] !== undefined) {
+        (payable as unknown as Record<string, unknown>)[field] = updates[field];
+      }
+    }
+    payable.updatedAt = new Date().toISOString();
+
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: payable.status === 'anulada' ? 'payable_anulado' : 'payable_actualizado',
+      title: `${payable.status === 'anulada' ? 'Factura por pagar anulada' : 'Factura por pagar actualizada'}: ${payable.payableNumber}`,
+      description: `${payable.supplierName} · ${payable.payableNumber}. Estado: ${previousStatus} → ${payable.status}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: payable.status === 'anulada' ? 'warning' : 'info',
+      details: {
+        targetId: payable.id,
+        targetCode: payable.payableNumber,
+        itemName: payable.supplierName,
+        referenceDoc: payable.invoiceNumber,
+        payableId: payable.id,
+      },
+    });
+    return payable;
+  }
+
+  /**
+   * Registra un pago bancario. Los pagos parciales no generan gasto; al saldar
+   * la factura se crea un único comprobante de egreso vinculado (`payableId`)
+   * que alimenta el Libro de Compras.
+   */
+  public recordPayablePayment(
+    id: string,
+    data: {
+      bankCode: string;
+      bankName: string;
+      paymentMethod: PayablePayment['paymentMethod'];
+      reference: string;
+      amountUsd?: number;
+      exchangeRateUsed?: number;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): { payable: Payable; payment: PayablePayment; expense?: Expense } {
+    const actor = this.manualOrderActor(actorInput);
+    const payable = this.getPayable(id);
+    if (!payable) throw new Error('Factura por pagar no encontrada');
+    if (payable.status === 'anulada') throw new Error('La factura está anulada');
+
+    const balance = this.payableBalance(payable);
+    if (balance.balanceUsd <= 0.01) {
+      throw new Error('La factura ya fue pagada en su totalidad');
+    }
+
+    const reference = data.reference.trim();
+    if (!reference) throw new Error('La referencia de pago es obligatoria');
+    if (!data.bankCode || !data.bankName) {
+      throw new Error('El banco pagador es obligatorio');
+    }
+    if (
+      this.getPayablePayments(payable.id).some(
+        (entry) => entry.reference.trim().toLowerCase() === reference.toLowerCase()
+      )
+    ) {
+      throw new Error('La referencia de pago ya fue registrada para esta factura');
+    }
+
+    const rate = Number(data.exchangeRateUsed) || payable.exchangeRateUsed || 48.35;
+    const amountUsd = Number((data.amountUsd ?? balance.balanceUsd).toFixed(2));
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+      throw new Error('El monto del pago debe ser mayor a cero');
+    }
+    if (amountUsd > balance.balanceUsd + 0.01) {
+      throw new Error(`El monto supera el saldo pendiente ($${balance.balanceUsd.toFixed(2)})`);
+    }
+
+    const fullyPaid = balance.balanceUsd - amountUsd <= 0.01;
+    let expense: Expense | undefined;
+    if (fullyPaid && !payable.expenseId) {
+      const category = this.getExpenseCategories().find(
+        (candidate) => candidate.id === payable.category || candidate.name === payable.category
+      );
+      const taxAmountUsd = Number(payable.taxAmountUsd) || 0;
+      const taxRatePercent = this.state.fiscalSettings?.taxRatePercent;
+      expense = this.addExpense({
+        date: new Date().toISOString().slice(0, 10),
+        concept: `Pago de factura ${payable.invoiceNumber} · ${payable.supplierName}`,
+        category: payable.category || 'otros',
+        categoryLabel: category?.name || payable.category || 'Otros',
+        amountUsd: balance.totalUsd,
+        exchangeRateUsed: payable.exchangeRateUsed,
+        amountBs: payable.amountBs,
+        supplierOrBeneficiary: payable.supplierName,
+        taxId: payable.taxId,
+        documentType: 'factura_fiscal',
+        documentNumber: `${payable.invoiceNumber}${payable.controlNumber ? ` / ${payable.controlNumber}` : ''}`,
+        paymentMethod: data.paymentMethod,
+        paymentReference: reference,
+        issuingBankCode: data.bankCode,
+        issuingBankName: data.bankName,
+        notes: `Generado al saldar ${payable.payableNumber}.`,
+        registeredBy: actor.userName,
+        taxCategory: taxAmountUsd > 0 ? 'con_factura_iva' : 'exento',
+        taxRatePercent: taxAmountUsd > 0 ? taxRatePercent : undefined,
+        taxAmountUsd: taxAmountUsd || undefined,
+        taxAmountBs: taxAmountUsd > 0 ? Number((taxAmountUsd * payable.exchangeRateUsed).toFixed(2)) : undefined,
+        accountingAccountCode: category?.accountingAccountCode,
+        accountingAccountName: category?.accountingAccountName,
+        fiscalBookEligible: true,
+        payableId: payable.id,
+      });
+      payable.expenseId = expense.id;
+    }
+
+    const payment: PayablePayment = {
+      id: 'PAG-' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5),
+      payableId: payable.id,
+      bankCode: data.bankCode,
+      bankName: data.bankName,
+      paymentMethod: data.paymentMethod,
+      reference,
+      amountUsd,
+      amountBs: Number((amountUsd * rate).toFixed(2)),
+      exchangeRateUsed: rate,
+      paidAt: new Date().toISOString(),
+      paidBy: actor.userName,
+    };
+    if (!this.state.payablePayments) this.state.payablePayments = [];
+    this.state.payablePayments.push(payment);
+
+    const remaining = Math.max(0, Number((balance.balanceUsd - amountUsd).toFixed(2)));
+    const newStatus: PayableStatus = fullyPaid ? 'pagada' : 'parcial';
+    payable.status = newStatus;
+    payable.updatedAt = payment.paidAt;
+
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'payable_pago_registrado',
+      title: `${fullyPaid ? 'Pago registrado' : 'Pago parcial registrado'}: ${payable.payableNumber}`,
+      description: `$${amountUsd.toFixed(2)} pagados a ${payable.supplierName} en ${data.bankName} (${data.bankCode}) · Ref. ${reference}. Saldo restante: $${remaining.toFixed(2)}.${expense ? ` Gasto ${expense.expenseNumber} generado para el Libro de Compras.` : ''}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'success',
+      details: {
+        targetId: payable.id,
+        targetCode: payable.payableNumber,
+        itemName: payable.supplierName,
+        costUsd: amountUsd,
+        remainingUsd: remaining,
+        bankCode: data.bankCode,
+        bankName: data.bankName,
+        referenceDoc: reference,
+        payableId: payable.id,
+      },
+    });
+
+    this.recordAutomaticEntryForPayablePayment(payable, payment, amountUsd);
+    return {payable, payment, expense};
   }
 
   // --- EXPENSE CATEGORIES & BUDGETS ---
@@ -5604,6 +6990,533 @@ export class ErpDatabase {
     this.state.expenseCategories.splice(idx, 1);
     return true;
   }
+
+  // --- CONTABILIDAD (FASE 1): PLAN DE CUENTAS Y ASIENTOS ---
+  private ensureAccountingState(): void {
+    this.state.accounts = this.state.accounts?.length
+      ? this.state.accounts
+      : DEFAULT_ACCOUNTS.map((account) => ({...account}));
+    this.state.accountingEntries = this.state.accountingEntries || [];
+    this.state.accountingPeriods = this.state.accountingPeriods || [];
+  }
+
+  private assertAccountingEnabled(): void {
+    if (this.state.fiscalSettings?.accountingEnabled === false) {
+      throw new Error('El módulo Contabilidad está deshabilitado');
+    }
+  }
+
+  private accountForCode(code: string): Account {
+    this.ensureAccountingState();
+    const account = this.state.accounts.find((item) => item.code === code && item.active);
+    if (!account) throw new Error(`La cuenta contable ${code} no existe o está inactiva`);
+    return account;
+  }
+
+  public getAccounts(): Account[] {
+    this.ensureAccountingState();
+    return this.state.accounts;
+  }
+
+  public getAccountByCode(code: string): Account | undefined {
+    return this.getAccounts().find((item) => item.code === code);
+  }
+
+  public addAccount(
+    data: Omit<Account, 'id' | 'createdAt' | 'updatedAt' | 'isSystem'>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Account {
+    this.assertAccountingEnabled();
+    this.ensureAccountingState();
+    if (this.state.accounts.some((item) => item.code === data.code.trim())) {
+      throw new Error(`El código de cuenta ${data.code} ya está registrado`);
+    }
+    if (data.parentCode && !this.state.accounts.some((item) => item.code === data.parentCode)) {
+      throw new Error(`La cuenta padre ${data.parentCode} no existe`);
+    }
+    const now = new Date().toISOString();
+    const account: Account = {
+      ...data,
+      id: `acc-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
+      code: data.code.trim(),
+      level: data.parentCode
+        ? (this.getAccountByCode(data.parentCode)?.level || 0) + 1
+        : 1,
+      active: data.active !== false,
+      isSystem: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.state.accounts.push(account);
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'cuenta_creada',
+      title: `Cuenta contable creada: ${account.code}`,
+      description: `${account.code} · ${account.name}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {accountCode: account.code},
+    });
+    return account;
+  }
+
+  public updateAccount(
+    id: string,
+    updates: Partial<Pick<Account, 'name' | 'description' | 'active'>>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Account | null {
+    this.assertAccountingEnabled();
+    this.ensureAccountingState();
+    const account = this.state.accounts.find((item) => item.id === id);
+    if (!account) return null;
+    if (updates.name !== undefined) account.name = updates.name.trim();
+    if (updates.description !== undefined) account.description = updates.description;
+    if (updates.active !== undefined) account.active = updates.active;
+    account.updatedAt = new Date().toISOString();
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'cuenta_actualizada',
+      title: `Cuenta contable actualizada: ${account.code}`,
+      description: `${account.code} · ${account.name}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {accountCode: account.code},
+    });
+    return account;
+  }
+
+  public getAccountingEntries(): AccountingEntry[] {
+    this.ensureAccountingState();
+    return [...this.state.accountingEntries].sort((a, b) =>
+      `${a.date}${a.entryNumber}`.localeCompare(`${b.date}${b.entryNumber}`)
+    );
+  }
+
+  public getAccountingEntry(id: string): AccountingEntry | undefined {
+    this.ensureAccountingState();
+    return this.state.accountingEntries.find((item) => item.id === id);
+  }
+
+  public getAccountingPeriods(): AccountingPeriod[] {
+    this.ensureAccountingState();
+    return [...this.state.accountingPeriods].sort((a, b) => a.key.localeCompare(b.key));
+  }
+
+  /** Genera un libro contable provisional sin persistir ni calcular impuestos. */
+  public getAccountingBook(
+    type: AccountingBookType,
+    year: number,
+    month: number,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingBookReport {
+    this.assertAccountingEnabled();
+    this.ensureAccountingState();
+    const documentRates: Record<string, number> = {};
+    for (const invoice of this.state.fiscalInvoices) {
+      if (Number.isFinite(invoice.exchangeRateUsed) && invoice.exchangeRateUsed > 0) {
+        documentRates[invoice.id] = invoice.exchangeRateUsed;
+      }
+    }
+    for (const expense of this.state.expenses) {
+      if (Number.isFinite(expense.exchangeRateUsed) && expense.exchangeRateUsed > 0) {
+        documentRates[expense.id] = expense.exchangeRateUsed;
+      }
+    }
+    return buildAccountingBook({
+      type,
+      year,
+      month,
+      accounts: this.getAccounts(),
+      entries: this.getAccountingEntries(),
+      periods: this.getAccountingPeriods(),
+      fiscalSettings: this.state.fiscalSettings,
+      fiscalBooks: this.getFiscalBooks(year, month),
+      salesOrders: this.getSalesOrders(),
+      payables: this.getPayables(),
+      payablePayments: this.getPayablePayments(),
+      expenses: this.getExpenses(),
+      rawMaterials: this.getRawMaterials(),
+      finishedGoods: this.getFinishedGoods(),
+      inventoryMovements: this.getMovements(),
+      exchangeRateUsed: this.getExchangeRates().currentUsd,
+      documentRates,
+      bookSettings: this.state.accountingBookSettings,
+      actor: actorInput,
+    });
+  }
+
+  public ensureAccountingPeriod(key: string): AccountingPeriod {
+    this.ensureAccountingState();
+    const existing = this.state.accountingPeriods.find((item) => item.key === key);
+    if (existing) return existing;
+    const [year, month] = key.split('-').map(Number);
+    const endDate = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+    const period: AccountingPeriod = {
+      id: key,
+      key,
+      startDate: `${key}-01`,
+      endDate,
+      status: 'abierto',
+    };
+    this.state.accountingPeriods.push(period);
+    return period;
+  }
+
+  public closeAccountingPeriod(
+    key: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingPeriod {
+    this.assertAccountingEnabled();
+    const period = this.ensureAccountingPeriod(key);
+    if (period.status === 'cerrado') return period;
+    if (this.getAccountingEntries().some((entry) =>
+      entry.periodKey === key && entry.status === 'borrador'
+    )) {
+      throw new Error('No puede cerrar el período mientras existan asientos en borrador');
+    }
+    const actor = this.manualOrderActor(actorInput);
+    period.status = 'cerrado';
+    period.closedAt = new Date().toISOString();
+    period.closedBy = actor.userName;
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'periodo_contable_cerrado',
+      title: `Período contable cerrado: ${key}`,
+      description: `El período ${key} quedó cerrado para nuevos asientos.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {periodKey: key},
+    });
+    return period;
+  }
+
+  public openAccountingPeriod(
+    key: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingPeriod {
+    this.assertAccountingEnabled();
+    const period = this.ensureAccountingPeriod(key);
+    if (period.status === 'abierto') return period;
+    const actor = this.manualOrderActor(actorInput);
+    period.status = 'abierto';
+    delete period.closedAt;
+    delete period.closedBy;
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'periodo_contable_abierto',
+      title: `Período contable abierto: ${key}`,
+      description: `El período ${key} volvió a aceptar asientos.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {periodKey: key},
+    });
+    return period;
+  }
+
+  public createAccountingEntry(
+    data: {
+      date: string;
+      description: string;
+      sourceType?: AccountingEntrySource;
+      sourceId?: string;
+      exchangeRateUsed?: number;
+      status?: 'borrador' | 'confirmado';
+      lines: {accountCode: string; debit?: number; credit?: number; memo?: string}[];
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingEntry {
+    this.assertAccountingEnabled();
+    this.ensureAccountingState();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+      throw new Error('La fecha del asiento debe tener formato YYYY-MM-DD');
+    }
+    const periodKey = data.date.slice(0, 7);
+    const period = this.ensureAccountingPeriod(periodKey);
+    if (period.status === 'cerrado') {
+      throw new Error(`El período ${periodKey} está cerrado`);
+    }
+    if (!data.lines || data.lines.length < 2) {
+      throw new Error('El asiento requiere al menos dos líneas contables');
+    }
+    const actor = this.manualOrderActor(actorInput);
+    const lines: AccountingEntryLine[] = data.lines.map((line, index) => {
+      const account = this.accountForCode(line.accountCode);
+      const debit = Number(line.debit) || 0;
+      const credit = Number(line.credit) || 0;
+      if (debit < 0 || credit < 0) {
+        throw new Error('Los montos del asiento no pueden ser negativos');
+      }
+      if ((debit > 0) === (credit > 0)) {
+        throw new Error(`La línea ${index + 1} debe ser débito o crédito, no ambos ni ninguno`);
+      }
+      return {
+        id: `ail-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 5)}`,
+        accountId: account.id,
+        accountCode: account.code,
+        accountName: account.name,
+        debit: Number(debit.toFixed(2)),
+        credit: Number(credit.toFixed(2)),
+        memo: line.memo,
+      };
+    });
+    const totalDebit = Number(lines.reduce((sum, line) => sum + line.debit, 0).toFixed(2));
+    const totalCredit = Number(lines.reduce((sum, line) => sum + line.credit, 0).toFixed(2));
+    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+      throw new Error(
+        `El asiento no está balanceado: débitos $${totalDebit.toFixed(2)} vs créditos $${totalCredit.toFixed(2)}`
+      );
+    }
+    const year = data.date.slice(0, 4);
+    const count = this.state.accountingEntries.filter((entry) =>
+      entry.entryNumber.startsWith(`AS-${year}-`)
+    ).length + 1;
+    const now = new Date().toISOString();
+    const status = data.status === 'confirmado' ? 'confirmado' : 'borrador';
+    const entry: AccountingEntry = {
+      id: `as-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      entryNumber: `AS-${year}-${String(count).padStart(4, '0')}`,
+      date: data.date,
+      description: data.description.trim(),
+      sourceType: data.sourceType || 'manual',
+      sourceId: data.sourceId,
+      status,
+      lines,
+      totalDebit,
+      totalCredit,
+      currency: 'USD',
+      exchangeRateUsed: data.exchangeRateUsed || this.state.exchangeRates.currentUsd || 48.35,
+      periodKey,
+      createdBy: actor.userName,
+      createdAt: now,
+      updatedAt: now,
+      confirmedAt: status === 'confirmado' ? now : undefined,
+    };
+    this.state.accountingEntries.push(entry);
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: status === 'confirmado' ? 'asiento_automatico' : 'asiento_creado',
+      title: `Asiento ${status === 'confirmado' ? 'confirmado' : 'creado'}: ${entry.entryNumber}`,
+      description: entry.description,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {entryNumber: entry.entryNumber, periodKey, sourceType: entry.sourceType},
+    });
+    return entry;
+  }
+
+  public confirmAccountingEntry(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingEntry {
+    this.assertAccountingEnabled();
+    const entry = this.getAccountingEntry(id);
+    if (!entry) throw new Error('Asiento contable no encontrado');
+    if (this.ensureAccountingPeriod(entry.periodKey).status === 'cerrado') {
+      throw new Error(`El período ${entry.periodKey} está cerrado`);
+    }
+    if (entry.status !== 'borrador') return entry;
+    const actor = this.manualOrderActor(actorInput);
+    entry.status = 'confirmado';
+    entry.confirmedAt = new Date().toISOString();
+    entry.updatedAt = entry.confirmedAt;
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'asiento_confirmado',
+      title: `Asiento confirmado: ${entry.entryNumber}`,
+      description: entry.description,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {entryNumber: entry.entryNumber, periodKey: entry.periodKey},
+    });
+    return entry;
+  }
+
+  public annulAccountingEntry(
+    id: string,
+    reason: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingEntry {
+    this.assertAccountingEnabled();
+    const entry = this.getAccountingEntry(id);
+    if (!entry) throw new Error('Asiento contable no encontrado');
+    if (!reason.trim()) throw new Error('El motivo de anulación es obligatorio');
+    if (entry.status === 'anulado') return entry;
+    if (this.ensureAccountingPeriod(entry.periodKey).status === 'cerrado') {
+      throw new Error(`El período ${entry.periodKey} está cerrado`);
+    }
+    const actor = this.manualOrderActor(actorInput);
+    entry.status = 'anulado';
+    entry.annulledAt = new Date().toISOString();
+    entry.annulmentReason = reason.trim();
+    entry.updatedAt = entry.annulledAt;
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'asiento_anulado',
+      title: `Asiento anulado: ${entry.entryNumber}`,
+      description: reason.trim(),
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {entryNumber: entry.entryNumber, periodKey: entry.periodKey, reason: reason.trim()},
+    });
+    return entry;
+  }
+
+  /**
+   * Asiento automático idempotente por origen. Se usa desde los mutadores de
+   * ventas, cobros, gastos, CxP e inventario para alimentar Diario y Mayor.
+   */
+  private recordAutomaticEntry(data: {
+    sourceType: AccountingEntrySource;
+    sourceId: string;
+    date: string;
+    description: string;
+    lines: {accountCode: string; debit?: number; credit?: number; memo?: string}[];
+    exchangeRateUsed?: number;
+  }): AccountingEntry | null {
+    if (this.state.fiscalSettings?.accountingEnabled === false) return null;
+    this.ensureAccountingState();
+    const duplicate = this.state.accountingEntries.find((entry) =>
+      entry.sourceType === data.sourceType && entry.sourceId === data.sourceId
+    );
+    if (duplicate) return duplicate;
+    return this.createAccountingEntry({
+      ...data,
+      status: 'confirmado',
+    });
+  }
+
+  private recordAutomaticEntryForExpense(expense: Expense): void {
+    if (expense.payableId) return; // El pago CxP genera su propio asiento.
+    const category = this.getExpenseCategories().find((item) =>
+      item.id === expense.category || item.name === expense.category
+    );
+    const configured = category?.accountingAccountCode;
+    const expenseCode = configured && this.getAccountByCode(configured)
+      ? configured
+      : /sueldo|salario|nomina|nómina/i.test(expense.category)
+        ? '5.02.01'
+        : /alquiler/i.test(expense.category)
+          ? '5.01.01'
+          : /transporte/i.test(expense.category)
+            ? '5.01.03'
+            : '5.01.02';
+    const tax = Number(expense.taxAmountUsd) || 0;
+    const net = Number((expense.amountUsd - tax).toFixed(2));
+    const lines: {accountCode: string; debit?: number; credit?: number}[] = [
+      {accountCode: expenseCode, debit: Math.max(0, net)},
+    ];
+    if (tax > 0 && expense.fiscalBookEligible) {
+      lines.push({accountCode: '1.04.01', debit: tax});
+    }
+    lines.push({
+      accountCode:
+        expense.paymentMethod === 'efectivo_usd' || expense.paymentMethod === 'efectivo_bs'
+          ? '1.01.01'
+          : '1.01.02',
+      credit: Number((Math.max(0, net) + (tax > 0 && expense.fiscalBookEligible ? tax : 0)).toFixed(2)),
+    });
+    if (lines[lines.length - 1].credit === 0) return;
+    this.recordAutomaticEntry({
+      sourceType: 'gasto',
+      sourceId: expense.id,
+      date: expense.date,
+      description: `Gasto ${expense.expenseNumber} · ${expense.concept}`,
+      lines,
+      exchangeRateUsed: expense.exchangeRateUsed,
+    });
+  }
+
+  private recordAutomaticEntryForMovement(movement: InventoryMovement): void {
+    const codes =
+      movement.type === 'entrada'
+        ? {debit: '1.03.01', credit: '2.01.01'}
+        : movement.type === 'salida_produccion'
+          ? {debit: '6.01.01', credit: '1.03.01'}
+          : {debit: '5.01.02', credit: '1.03.01'};
+    this.recordAutomaticEntry({
+      sourceType: 'inventario',
+      sourceId: movement.id,
+      date: movement.date,
+      description: `Movimiento ${movement.type} · ${movement.materialName}`,
+      lines: [
+        {accountCode: codes.debit, debit: Number(movement.totalCost.toFixed(2))},
+        {accountCode: codes.credit, credit: Number(movement.totalCost.toFixed(2))},
+      ],
+      exchangeRateUsed: movement.exchangeRateUsed,
+    });
+  }
+
+  private recordAutomaticEntryForInvoice(invoice: FiscalInvoice): void {
+    const lines: {accountCode: string; debit?: number; credit?: number}[] = [
+      {accountCode: '1.02.01', debit: Number(invoice.total.toFixed(2))},
+      {accountCode: '4.01.01', credit: Number(invoice.subtotal.toFixed(2))},
+    ];
+    const tax = Number(invoice.taxAmount) || 0;
+    if (tax > 0) lines.push({accountCode: '2.02.01', credit: Number(tax.toFixed(2))});
+    this.recordAutomaticEntry({
+      sourceType: 'venta',
+      sourceId: invoice.id,
+      date: invoice.issuedAt.slice(0, 10),
+      description: `Factura fiscal ${invoice.invoiceNumber} · ${invoice.customerSnapshot.businessName}`,
+      lines,
+      exchangeRateUsed: invoice.exchangeRateUsed,
+    });
+  }
+
+  private recordAutomaticEntryForCollection(
+    order: SalesOrder,
+    collection: SalesCollection
+  ): void {
+    const amount = Number(collection.amountUsd.toFixed(2));
+    if (amount <= 0) return;
+    this.recordAutomaticEntry({
+      sourceType: 'cobro',
+      sourceId: collection.id,
+      date: collection.collectedAt.slice(0, 10),
+      description: `Cobro ${order.orderNumber} · Ref. ${collection.reference}`,
+      lines: [
+        {accountCode: '1.01.02', debit: amount},
+        {accountCode: '1.02.01', credit: amount},
+      ],
+      exchangeRateUsed: collection.exchangeRateUsed,
+    });
+  }
+
+  private recordAutomaticEntryForPayablePayment(
+    payable: Payable,
+    payment: PayablePayment,
+    amountUsd: number
+  ): void {
+    const amount = Number(amountUsd.toFixed(2));
+    if (amount <= 0) return;
+    this.recordAutomaticEntry({
+      sourceType: 'pago_cxp',
+      sourceId: payment.id,
+      date: payment.paidAt.slice(0, 10),
+      description: `Pago CxP ${payable.payableNumber} · Ref. ${payment.reference}`,
+      lines: [
+        {accountCode: '2.01.01', debit: amount},
+        {accountCode: '1.01.02', credit: amount},
+      ],
+      exchangeRateUsed: payment.exchangeRateUsed,
+    });
+  }
 }
 
 const rawDbInstance = new ErpDatabase();
@@ -5612,7 +7525,7 @@ const rawDbInstance = new ErpDatabase();
  * Methods that mutate the state. After any of these finish we automatically
  * persist the new state to SQLite. Read‑only `get*` methods are left untouched.
  */
-const MUTATING_METHOD = /^(add|update|delete|create|process|reset|fetch|annul|record)/;
+const MUTATING_METHOD = /^(add|update|delete|create|process|reset|fetch|annul|record|collect|pay|confirm|close|open)/;
 
 export const dbInstance = new Proxy(rawDbInstance, {
   get(target, prop, receiver) {

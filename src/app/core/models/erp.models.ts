@@ -8,12 +8,24 @@ export type AppModuleId =
   | 'sales'
   | 'payroll'
   | 'expenses'
+  | 'accounting'
   | 'suppliers'
+  | 'supplier_types'
+  | 'material_categories'
   | 'settings'
   | 'architecture'
   | 'activation';
 
-export type SettingsSection = 'users' | 'roles' | 'simulator' | 'fiscal' | 'notifications';
+export type SettingsSection =
+  | 'users'
+  | 'roles'
+  | 'simulator'
+  | 'fiscal'
+  | 'fiscalReferences'
+  | 'notifications'
+  | 'supplierTypes'
+  | 'materialCategories'
+  | 'operations';
 
 export interface NotificationRecipient {
   id: string;
@@ -158,15 +170,32 @@ export interface LicenseAlert {
 }
 
 export type UnitOfMeasure = 'kg' | 'g' | 'l' | 'ml' | 'unidades' | 'cajas' | 'paquetes';
-export type MaterialCategory = 'fruta' | 'aditivo' | 'empaque' | 'quimico';
+
+/** Categoría de materia prima. El catálogo editable vive en `material_categories`. */
+export type MaterialCategory = string;
+
+/** Fila del catálogo administrable de categorías de materia prima. */
+export interface MaterialCategoryConfig {
+  id: string;
+  code: string;
+  label: string;
+  description: string;
+  color: string;
+  active: boolean;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type PresentationType =
   | 'pequena_250g'
+  | 'pequena_300g'
   | 'grande_1000g'
   | 'galon_5kg'
   | 'balde_15kg'
   | 'pote_20kg'
   | 'caja_20kg'
+  | 'caja_6kg'
   | 'otra';
 
 export interface RawMaterial {
@@ -195,6 +224,11 @@ export interface InventoryMovement {
   costPerUnitBs?: number; // Costo unitario en Bs.
   totalCostBs?: number; // Total en Bs.
   referenceDoc?: string; // ej: Lote L-2026-10, Factura F-442
+  /** Proveedor maestro al que pertenece la factura de compra. */
+  supplierId?: string;
+  supplierNameSnapshot?: string;
+  supplierTaxIdSnapshot?: string;
+  notes?: string;
   date: string;
   performedBy: string;
 }
@@ -335,6 +369,8 @@ export interface ProductionSheetTotals {
   waterGasOil: number;
   obtainedUnits: number;
   totalKg: number;
+  /** Ingredient mass minus captured kilos, excluding water/gasoil. */
+  mermaKg?: number;
   /** Units represented by totalKg ÷ presentationKg (snapshot at save time). */
   estimatedUnits?: number;
 }
@@ -433,13 +469,21 @@ export interface Customer {
   paymentTerms: string; // Contado, 7 días, 15 días
 }
 
-export type SupplierType =
-  | 'fruta'
-  | 'aditivo'
-  | 'empaque'
-  | 'quimico'
-  | 'servicios'
-  | 'otro';
+/** Tipo de proveedor. El catálogo editable vive en `supplier_types`. */
+export type SupplierType = string;
+
+/** Fila del catálogo administrable de tipos de proveedor. */
+export interface SupplierTypeConfig {
+  id: string;
+  code: string;
+  label: string;
+  description: string;
+  color: string;
+  active: boolean;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Supplier {
   id: string;
@@ -459,6 +503,28 @@ export interface Supplier {
   createdAt: string;
 }
 
+/** Seed compartido entre la BD, la API y los fallbacks de la UI. */
+export const DEFAULT_SUPPLIER_TYPES: SupplierTypeConfig[] = [
+  {id: 'st-fruta', code: 'fruta', label: 'Fruta / Pulpa', description: 'Fruta fresca, pulpas y concentrados', color: 'emerald', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'st-aditivo', code: 'aditivo', label: 'Aditivo / Azúcar', description: 'Azúcares, pectina y aditivos alimentarios', color: 'amber', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'st-empaque', code: 'empaque', label: 'Etiquetas / Empaque general', description: 'Etiquetas, cintas y material de empaque general', color: 'stone', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'st-quimico', code: 'quimico', label: 'Químico / Conservante', description: 'Conservantes, insecticidas y químicos de proceso', color: 'rose', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'st-servicios', code: 'servicios', label: 'Servicios', description: 'Mantenimiento, transporte y servicios varios', color: 'violet', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'st-envases', code: 'envases', label: 'Envases / Frascos y Tapas', description: 'Frascos de vidrio, tapas twist-off y envases', color: 'blue', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'st-cajas', code: 'cajas', label: 'Cajas / Cartón', description: 'Cajas de cartón, estuches y empaques de transporte', color: 'orange', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'st-otro', code: 'otro', label: 'Otro', description: 'Proveedores no clasificados', color: 'stone', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+];
+
+export const DEFAULT_MATERIAL_CATEGORIES: MaterialCategoryConfig[] = [
+  {id: 'mc-fruta', code: 'fruta', label: 'Fruta / Pulpa Natural', description: 'Fruta fresca y pulpas', color: 'emerald', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'mc-aditivo', code: 'aditivo', label: 'Aditivo / Endulzante', description: 'Azúcares y aditivos', color: 'amber', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'mc-quimico', code: 'quimico', label: 'Químico (Pectina / Ácido)', description: 'Pectina, ácido y químicos de proceso', color: 'rose', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'mc-empaque', code: 'empaque', label: 'Etiquetas / Empaque general', description: 'Etiquetas y material de empaque general', color: 'stone', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'mc-envases', code: 'envases', label: 'Envases / Frascos y Tapas', description: 'Frascos de vidrio y tapas', color: 'blue', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'mc-cajas', code: 'cajas', label: 'Cajas / Cartón', description: 'Cajas y estuches de cartón', color: 'orange', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'mc-otro', code: 'otro', label: 'Otro', description: 'Insumos no clasificados', color: 'stone', active: true, isSystem: true, createdAt: '', updatedAt: ''},
+];
+
 export interface SupplierPrice {
   id: string;
   supplierId: string;
@@ -475,7 +541,27 @@ export interface SupplierPrice {
   createdBy?: string;
 }
 
-export type SalesOrderStatus = 'pendiente' | 'en_produccion' | 'listo_despacho' | 'despachado' | 'cobrado';
+export type SalesOrderStatus =
+  | 'pendiente'
+  | 'en_produccion'
+  | 'listo_despacho'
+  | 'despachado'
+  | 'cobrado_parcial'
+  | 'cobrado';
+
+/** Abono bancario registrado contra un pedido de venta. */
+export interface SalesCollection {
+  id: string;
+  bankCode: string;
+  bankName: string;
+  paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+  reference: string;
+  amountUsd: number;
+  amountBs?: number;
+  exchangeRateUsed: number;
+  collectedAt: string;
+  collectedBy: string;
+}
 export type FiscalSaleCondition = 'contado' | 'credito';
 export type FiscalPaymentMethod =
   | 'transferencia_bancaria'
@@ -534,17 +620,10 @@ export interface SalesOrder {
   notes?: string;
   /** Full name of the user that registered the order (audit trail). */
   createdBy?: string;
-  collection?: {
-    bankCode: string;
-    bankName: string;
-    paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
-    reference: string;
-    amountUsd: number;
-    amountBs?: number;
-    exchangeRateUsed: number;
-    collectedAt: string;
-    collectedBy: string;
-  };
+  /** Último cobro registrado. Se conserva por compatibilidad; la fuente de verdad es `collections`. */
+  collection?: SalesCollection;
+  /** Historial completo de abonos del pedido. */
+  collections?: SalesCollection[];
 }
 
 export interface DeliveryNote {
@@ -585,6 +664,7 @@ export interface DeliveryNote {
 
 export type FiscalRegime = 'ordinario' | 'especial';
 export type FiscalBooksFormat = 'xlsx' | 'csv' | 'pdf' | 'txt';
+export type DigitalInvoicingEnvironment = 'pruebas' | 'produccion';
 export type HistoricalOrdersTreatment =
   | 'no_emitir'
   | 'emitir_actual'
@@ -616,9 +696,25 @@ export interface FiscalSettings {
   islrWithholdingAgent: boolean;
   islrWithholdingPercent: number; // % de retención de ISLR
   specialTaxpayer: boolean; // Sujeto Pasivo Especial (SPE)
+  /** Habilita el módulo Contabilidad. El plan de cuentas base es provisional hasta #13. */
+  accountingEnabled: boolean;
+  /** Retenciones de IVA. Permanecen apagadas hasta la validación contable (#13). */
+  vatWithholdingEnabled: boolean;
+  /** Retenciones de ISLR. Permanecen apagadas hasta la validación contable (#13). */
+  islrWithholdingEnabled: boolean;
   booksFormat: FiscalBooksFormat;
   historicalOrdersTreatment: HistoricalOrdersTreatment;
   printNotes: string;
+  /** Solo preparación: no emite ni envía nada al SENIAT todavía. */
+  digitalInvoicingEnabled: boolean;
+  digitalInvoicingProvider: string;
+  digitalInvoicingProviderTaxId: string;
+  digitalInvoicingApiUrl: string;
+  digitalInvoicingEnvironment: DigitalInvoicingEnvironment;
+  digitalInvoicingCertificateLabel: string;
+  digitalInvoicingCertificateExpiry: string;
+  digitalInvoicingStartDate: string;
+  digitalInvoicingNotes: string;
 }
 
 export type FiscalObligationKey =
@@ -671,6 +767,108 @@ export interface FiscalObligationsResponse {
   obligations: FiscalObligationRecord[];
   history: FiscalObligationHistoryEntry[];
 }
+
+export interface FiscalReferenceValuesResponse {
+  values: FiscalReferenceValue[];
+  activeIva: FiscalReferenceValue | null;
+  activeUt: FiscalReferenceValue | null;
+  date: string;
+}
+
+export type FiscalReferenceKind = 'iva' | 'ut';
+export type FiscalReferenceValueUnit = 'percent' | 'bs';
+export type FiscalReferenceStatus =
+  | 'referencia'
+  | 'confirmado'
+  | 'historico'
+  | 'anulado';
+
+/** Histórico de IVA/UT. Solo referencia hasta cerrar la Fase 0 / issue #13. */
+export interface FiscalReferenceValue {
+  id: string;
+  kind: FiscalReferenceKind;
+  value: number;
+  valueUnit: FiscalReferenceValueUnit;
+  effectiveFrom: string;
+  effectiveTo: string;
+  instrumentType: string;
+  instrumentNumber: string;
+  officialGazette: string;
+  publicationDate: string;
+  legalBasis: string;
+  notes: string;
+  status: FiscalReferenceStatus;
+  confirmedByAccountant: boolean;
+  supportDocument: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  annulledAt: string;
+  annulledReason: string;
+  annulledBy: string;
+}
+
+export type FiscalReferenceInput = Omit<
+  FiscalReferenceValue,
+  | 'id'
+  | 'createdAt'
+  | 'createdBy'
+  | 'updatedAt'
+  | 'annulledAt'
+  | 'annulledReason'
+  | 'annulledBy'
+>;
+
+/** Catálogo de referencia de la Fase 0: clasificación IVA y rubros ISLR. */
+export type FiscalReferenceCatalogGroup = 'iva' | 'islr';
+export type FiscalReferenceTaxpayerType = 'natural' | 'juridica';
+export type FiscalReferenceCatalogApplicability =
+  | 'general'
+  | 'exento'
+  | 'reducido'
+  | 'rubro';
+
+export interface FiscalReferenceCatalogEntry {
+  id: string;
+  group: FiscalReferenceCatalogGroup;
+  code: string;
+  label: string;
+  applicability: FiscalReferenceCatalogApplicability;
+  ratePercent: number | null;
+  taxpayerTypes: FiscalReferenceTaxpayerType[];
+  utReference: number | null;
+  sustraendo: number | null;
+  legalBasis: string;
+  notes: string;
+  status: 'referencia';
+  confirmedByAccountant: false;
+}
+
+export interface FiscalReferenceCatalogResponse {
+  entries: FiscalReferenceCatalogEntry[];
+  utReference: number;
+  generatedAt: string;
+  notes: string[];
+}
+
+export interface AccountingBookSettings {
+  id: number;
+  approvedFormats: string;
+  auxiliaryFormat: string;
+  pagination: string;
+  signatureText: string;
+  signatureRole: string;
+  exchangeRatePolicy: string;
+  notes: string;
+  approvedAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export type AccountingBookSettingsInput = Omit<
+  AccountingBookSettings,
+  'id' | 'updatedAt' | 'updatedBy'
+>;
 
 export const FISCAL_OBLIGATION_DEFINITIONS: readonly Pick<
   FiscalObligationRecord,
@@ -740,6 +938,8 @@ export interface FiscalInvoice {
   controlNumber: number;
   saleCondition: FiscalSaleCondition;
   paymentMethod: FiscalPaymentMethod;
+  /** Plazo pactado al emitir; se copia del pedido (0 en ventas de contado). */
+  creditDays: number;
   salesOrderId?: string;
   salesOrderNumber?: string;
   emitterSnapshot: FiscalInvoiceEmitterSnapshot;
@@ -874,6 +1074,12 @@ export interface FiscalBooksReport {
   reconciliation: {
     salesDifference: number;
     purchaseDifference: number;
+    /** IVA débito de las ventas del período. */
+    taxDebit: number;
+    /** IVA crédito de los gastos elegibles, descontando retenciones. */
+    taxCredit: number;
+    /** Débito menos crédito; positivo significa saldo a pagar. */
+    netTaxPayable: number;
   };
 }
 
@@ -1126,7 +1332,14 @@ export interface FinishedPresentationCost {
   };
 }
 
-export type AuditModule = 'inventario' | 'produccion' | 'costos' | 'ventas' | 'gastos' | 'compras';
+export type AuditModule =
+  | 'inventario'
+  | 'produccion'
+  | 'costos'
+  | 'ventas'
+  | 'gastos'
+  | 'compras'
+  | 'contabilidad';
 export type AuditSeverity = 'info' | 'success' | 'warning' | 'critical';
 
 export interface AuditLogDetails {
@@ -1137,14 +1350,25 @@ export interface AuditLogDetails {
   unit?: string;
   costUsd?: number;
   amount?: number;
+  remainingUsd?: number;
+  collectionCount?: number;
   lotNumber?: string;
   brix?: number;
   wasteKg?: number;
   previousStock?: number;
   newStock?: number;
   referenceDoc?: string;
+  supplierId?: string;
+  supplierName?: string;
+  taxId?: string;
   salesOrderId?: string;
   invoiceId?: string;
+  payableId?: string;
+  entryNumber?: string;
+  accountCode?: string;
+  periodKey?: string;
+  sourceType?: string;
+  reason?: string;
   documentType?: string;
   adjustmentType?: FiscalAdjustmentType;
   year?: number;
@@ -1158,6 +1382,11 @@ export interface AuditLogDetails {
   bankCode?: string;
   bankName?: string;
   totalUnits?: number;
+  expenses?: number;
+  orders?: number;
+  movements?: number;
+  materials?: number;
+  products?: number;
   printCount?: number;
   isDuplicate?: boolean;
 }
@@ -1182,12 +1411,25 @@ export interface AuditLogEntry {
     | 'alerta_stock_critico'
     | 'gasto_registrado'
     | 'gasto_eliminado'
+    | 'gasto_elegibilidad_actualizada'
+    | 'payable_registrado'
+    | 'payable_actualizado'
+    | 'payable_anulado'
+    | 'payable_pago_registrado'
     | 'proveedor_creado'
     | 'proveedor_actualizado'
     | 'proveedor_eliminado'
     | 'precio_proveedor_registrado'
+    | 'tipo_proveedor_creado'
+    | 'tipo_proveedor_actualizado'
+    | 'tipo_proveedor_eliminado'
+    | 'categoria_materia_prima_creada'
+    | 'categoria_materia_prima_actualizada'
+    | 'categoria_materia_prima_eliminada'
+    | 'operacion_reseteada'
     | 'pedido_venta_creado'
     | 'cobro_registrado'
+    | 'cobro_parcial_registrado'
     | 'factura_emitida'
     | 'factura_anulada'
     | 'factura_impresa'
@@ -1197,7 +1439,20 @@ export interface AuditLogEntry {
     | 'nota_fiscal_creada'
     | 'nota_fiscal_impresa'
     | 'libro_fiscal_cerrado'
-    | 'libro_fiscal_exportado';
+    | 'libro_fiscal_exportado'
+    | 'cuenta_creada'
+    | 'cuenta_actualizada'
+    | 'asiento_creado'
+    | 'asiento_automatico'
+    | 'asiento_confirmado'
+    | 'asiento_anulado'
+    | 'periodo_contable_cerrado'
+    | 'periodo_contable_abierto'
+    | 'valor_fiscal_referencia_creado'
+    | 'valor_fiscal_referencia_actualizado'
+    | 'valor_fiscal_referencia_anulado'
+    | 'valor_fiscal_referencia_vigencia_cerrada'
+    | 'configuracion_libros_actualizada';
   title: string;
   description: string;
   userId: string;
@@ -1250,6 +1505,8 @@ export interface Expense {
   exchangeRateUsed: number;
   amountBs: number;
   supplierOrBeneficiary: string; // Razón social del proveedor o nombre del beneficiario
+  /** Presente cuando el beneficiario se seleccionó desde el maestro de proveedores. */
+  supplierId?: string;
   taxId?: string; // RIF o Cédula (J-..., V-...)
   documentType: 'factura_fiscal' | 'recibo_pago' | 'nota_debito' | 'vale_caja' | 'otro';
   documentNumber?: string; // Nro. de Factura / Control / Recibo
@@ -1268,4 +1525,199 @@ export interface Expense {
   accountingAccountCode?: string; // ej: 5.1.01.01 (Alquileres), 5.1.02.04 (Viáticos), 5.2.01 (Gastos Personales/Socios)
   accountingAccountName?: string;
   fiscalBookEligible: boolean; // True si califica para el Libro de Compras formal SENIAT
+  /** Presente cuando el gasto se generó automáticamente al saldar un payable. */
+  payableId?: string;
+}
+
+export type PayableStatus = 'pendiente' | 'parcial' | 'pagada' | 'anulada';
+
+/** Factura de proveedor pendiente de pago (USD canónico, Bs derivado). */
+export interface Payable {
+  id: string;
+  payableNumber: string; // FAP-YYYY-NNN
+  supplierId?: string;
+  supplierName: string;
+  taxId?: string;
+  invoiceNumber: string;
+  controlNumber?: string;
+  issueDate: string;
+  dueDate: string;
+  amountUsd: number;
+  exchangeRateUsed: number;
+  amountBs: number;
+  taxAmountUsd?: number;
+  category: ExpenseCategory;
+  status: PayableStatus;
+  notes?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  expenseId?: string;
+}
+
+export interface PayablePayment {
+  id: string;
+  payableId: string;
+  bankCode: string;
+  bankName: string;
+  paymentMethod: Expense['paymentMethod'];
+  reference: string;
+  amountUsd: number;
+  amountBs: number;
+  exchangeRateUsed: number;
+  paidAt: string;
+  paidBy: string;
+}
+
+// --- CONTABILIDAD (FASE 1) ---
+
+export type AccountType =
+  | 'activo'
+  | 'pasivo'
+  | 'patrimonio'
+  | 'ingreso'
+  | 'gasto'
+  | 'costo';
+
+export type AccountNature = 'debito' | 'credito';
+
+/** Cuenta del plan de cuentas jerárquico. */
+export interface Account {
+  id: string;
+  code: string; // ej: 1.01.01
+  name: string;
+  type: AccountType;
+  nature: AccountNature;
+  parentCode?: string;
+  level: number;
+  active: boolean;
+  isSystem: boolean;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AccountingEntrySource =
+  | 'manual'
+  | 'venta'
+  | 'cobro'
+  | 'gasto'
+  | 'pago_cxp'
+  | 'nomina'
+  | 'inventario'
+  | 'nota_credito'
+  | 'nota_debito'
+  | 'retencion';
+
+export type AccountingEntryStatus = 'borrador' | 'confirmado' | 'anulado';
+
+/** Línea de doble entrada. Uno de debit/credit debe ser mayor que cero. */
+export interface AccountingEntryLine {
+  id: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  memo?: string;
+}
+
+/** Asiento contable con balance validado (suma débitos = suma créditos). */
+export interface AccountingEntry {
+  id: string;
+  entryNumber: string; // AS-YYYY-NNNN
+  date: string; // YYYY-MM-DD
+  description: string;
+  sourceType: AccountingEntrySource;
+  sourceId?: string;
+  status: AccountingEntryStatus;
+  lines: AccountingEntryLine[];
+  totalDebit: number;
+  totalCredit: number;
+  currency: 'USD';
+  exchangeRateUsed: number;
+  periodKey: string; // YYYY-MM
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  confirmedAt?: string;
+  annulledAt?: string;
+  annulmentReason?: string;
+}
+
+export type AccountingPeriodStatus = 'abierto' | 'cerrado';
+
+/** Período mensual controlable para bloquear asientos y cierres. */
+export interface AccountingPeriod {
+  id: string; // YYYY-MM
+  key: string;
+  startDate: string;
+  endDate: string;
+  status: AccountingPeriodStatus;
+  closedAt?: string;
+  closedBy?: string;
+}
+
+export type AccountingBookType =
+  | 'diario'
+  | 'mayor'
+  | 'balance_comprobacion'
+  | 'balance_general'
+  | 'inventario'
+  | 'estado_resultados'
+  | 'compras'
+  | 'ventas'
+  | 'retenciones'
+  | 'caja_banco'
+  | 'auxiliar_cxc'
+  | 'auxiliar_cxp';
+
+export type AccountingBookRowType =
+  | 'detail'
+  | 'section'
+  | 'entryTotal'
+  | 'total'
+  | 'grandTotal'
+  | 'note'
+  | 'signature';
+
+export interface AccountingBookRow {
+  cells: (string | number | null)[];
+  rowType: AccountingBookRowType;
+}
+
+export interface AccountingBookMetadata {
+  companyName: string;
+  taxId: string;
+  fiscalAddress: string;
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  currency: 'USD';
+  currencyLabel: string;
+  secondaryCurrency: 'BS';
+  secondaryCurrencyLabel: string;
+  exchangeRateUsed: number;
+  exchangeRatePolicy: string;
+  generatedAt: string;
+  generatedBy: string;
+  totalControl: number;
+  hash: string;
+  provisional: true;
+  signatureLabel: string;
+}
+
+/** Libro contable generado desde los asientos y los datos operativos existentes. */
+export interface AccountingBookReport {
+  type: AccountingBookType;
+  title: string;
+  year: number;
+  month: number;
+  periodKey: string;
+  periodStatus: AccountingPeriodStatus;
+  headers: string[];
+  rows: AccountingBookRow[];
+  totals: { label: string; value: number; valueBs?: number }[];
+  notes: string[];
+  metadata: AccountingBookMetadata;
 }

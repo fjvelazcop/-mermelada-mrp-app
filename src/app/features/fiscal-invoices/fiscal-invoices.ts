@@ -19,7 +19,8 @@ import {
 } from '../../core/models/erp.models';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {spanishCurrencyWords} from '../../core/utils/spanish-currency-words';
-import {exportToCsv} from '../../core/utils/export.utils';
+import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
+import {computeInvoiceDueDate} from './fiscal-invoice-dates';
 
 const MONTH_LABELS = [
   'Enero',
@@ -67,6 +68,7 @@ export class FiscalInvoicesComponent implements OnInit {
   public booksLoading = signal<boolean>(false);
   public booksExporting = signal<boolean>(false);
   public booksError = signal<string>('');
+  public eligibilityUpdating = signal<string | null>(null);
 
   public annulForm = new FormGroup({
     reason: new FormControl('', {
@@ -118,6 +120,20 @@ export class FiscalInvoicesComponent implements OnInit {
     }
     return [...years].sort((a, b) => b - a);
   });
+
+  /** Gastos del mes consultado, con o sin elegibilidad, para el cruce fiscal. */
+  public crossCheckExpenses = computed(() => {
+    const prefix = `${this.bookYear()}-${String(this.bookMonth()).padStart(2, '0')}`;
+    return this.api
+      .expenses()
+      .filter((expense) => expense.date.startsWith(prefix))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.expenseNumber.localeCompare(b.expenseNumber));
+  });
+
+  /** IDs de los gastos que realmente alimentan el Libro de Compras. */
+  public crossCheckPurchaseIds = computed<Set<string>>(
+    () => new Set(this.booksReport()?.purchaseRows.map((row) => row.id) ?? [])
+  );
 
   public filteredInvoices = computed<FiscalInvoice[]>(() => {
     const year = this.filterYear();
@@ -256,6 +272,16 @@ export class FiscalInvoicesComponent implements OnInit {
       hour: '2-digit',
       minute: '2-digit',
     }).format(date);
+  }
+
+  /** Vencimiento de una factura a crédito en DD-MM-AAAA (null si es contado). */
+  public invoiceDueDate(invoice: FiscalInvoice): string | null {
+    return computeInvoiceDueDate(invoice, this.api.salesOrders());
+  }
+
+  /** Leyenda fiscal del pie de página, con fallback a la configuración actual. */
+  public invoicePrintNotes(invoice: FiscalInvoice): string {
+    return invoice.emitterSnapshot?.printNotes || this.api.fiscalSettings()?.printNotes || '';
   }
 
   public formatShortDate(value?: string): string {
@@ -480,7 +506,7 @@ export class FiscalInvoicesComponent implements OnInit {
     }
   }
 
-  public async exportFiscalBooks(): Promise<void> {
+  public async exportFiscalBooks(format: 'csv' | 'excel' | 'pdf' = 'csv'): Promise<void> {
     const requestedReport = this.booksReport();
     if (!requestedReport || this.booksExporting()) return;
     this.booksExporting.set(true);
@@ -491,12 +517,15 @@ export class FiscalInvoicesComponent implements OnInit {
         requestedReport.month
       );
       this.booksReport.set(report);
+      const period = `${report.year}-${String(report.month).padStart(2, '0')}`;
       const rates = report.salesTotals.taxableBases.map((group) => group.rate);
-      exportToCsv(`libro-ventas-${report.year}-${String(report.month).padStart(2, '0')}`, [
+
+      const salesHeaders = [
         'Fecha', 'Tipo', 'Documento', 'Control', 'Cliente', 'RIF', 'Condición',
         ...rates.flatMap((rate) => [`Base ${rate}%`, `IVA ${rate}%`]),
         'Exento', 'No sujeto', 'IVA total', 'Total',
-      ], report.salesRows.map((row) => [
+      ];
+      const salesRows = report.salesRows.map((row) => [
         row.date,
         row.documentType,
         row.documentNumber,
@@ -512,11 +541,13 @@ export class FiscalInvoicesComponent implements OnInit {
         row.nonSubjectAmount,
         row.taxAmount,
         row.total,
-      ]));
-      exportToCsv(`libro-compras-${report.year}-${String(report.month).padStart(2, '0')}`, [
+      ]);
+
+      const purchaseHeaders = [
         'Fecha', 'Tipo', 'Documento', 'Proveedor', 'RIF', 'Base gravada', 'Alícuota',
         'IVA', 'Exento', 'No sujeto', 'Retención IVA', 'Total', 'Crédito fiscal',
-      ], report.purchaseRows.map((row) => [
+      ];
+      const purchaseRows = report.purchaseRows.map((row) => [
         row.date,
         row.documentType,
         row.documentNumber,
@@ -530,13 +561,93 @@ export class FiscalInvoicesComponent implements OnInit {
         row.vatWithholding,
         row.total,
         row.fiscalCreditEligible ? 'Sí' : 'No',
-      ]));
+      ]);
+
+      const metadata = {
+        empresa:
+          this.api.fiscalSettings()?.companyName ||
+          'Mermeladas Artesanales del Valle C.A.',
+        rif: this.api.fiscalSettings()?.companyTaxId || '',
+        fecha: new Date().toLocaleString('es-VE'),
+        moneda: 'USD',
+      };
+
+      if (format === 'csv') {
+        exportToCsv(`libro-ventas-${period}`, salesHeaders, salesRows);
+        exportToCsv(`libro-compras-${period}`, purchaseHeaders, purchaseRows);
+        return;
+      }
+
+      if (format === 'excel') {
+        exportToExcel(
+          `libro-ventas-${period}`,
+          'Libro de Ventas',
+          salesHeaders,
+          salesRows,
+          metadata
+        );
+        exportToExcel(
+          `libro-compras-${period}`,
+          'Libro de Compras',
+          purchaseHeaders,
+          purchaseRows,
+          metadata
+        );
+        return;
+      }
+
+      await exportToPdf({
+        title: `Libro de Ventas · ${period}`,
+        subtitle: 'Documentos fiscales de ventas del período',
+        empresa: metadata.empresa,
+        rif: metadata.rif,
+        currencyLabel: 'USD',
+        headers: salesHeaders,
+        rows: salesRows,
+        totals: [
+          { label: 'Total ventas', value: formatVeNumber(report.salesTotals.total) },
+          { label: 'IVA débito', value: formatVeNumber(report.reconciliation.taxDebit) },
+        ],
+        notes: 'Generado desde el ERP; valide el formato oficial con su contador antes de presentarlo al SENIAT.',
+      });
+      await exportToPdf({
+        title: `Libro de Compras · ${period}`,
+        subtitle: 'Comprobantes de egresos elegibles del período',
+        empresa: metadata.empresa,
+        rif: metadata.rif,
+        currencyLabel: 'USD',
+        headers: purchaseHeaders,
+        rows: purchaseRows,
+        totals: [
+          { label: 'Total compras', value: formatVeNumber(report.purchaseTotals.total) },
+          { label: 'IVA crédito', value: formatVeNumber(report.reconciliation.taxCredit) },
+          { label: 'Neto a pagar', value: formatVeNumber(report.reconciliation.netTaxPayable) },
+        ],
+        notes: 'El crédito fiscal se alimenta de los gastos marcados como elegibles en el Libro de Compras.',
+      });
     } catch (error) {
       this.booksError.set(
         error instanceof Error ? error.message : 'No se pudieron exportar los libros.'
       );
     } finally {
       this.booksExporting.set(false);
+    }
+  }
+
+  /** Includes/excludes one expense from the cross-check and reloads the books. */
+  public async toggleExpenseEligibility(expenseId: string, eligible: boolean): Promise<void> {
+    if (this.eligibilityUpdating() || this.booksReport()?.isClosed) return;
+    this.eligibilityUpdating.set(expenseId);
+    this.booksError.set('');
+    try {
+      await this.api.setExpenseFiscalEligibility(expenseId, eligible);
+      await this.loadFiscalBooks();
+    } catch (error) {
+      this.booksError.set(
+        error instanceof Error ? error.message : 'No se pudo actualizar la elegibilidad del gasto.'
+      );
+    } finally {
+      this.eligibilityUpdating.set(null);
     }
   }
 

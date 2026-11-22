@@ -1,0 +1,382 @@
+<div class="space-y-5">
+  @if (!isAdmin()) {
+    <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+      Solo un administrador o maestro puede consultar y modificar estos parámetros.
+    </div>
+  } @else {
+    <div class="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4">
+      <mat-icon class="text-sky-700">info</mat-icon>
+      <div class="text-xs sm:text-sm text-sky-900">
+        <p class="font-bold">Histórico de IVA y UT — solo referencia / consulta</p>
+        <p class="mt-1">
+          Los valores se conservan con vigencia, instrumento y soporte. No modifican cálculos de
+          facturas ni libros hasta validar y cerrar la Fase 0 / issue #13. La baja es lógica,
+          con motivo y sin borrado físico.
+        </p>
+      </div>
+    </div>
+
+    <section class="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+      <div class="flex items-start gap-3">
+        <mat-icon class="text-stone-700">list_alt</mat-icon>
+        <div>
+          <h3 class="text-sm font-bold text-stone-800">
+            Catálogo de referencia provisional — IVA e ISLR (#13)
+          </h3>
+          <p class="text-xs text-stone-500">
+            Solo lectura y solo para administrador/master. Clasifica los supuestos del giro,
+            pero no calcula impuestos, no activa retenciones ni modifica facturas o libros.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-4 overflow-x-auto">
+        <h4 class="mb-2 text-xs font-bold uppercase tracking-wide text-stone-600">IVA</h4>
+        <table class="min-w-full text-left text-xs">
+          <thead class="bg-stone-50 text-stone-600">
+            <tr>
+              <th class="px-3 py-2 font-bold">Código</th>
+              <th class="px-3 py-2 font-bold">Supuesto</th>
+              <th class="px-3 py-2 font-bold">Tasa</th>
+              <th class="px-3 py-2 font-bold">Base legal / observación</th>
+              <th class="px-3 py-2 font-bold">Estado</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (item of catalogIva(); track item.id) {
+              <tr class="align-top text-stone-700">
+                <td class="px-3 py-2 font-semibold">{{ item.code }}</td>
+                <td class="px-3 py-2">{{ item.label }}</td>
+                <td class="px-3 py-2">{{ item.ratePercent === null ? '—' : item.ratePercent + '%' }}</td>
+                <td class="px-3 py-2">
+                  {{ item.legalBasis }}<br />
+                  <span class="text-stone-500">{{ item.notes }}</span>
+                </td>
+                <td class="px-3 py-2">{{ item.status }} · contador pendiente</td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5" class="px-3 py-4 text-center text-stone-500">
+                  No hay catálogo disponible.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-5 overflow-x-auto">
+        <h4 class="mb-2 text-xs font-bold uppercase tracking-wide text-stone-600">
+          ISLR — Decreto 1.808 (art. 9 pendiente)
+        </h4>
+        <table class="min-w-full text-left text-xs">
+          <thead class="bg-stone-50 text-stone-600">
+            <tr>
+              <th class="px-3 py-2 font-bold">Código</th>
+              <th class="px-3 py-2 font-bold">Rubro</th>
+              <th class="px-3 py-2 font-bold">Persona</th>
+              <th class="px-3 py-2 font-bold">UT</th>
+              <th class="px-3 py-2 font-bold">Sustraendo</th>
+              <th class="px-3 py-2 font-bold">Alícuota / soporte</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (item of catalogIslr(); track item.id) {
+              <tr class="align-top text-stone-700">
+                <td class="px-3 py-2 font-semibold">{{ item.code }}</td>
+                <td class="px-3 py-2">{{ item.label }}</td>
+                <td class="px-3 py-2">{{ item.taxpayerTypes.join(' / ') }}</td>
+                <td class="px-3 py-2">
+                  {{ item.utReference === null ? '—' : item.utReference }} Bs.
+                </td>
+                <td class="px-3 py-2">{{ item.sustraendo === null ? 'Pendiente' : item.sustraendo }}</td>
+                <td class="px-3 py-2">
+                  Pendiente del contador<br />
+                  <span class="text-stone-500">{{ item.legalBasis }}</span>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6" class="px-3 py-4 text-center text-stone-500">
+                  No hay catálogo disponible.
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (catalog(); as referenceCatalog) {
+        <ul class="mt-4 space-y-1 text-xs text-stone-500">
+          @for (note of referenceCatalog.notes; track note) {
+            <li>· {{ note }}</li>
+          }
+        </ul>
+      }
+    </section>
+
+    <div class="flex flex-wrap gap-2">
+      <button
+        type="button"
+        (click)="setKind('iva')"
+        class="rounded-xl px-4 py-2.5 text-sm font-semibold"
+        [class.bg-stone-900]="kind() === 'iva'"
+        [class.text-white]="kind() === 'iva'"
+        [class.bg-white]="kind() !== 'iva'"
+        [class.text-stone-700]="kind() !== 'iva'"
+      >
+        IVA
+      </button>
+      <button
+        type="button"
+        (click)="setKind('ut')"
+        class="rounded-xl px-4 py-2.5 text-sm font-semibold"
+        [class.bg-stone-900]="kind() === 'ut'"
+        [class.text-white]="kind() === 'ut'"
+        [class.bg-white]="kind() !== 'ut'"
+        [class.text-stone-700]="kind() !== 'ut'"
+      >
+        UT
+      </button>
+    </div>
+
+    @if (active(); as current) {
+      <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-xs sm:text-sm">
+        <p class="font-bold text-emerald-900">
+          Vigente al {{ current.effectiveFrom }}:
+          {{ current.value }}{{ current.valueUnit === 'percent' ? '%' : ' Bs.' }}
+          <span class="font-normal">({{ current.status }})</span>
+        </p>
+        <p class="mt-1 text-emerald-800">
+          {{ current.instrumentType }} N° {{ current.instrumentNumber }} ·
+          {{ current.officialGazette }} · {{ current.legalBasis }}
+        </p>
+      </div>
+    }
+
+    <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+      <section class="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+        <div class="border-b border-stone-200 px-4 py-3">
+          <h3 class="text-sm font-bold text-stone-800">Historial de {{ kind() }}</h3>
+          <p class="text-xs text-stone-500">El cierre automático de vigencia se registra en auditoría.</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-left text-xs">
+            <thead class="bg-stone-50 text-stone-600">
+              <tr>
+                <th class="px-3 py-2 font-bold">Desde</th>
+                <th class="px-3 py-2 font-bold">Hasta</th>
+                <th class="px-3 py-2 font-bold">Valor</th>
+                <th class="px-3 py-2 font-bold">Instrumento</th>
+                <th class="px-3 py-2 font-bold">Estado</th>
+                <th class="px-3 py-2 font-bold">Contador</th>
+                <th class="px-3 py-2 font-bold">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-stone-100">
+              @for (item of values(); track item.id) {
+                <tr class="text-stone-700">
+                  <td class="px-3 py-2">{{ item.effectiveFrom }}</td>
+                  <td class="px-3 py-2">{{ item.effectiveTo || 'Vigente' }}</td>
+                  <td class="px-3 py-2 font-semibold">
+                    {{ item.value }}{{ item.valueUnit === 'percent' ? '%' : ' Bs.' }}
+                  </td>
+                  <td class="px-3 py-2">
+                    {{ item.instrumentNumber }}<br />
+                    <span class="text-stone-500">{{ item.officialGazette }}</span>
+                  </td>
+                  <td class="px-3 py-2">{{ item.status }}</td>
+                  <td class="px-3 py-2">{{ item.confirmedByAccountant ? 'Confirmado' : 'Pendiente' }}</td>
+                  <td class="px-3 py-2">
+                    <div class="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        (click)="edit(item)"
+                        class="rounded-lg border border-stone-300 px-2 py-1 font-semibold hover:bg-stone-50"
+                      >
+                        Editar
+                      </button>
+                      @if (item.status !== 'anulado') {
+                        <button
+                          type="button"
+                          (click)="annulTargetId.set(item.id)"
+                          class="rounded-lg border border-red-200 px-2 py-1 font-semibold text-red-700 hover:bg-red-50"
+                        >
+                          Anular
+                        </button>
+                      }
+                      @if (annulTargetId() === item.id) {
+                        <div class="w-full space-y-1 pt-1">
+                          <input
+                            type="text"
+                            placeholder="Motivo de la anulación"
+                            [value]="annulReason()"
+                            (input)="annulReason.set($any($event.target).value)"
+                            class="w-full rounded-lg border border-stone-300 px-2 py-1"
+                          />
+                          <button
+                            type="button"
+                            [disabled]="annulReason().trim().length < 3 || saving()"
+                            (click)="annul()"
+                            class="rounded-lg bg-red-600 px-2 py-1 font-semibold text-white disabled:opacity-50"
+                          >
+                            Confirmar anulación
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="7" class="px-3 py-4 text-center text-stone-500">
+                    No hay valores registrados para este tipo.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+        <h3 class="text-sm font-bold text-stone-800">
+          {{ editingId() ? 'Editar' : 'Nuevo' }} valor de {{ kind() }}
+        </h3>
+        <form [formGroup]="form" (ngSubmit)="submit()" class="mt-4 space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block text-xs font-bold text-stone-600">
+              Tipo
+              <select formControlName="kind" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2">
+                <option value="iva">IVA</option>
+                <option value="ut">UT</option>
+              </select>
+            </label>
+            <label class="block text-xs font-bold text-stone-600">
+              Valor
+              <input formControlName="value" type="number" step="0.01" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+            </label>
+            <label class="block text-xs font-bold text-stone-600">
+              Unidad
+              <select formControlName="valueUnit" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2">
+                <option value="percent">Porcentaje</option>
+                <option value="bs">Bs.</option>
+              </select>
+            </label>
+            <label class="block text-xs font-bold text-stone-600">
+              Estado
+              <select formControlName="status" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2">
+                <option value="referencia">Referencia</option>
+                <option value="confirmado">Confirmado</option>
+                <option value="historico">Histórico</option>
+              </select>
+            </label>
+            <label class="block text-xs font-bold text-stone-600">
+              Vigencia desde
+              <input formControlName="effectiveFrom" type="date" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+            </label>
+            <label class="block text-xs font-bold text-stone-600">
+              Vigencia hasta
+              <input formControlName="effectiveTo" type="date" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+            </label>
+          </div>
+          <label class="block text-xs font-bold text-stone-600">
+            Instrumento / número
+            <div class="mt-1 grid grid-cols-2 gap-2">
+              <input formControlName="instrumentType" type="text" placeholder="decreto / providencia" class="w-full rounded-xl border border-stone-300 px-3 py-2" />
+              <input formControlName="instrumentNumber" type="text" class="w-full rounded-xl border border-stone-300 px-3 py-2" />
+            </div>
+          </label>
+          <label class="block text-xs font-bold text-stone-600">
+            Gaceta oficial
+            <input formControlName="officialGazette" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+          </label>
+          <label class="block text-xs font-bold text-stone-600">
+            Base legal
+            <input formControlName="legalBasis" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+          </label>
+          <label class="block text-xs font-bold text-stone-600">
+            Soporte / documento
+            <input formControlName="supportDocument" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+          </label>
+          <label class="flex items-center gap-2 text-xs font-bold text-stone-600">
+            <input formControlName="confirmedByAccountant" type="checkbox" />
+            Confirmado por el contador (#13)
+          </label>
+          <label class="block text-xs font-bold text-stone-600">
+            Observaciones
+            <textarea formControlName="notes" rows="3" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2"></textarea>
+          </label>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              (click)="resetForm()"
+              class="rounded-xl border border-stone-300 px-4 py-2 text-xs font-semibold text-stone-700"
+            >
+              Limpiar
+            </button>
+            <button
+              type="submit"
+              [disabled]="form.invalid || saving()"
+              class="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+            >
+              {{ saving() ? 'Guardando…' : 'Guardar valor' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <section class="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+      <div class="flex items-start gap-3">
+        <mat-icon class="text-stone-700">description</mat-icon>
+        <div>
+          <h3 class="text-sm font-bold text-stone-800">Parámetros pendientes de libros (#13)</h3>
+          <p class="text-xs text-stone-500">
+            Formato aprobado XLSX/PDF, CSV auxiliar, paginación y firma pendientes. La política de
+            tasa es documento con fallback a currentUsd.
+          </p>
+        </div>
+      </div>
+      <form [formGroup]="settingsForm" (ngSubmit)="saveSettings()" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label class="block text-xs font-bold text-stone-600">
+          Formatos aprobados
+          <input formControlName="approvedFormats" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Formato auxiliar
+          <input formControlName="auxiliaryFormat" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Paginación
+          <input formControlName="pagination" type="text" placeholder="Aun por definir" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Firma
+          <input formControlName="signatureText" type="text" placeholder="Aun pendiente por indicar" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Rol de firma
+          <input formControlName="signatureRole" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Fecha de aprobación
+          <input formControlName="approvedAt" type="date" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600 md:col-span-2">
+          Notas
+          <textarea formControlName="notes" rows="2" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2"></textarea>
+        </label>
+        <div class="md:col-span-2">
+          <button
+            type="submit"
+            [disabled]="settingsSaving()"
+            class="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+          >
+            {{ settingsSaving() ? 'Guardando…' : 'Guardar parámetros' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  }
+</div>

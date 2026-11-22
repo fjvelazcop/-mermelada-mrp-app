@@ -64,11 +64,14 @@ The server persists the full ERP state in a real SQLite database using `better-s
   | Sales | `customers`, `sales_orders`, `sales_order_items`, `delivery_notes`, `delivery_note_items` |
   | Payroll | `employees`, `payroll_weeks`, `payroll_payments` |
   | Expenses | `expenses`, `expense_categories` |
-  | Configuration | `fiscal_settings`, `exchange_rates`, `exchange_rate_history`, `audit_logs` |
+  | Accounting (v14) | `accounts`, `accounting_entries`, `accounting_entry_lines`, `accounting_periods` |
+  | Configuration (v15) | `fiscal_settings` (incluye campos de facturación digital en modo preparación), `exchange_rates`, `exchange_rate_history`, `audit_logs` |
+  | Fase 0 (v16) | `fiscal_reference_values` (historial IVA/UT con vigencias, instrumento, soporte y anulación lógica), `accounting_book_settings` (formato, paginación, firma y política de tasa) |
   | Security | `auth_users` (scrypt password hashes + role), `auth_roles`, `auth_role_permissions`, `password_reset_tokens` |
   | Infrastructure | `tunnel_sessions` (public URL history), `notification_recipients`, `notification_log` |
 
 - **Auto‑save:** every mutating operation on `dbInstance` writes the new snapshot to the relational tables in a single transaction (via a Proxy that wraps `ErpDatabase`). See `src/server/database/relational-persistence.ts`.
+- **Accounting seed:** migration v14 creates the accounting tables and `fiscal_settings` flags (`accountingEnabled=true`, `vatWithholdingEnabled=false`, `islrWithholdingEnabled=false`). The provisional 35-account chart is seeded on startup for existing databases as well. Withholding flags stay disabled until issue #13 is validated. Migration v15 adds digital-invoicing **draft** fields; they only persist configuration and never emit documents or contact SENIAT. Migration v16 adds the IVA/UT reference history (IVA 16% from `2020-01-01`; UT Bs. 43,00 from `2025-06-02`, both `referencia` and unconfirmed) and book settings; **used for reference only** until #13 is closed. Books/reports, including the draft inventory book, are labeled `BORRADOR / PRUEBA – PENDIENTE DE VALIDACIÓN CONTABLE (#13)`, use provisional control accounts (`1.03.01`, `1.03.02`) and show paired USD/Bs. columns with the rate source. El usuario confirmó el régimen **ordinario** (giro: fabricación de mermelada): no se practican retenciones de IVA/ISLR al pagar y solo se contempla el control documental de comprobantes recibidos de clientes SPE; IGTF es `false` (no aplica) y la facturación digital sigue en modo borrador, sin emisión real ni envío al SENIAT. El IVA 16% es general por defecto para mermelada procesada/envasada, azúcar, empaques/envases y gastos generales; el exento 0% queda previsto para materias primas agrícolas primarias en estado natural (según aplique) y el 8% solo para supuestos taxativos. El catálogo de referencia (`GET /api/fiscal-reference-catalog`, solo admin/master, sin migración) también registra los seis rubros ISLR del giro con persona natural/jurídica y UT Bs. 43,00; sustraendo y alícuotas del art. 9 del Decreto 1.808 quedan pendientes del contador. No calcula impuestos ni activa retenciones. El plan de cuentas vigente tiene 35 cuentas activas del sistema (caja/bancos, CxC, CxP, materia prima, producto terminado e IVA), todas provisionales; no hay cuenta de retenciones recibidas ni de IVA 8%, y en esta ronda no se crearon cuentas ni se modificaron asientos. La cuenta definitiva para comprobantes recibidos de clientes SPE al cobrar, los saldos de apertura, la fecha de corte, los formatos legales, la firma y la numeración de libro/página se ajustarán al cerrar #13; si se aprueba una cuenta nueva se hará con migración v17 y backup previo.
 - **Legacy migration:** databases created before the relational schema are imported once from the old `app_state` JSON table.
 - **API index:** `GET /api` returns the API version plus links to health, Swagger/OpenAPI and login, so opening the API root in a browser is informative instead of a bare 404.
 - **Health check:** `GET /api/health` verifies the SQLite connection and returns the database path, version, environment and uptime.
@@ -110,7 +113,10 @@ database, not only in code:
 
 - `auth_roles` stores built-in and custom roles (`id`, `name`, `description`, `color`, `is_system`).
 - `auth_role_permissions` stores one row per role and module with the `can_view`, `can_create`, `can_edit`, `can_delete` and `can_export` flags.
-- On first startup the five built-in roles (`admin`, `supervisor_planta`, `operator`, `analista_costos`, `almacenista`) and their current matrices (50 rows) are seeded with `INSERT OR IGNORE`. Restarting the server never overwrites permissions edited from the UI.
+- On first startup the built-in roles (`admin`, `master`, `supervisor_planta`, `operator`, `analista_costos`, `almacenista`) and their current matrices (84 rows = 6 roles × 14 modules) are seeded with `INSERT OR IGNORE`. Restarting the server never overwrites permissions edited from the UI.
+- The modules `supplier_types` and `material_categories` are editable catalogs administered from **Configuración**; only `admin` and `master` receive full permissions by default. Both are backfilled for existing databases by migration v9.
+- The top-level **accounting** module was added in migration v14. Only `admin` and `master` have full permissions by default; confirm/annul entries and close/open periods require those roles. The old `/api/payables*` routes remain protected by the **expenses** module.
+- Changing `taxRegime` from `ordinario` to `especial` server-side auto-marks `specialTaxpayer`, `vatWithholdingAgent` and `islrWithholdingAgent` for audit purposes. It never turns on `vatWithholdingEnabled` or `islrWithholdingEnabled`; those remain `false` until issue #13 is validated.
 - `authorizeRequest` resolves permissions from `auth_role_permissions` on every request, so a change applies immediately to all users with that role.
 - New users inherit the permissions of whichever role is assigned to them (built-in or custom). Custom roles can be created, edited and deleted from **Configuración & Permisología**; built-in roles and roles still assigned to users are protected from deletion.
 - `admin` keeps unrestricted access and its matrix cannot be restricted.
@@ -285,6 +291,7 @@ Con `npm run dev` (puerto **3000**):
 | Ventas & Despacho | <http://localhost:3000/sales> |
 | Nómina | <http://localhost:3000/payroll> |
 | Gastos | <http://localhost:3000/expenses> |
+| Contabilidad | <http://localhost:3000/accounting> |
 | Proveedores | <http://localhost:3000/suppliers> |
 | Configuración fiscal y permisos | <http://localhost:3000/settings> |
 | Administración (requiere rol admin) | <http://localhost:3000/admin> |
@@ -383,6 +390,7 @@ The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `
 | **Docs** | `GET /api/openapi.json` (OpenAPI 3.0), `GET /api/docs` (Swagger UI) |
 | **Auth** | `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`, `POST /api/auth/change-password`, `POST /api/auth/reset-password`, `POST /api/auth/reset-password/confirm` |
 | **Security (RBAC)** | `GET /api/auth/roles`, `POST /api/auth/roles`, `PUT/DELETE /api/auth/roles/:id`, `PUT /api/auth/roles/:id/permissions`, `GET/POST /api/auth/users`, `PUT/DELETE /api/auth/users/:id` |
+| **Editable Catalogs** | `GET/POST /api/supplier-types`, `PUT/DELETE /api/supplier-types/:id`, `GET/POST /api/material-categories`, `PUT/DELETE /api/material-categories/:id` (admin/master only) |
 | **Inventory → Raw Materials** | `GET /api/inventory/raw-materials`, `POST /api/inventory/raw-materials`, `PUT /api/inventory/raw-materials/:id` |
 | **Inventory → Movements** | `GET /api/inventory/movements`, `POST /api/inventory/movements` |
 | **Finished Goods** | `GET /api/inventory/finished-goods`, `PUT /api/inventory/finished-goods/:id` |
@@ -394,10 +402,13 @@ The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `
 | **Payroll & Employees** | `GET /api/payroll/weeks`, `POST /api/payroll/weeks`, `GET /api/payroll/employees`, `POST /api/payroll/employees` |
 | **Costing / Margins** | `GET /api/costing/summary`, `POST /api/costing/simulate` |
 | **Expenses** | `GET /api/expenses`, `POST /api/expenses`, `DELETE /api/expenses/:id`, `GET/POST /api/expenses/categories`, `PUT/DELETE /api/expenses/categories/:id` |
+| **Accounting (Fase 1)** | `GET/POST /api/accounting/accounts`, `PATCH /api/accounting/accounts/:id`, `GET/POST /api/accounting/entries`, `POST /api/accounting/entries/:id/confirm`, `POST /api/accounting/entries/:id/annul`, `GET /api/accounting/periods`, `POST /api/accounting/periods/:key/close`, `POST /api/accounting/periods/:key/open`, `GET /api/accounting/books?type=…&year=…&month=…` |
 | **Fiscal Settings** | `GET /api/fiscal-settings`, `PUT /api/fiscal-settings` |
+| **Fase 0 — IVA/UT históricos** | `GET/POST /api/fiscal-reference-values`, `GET /api/fiscal-reference-values/active?kind=iva\|ut&date=…`, `PUT /api/fiscal-reference-values/:id`, `POST /api/fiscal-reference-values/:id/annul` (admin) |
+| **Fase 0 — parámetros de libros** | `GET/PUT /api/accounting-book-settings` (admin) |
 | **Exchange Rates** | `GET /api/exchange-rates`, `POST /api/exchange-rates/update`, `POST /api/exchange-rates/refresh` |
 | **Audit Logs** | `GET /api/audit-logs`, `POST /api/audit-logs` |
-| **System** | `POST /api/system/reset` (reset demo data, admin only when auth is enabled), `GET /api/system/tunnel` (latest public URL + history, admin) |
+| **System** | `POST /api/system/reset` (reset demo data, admin only when auth is enabled), `POST /api/system/reset-operational` (delete expenses/orders/movements and zero stock, admin/master only), `GET /api/system/tunnel` (latest public URL + history, admin) |
 | **Notifications** | `GET/POST /api/notifications/recipients`, `PUT/DELETE /api/notifications/recipients/:id`, `GET /api/notifications/log`, `POST /api/notifications/tunnel/resend` (admin) |
 | **Dashboard Report** | `GET /api/reports/dashboard` |
 

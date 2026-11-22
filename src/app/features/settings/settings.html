@@ -92,6 +92,21 @@
         </button>
 
         <button
+          (click)="setSection('fiscalReferences')"
+          class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+          [class.bg-amber-600]="activeSection() === 'fiscalReferences'"
+          [class.text-white]="activeSection() === 'fiscalReferences'"
+          [class.shadow-xs]="activeSection() === 'fiscalReferences'"
+          [class.bg-amber-50]="activeSection() !== 'fiscalReferences'"
+          [class.text-amber-900]="activeSection() !== 'fiscalReferences'"
+          [class.border]="activeSection() !== 'fiscalReferences'"
+          [class.border-amber-200]="activeSection() !== 'fiscalReferences'"
+        >
+          <mat-icon class="text-sm">history_edu</mat-icon>
+          <span>IVA / UT e Historial (#13)</span>
+        </button>
+
+        <button
           (click)="setSection('notifications')"
           class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
           [class.bg-stone-900]="activeSection() === 'notifications'"
@@ -103,6 +118,52 @@
           <mat-icon class="text-sm">mark_email_read</mat-icon>
           <span>Correos & Túnel</span>
         </button>
+
+        @if (canManageSupplierTypes()) {
+          <button
+            (click)="setSection('supplierTypes')"
+            class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+            [class.bg-amber-600]="activeSection() === 'supplierTypes'"
+            [class.text-white]="activeSection() === 'supplierTypes'"
+            [class.shadow-xs]="activeSection() === 'supplierTypes'"
+            [class.bg-amber-50]="activeSection() !== 'supplierTypes'"
+            [class.text-amber-900]="activeSection() !== 'supplierTypes'"
+          >
+            <mat-icon class="text-sm">local_shipping</mat-icon>
+            <span>Tipos de Proveedor ({{ api.supplierTypes().length }})</span>
+          </button>
+        }
+
+        @if (canManageMaterialCategories()) {
+          <button
+            (click)="setSection('materialCategories')"
+            class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px]"
+            [class.bg-amber-600]="activeSection() === 'materialCategories'"
+            [class.text-white]="activeSection() === 'materialCategories'"
+            [class.shadow-xs]="activeSection() === 'materialCategories'"
+            [class.bg-amber-50]="activeSection() !== 'materialCategories'"
+            [class.text-amber-900]="activeSection() !== 'materialCategories'"
+          >
+            <mat-icon class="text-sm">category</mat-icon>
+            <span>Categorías de Materia Prima ({{ api.materialCategories().length }})</span>
+          </button>
+        }
+
+        @if (isAdmin()) {
+          <button
+            (click)="setSection('operations')"
+            class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap min-h-[44px] border"
+            [class.bg-rose-600]="activeSection() === 'operations'"
+            [class.text-white]="activeSection() === 'operations'"
+            [class.border-rose-600]="activeSection() === 'operations'"
+            [class.bg-rose-50]="activeSection() !== 'operations'"
+            [class.text-rose-800]="activeSection() !== 'operations'"
+            [class.border-rose-200]="activeSection() !== 'operations'"
+          >
+            <mat-icon class="text-sm">restart_alt</mat-icon>
+            <span>Reset Operativo</span>
+          </button>
+        }
       }
     </div>
   </div>
@@ -902,6 +963,10 @@
     </div>
   }
 
+  @if (activeSection() === 'fiscalReferences' && isAdmin()) {
+    <app-fiscal-reference-values />
+  }
+
   <!-- SECTION 4: DATOS FISCALES (SOLO ADMINISTRADOR) -->
   @if (activeSection() === 'fiscal' && isAdmin()) {
     <div class="flex flex-wrap gap-2">
@@ -1208,6 +1273,118 @@
               class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white"
             ></textarea>
           </div>
+        </div>
+      </div>
+
+      <!-- Facturación digital: solo preparación, sin emisión real -->
+      <div class="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+        <div class="flex items-center gap-2 border-b border-stone-100 pb-3">
+          <mat-icon class="text-amber-600 text-sm">cloud_upload</mat-icon>
+          <h2 class="text-sm sm:text-base font-bold text-stone-900">
+            Facturación digital — configuración preparada
+          </h2>
+        </div>
+        <div class="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs text-sky-950">
+          <p class="font-semibold">
+            Esta sección solo guarda datos para cuando se vaya a utilizar.
+            No emite documentos digitales ni envía información al SENIAT.
+          </p>
+          <p class="mt-1">
+            Marque la casilla únicamente cuando la configuración esté completa; en ese
+            caso el sistema exigirá proveedor, RIF del proveedor, URL del servicio,
+            ambiente y fecha prevista de inicio.
+          </p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="sm:col-span-2 lg:col-span-3 flex items-center gap-3 bg-stone-50 border border-stone-200 rounded-xl p-3">
+            <input
+              id="digital-invoicing-enabled"
+              type="checkbox"
+              formControlName="digitalInvoicingEnabled"
+              class="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-stone-300"
+            />
+            <label for="digital-invoicing-enabled" class="text-xs font-semibold text-stone-800">
+              Configuración de facturación digital preparada / borrador
+            </label>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Proveedor autorizado</label>
+            <input
+              type="text"
+              formControlName="digitalInvoicingProvider"
+              placeholder="Nombre del proveedor de facturación digital"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">RIF / NIT del proveedor</label>
+            <input
+              type="text"
+              formControlName="digitalInvoicingProviderTaxId"
+              placeholder="J-00000000-0"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Ambiente</label>
+            <select
+              formControlName="digitalInvoicingEnvironment"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            >
+              <option value="pruebas">Pruebas</option>
+              <option value="produccion">Producción</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">URL del servicio / API</label>
+            <input
+              type="url"
+              formControlName="digitalInvoicingApiUrl"
+              placeholder="https://proveedor.example.com/api"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+            @if (fiscalForm.controls.digitalInvoicingApiUrl.touched && fiscalForm.controls.digitalInvoicingApiUrl.invalid) {
+              <span class="text-[11px] text-rose-600 mt-1 block">Ingrese una URL válida o déjela vacía.</span>
+            }
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Fecha prevista de inicio</label>
+            <input
+              type="date"
+              formControlName="digitalInvoicingStartDate"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Etiqueta / serial del certificado</label>
+            <input
+              type="text"
+              formControlName="digitalInvoicingCertificateLabel"
+              placeholder="Certificado de firma (etiqueta, no el secreto)"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Vencimiento del certificado</label>
+            <input
+              type="date"
+              formControlName="digitalInvoicingCertificateExpiry"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white min-h-[44px]"
+            />
+          </div>
+          <div class="sm:col-span-2 lg:col-span-3">
+            <label class="block text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-1">Notas de la configuración digital</label>
+            <textarea
+              rows="2"
+              formControlName="digitalInvoicingNotes"
+              class="w-full px-3 py-2 rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs bg-white"
+            ></textarea>
+          </div>
+          @if (fiscalForm.invalid && fiscalForm.touched && fiscalForm.hasError('digitalInvoicingIncomplete')) {
+            <div class="sm:col-span-2 lg:col-span-3 text-[11px] text-rose-600">
+              Complete los campos obligatorios o desmarque la casilla para guardar solo un borrador.
+            </div>
+          }
         </div>
       </div>
 
@@ -1570,6 +1747,314 @@
             }
           </ul>
         }
+      </div>
+    </div>
+  }
+
+  <!-- SECTION: TIPOS DE PROVEEDOR -->
+  @if (activeSection() === 'supplierTypes' && isAdmin()) {
+    <div class="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-stone-900 flex items-center gap-2">
+            <mat-icon class="text-amber-600">local_shipping</mat-icon>
+            Catálogo de Tipos de Proveedor
+          </h2>
+          <p class="text-xs text-stone-500 mt-1">
+            Estos valores alimentan el selector del directorio de proveedores. El código no se puede modificar después de creado.
+          </p>
+        </div>
+        @if (canManageSupplierTypes()) {
+          <button
+            (click)="openCatalogModal('supplierTypes')"
+            class="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold min-h-[44px]"
+          >
+            <mat-icon class="text-sm">add</mat-icon>
+            Nuevo Tipo
+          </button>
+        }
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-stone-50 border-b border-stone-200 text-stone-600 uppercase font-semibold text-[11px]">
+              <th class="py-3 px-4">Código</th>
+              <th class="py-3 px-4">Etiqueta</th>
+              <th class="py-3 px-4">Descripción</th>
+              <th class="py-3 px-4 text-center">Estado</th>
+              <th class="py-3 px-4 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (type of api.supplierTypes(); track type.id) {
+              <tr class="hover:bg-stone-50/50 transition-colors">
+                <td class="py-3 px-4">
+                  <span class="font-mono font-bold text-stone-800">{{ type.code }}</span>
+                  @if (type.isSystem) {
+                    <span class="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-stone-200 text-stone-600 font-bold uppercase">base</span>
+                  }
+                </td>
+                <td class="py-3 px-4">
+                  <span class="inline-flex items-center gap-1.5 font-semibold text-stone-900">
+                    <span class="w-2 h-2 rounded-full" [class]="catalogDotClass(type.color)"></span>
+                    {{ type.label }}
+                  </span>
+                </td>
+                <td class="py-3 px-4 text-stone-500">{{ type.description || '—' }}</td>
+                <td class="py-3 px-4 text-center">
+                  <span class="text-[10px] font-bold rounded-full px-2 py-0.5 border" [class]="catalogBadgeClass(type.color)">
+                    {{ type.active ? 'activo' : 'inactivo' }}
+                  </span>
+                </td>
+                <td class="py-3 px-4">
+                  <div class="flex items-center justify-end gap-1.5">
+                    @if (canManageSupplierTypes()) {
+                      <button
+                        (click)="openCatalogModal('supplierTypes', type)"
+                        class="rounded-lg border border-stone-200 p-2 text-stone-600 hover:bg-stone-100 min-h-[36px] min-w-[36px]"
+                        [attr.aria-label]="'Editar ' + type.code"
+                      >
+                        <mat-icon class="text-sm">edit</mat-icon>
+                      </button>
+                    }
+                    @if (canDeleteSupplierTypes() && !type.isSystem) {
+                      <button
+                        (click)="deleteCatalogValue('supplierTypes', type.id, type.code)"
+                        class="rounded-lg border border-stone-200 p-2 text-rose-600 hover:bg-rose-50 min-h-[36px] min-w-[36px]"
+                        [attr.aria-label]="'Eliminar ' + type.code"
+                      >
+                        <mat-icon class="text-sm">delete</mat-icon>
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5" class="py-8 text-center text-stone-400">No hay tipos de proveedor registrados.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  <!-- SECTION: CATEGORÍAS DE MATERIA PRIMA -->
+  @if (activeSection() === 'materialCategories' && isAdmin()) {
+    <div class="bg-white rounded-2xl border border-stone-200 shadow-xs overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-stone-900 flex items-center gap-2">
+            <mat-icon class="text-amber-600">category</mat-icon>
+            Catálogo de Categorías de Materia Prima
+          </h2>
+          <p class="text-xs text-stone-500 mt-1">
+            Estos valores alimentan el filtro y el formulario de inventario, además de las alertas de producción.
+          </p>
+        </div>
+        @if (canManageMaterialCategories()) {
+          <button
+            (click)="openCatalogModal('materialCategories')"
+            class="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold min-h-[44px]"
+          >
+            <mat-icon class="text-sm">add</mat-icon>
+            Nueva Categoría
+          </button>
+        }
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr class="bg-stone-50 border-b border-stone-200 text-stone-600 uppercase font-semibold text-[11px]">
+              <th class="py-3 px-4">Código</th>
+              <th class="py-3 px-4">Etiqueta</th>
+              <th class="py-3 px-4">Descripción</th>
+              <th class="py-3 px-4 text-center">Estado</th>
+              <th class="py-3 px-4 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-stone-100">
+            @for (category of api.materialCategories(); track category.id) {
+              <tr class="hover:bg-stone-50/50 transition-colors">
+                <td class="py-3 px-4">
+                  <span class="font-mono font-bold text-stone-800">{{ category.code }}</span>
+                  @if (category.isSystem) {
+                    <span class="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-stone-200 text-stone-600 font-bold uppercase">base</span>
+                  }
+                </td>
+                <td class="py-3 px-4">
+                  <span class="inline-flex items-center gap-1.5 font-semibold text-stone-900">
+                    <span class="w-2 h-2 rounded-full" [class]="catalogDotClass(category.color)"></span>
+                    {{ category.label }}
+                  </span>
+                </td>
+                <td class="py-3 px-4 text-stone-500">{{ category.description || '—' }}</td>
+                <td class="py-3 px-4 text-center">
+                  <span class="text-[10px] font-bold rounded-full px-2 py-0.5 border" [class]="catalogBadgeClass(category.color)">
+                    {{ category.active ? 'activo' : 'inactivo' }}
+                  </span>
+                </td>
+                <td class="py-3 px-4">
+                  <div class="flex items-center justify-end gap-1.5">
+                    @if (canManageMaterialCategories()) {
+                      <button
+                        (click)="openCatalogModal('materialCategories', category)"
+                        class="rounded-lg border border-stone-200 p-2 text-stone-600 hover:bg-stone-100 min-h-[36px] min-w-[36px]"
+                        [attr.aria-label]="'Editar ' + category.code"
+                      >
+                        <mat-icon class="text-sm">edit</mat-icon>
+                      </button>
+                    }
+                    @if (canDeleteMaterialCategories() && !category.isSystem) {
+                      <button
+                        (click)="deleteCatalogValue('materialCategories', category.id, category.code)"
+                        class="rounded-lg border border-stone-200 p-2 text-rose-600 hover:bg-rose-50 min-h-[36px] min-w-[36px]"
+                        [attr.aria-label]="'Eliminar ' + category.code"
+                      >
+                        <mat-icon class="text-sm">delete</mat-icon>
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5" class="py-8 text-center text-stone-400">No hay categorías registradas.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  <!-- SECTION: RESET OPERATIVO -->
+  @if (activeSection() === 'operations' && isAdmin()) {
+    <div class="bg-white rounded-2xl border border-rose-200 shadow-xs overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-rose-100">
+        <h2 class="text-base sm:text-lg font-bold text-stone-900 flex items-center gap-2">
+          <mat-icon class="text-rose-600">restart_alt</mat-icon>
+          Reset operativo (solo administrador / master)
+        </h2>
+        <p class="text-xs text-stone-500 mt-1">
+          Deja el sistema listo para cargar las nuevas compras desde cero.
+        </p>
+      </div>
+      <div class="p-4 sm:p-5 grid gap-4 sm:grid-cols-2">
+        <div class="rounded-xl border border-stone-200 bg-stone-50 p-4">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-stone-500 mb-2">Se elimina</div>
+          <ul class="text-xs text-stone-700 space-y-1">
+            <li>Gastos registrados</li>
+            <li>Órdenes de producción (y sus materiales)</li>
+            <li>Movimientos de inventario</li>
+          </ul>
+        </div>
+        <div class="rounded-xl border border-stone-200 bg-stone-50 p-4">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-stone-500 mb-2">Se deja en cero</div>
+          <ul class="text-xs text-stone-700 space-y-1">
+            <li>Existencias de materias primas</li>
+            <li>Stock de productos terminados</li>
+          </ul>
+          <p class="text-[11px] text-stone-500 mt-2">
+            Los maestros (productos, recetas, clientes, empleados y proveedores) se conservan.
+          </p>
+        </div>
+      </div>
+      <div class="px-4 sm:px-5 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <p class="text-[11px] text-rose-700 font-semibold">
+          Operación destructiva. Se registra en la auditoría y requiere confirmación.
+        </p>
+        <button
+          (click)="executeOperationalReset()"
+          [disabled]="resetOperationalRunning()"
+          class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold min-h-[44px]"
+        >
+          <mat-icon class="text-sm">{{ resetOperationalRunning() ? 'hourglass_empty' : 'warning' }}</mat-icon>
+          <span>{{ resetOperationalRunning() ? 'Ejecutando…' : 'Ejecutar reset operativo' }}</span>
+        </button>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: NUEVO / EDITAR VALOR DE CATÁLOGO -->
+  @if (catalogModalKind()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg border border-stone-200">
+        <form [formGroup]="catalogForm" (ngSubmit)="saveCatalogValue()">
+          <div class="p-5 border-b border-stone-200 flex items-center justify-between">
+            <h3 class="text-sm sm:text-base font-bold text-stone-900">
+              {{ editingCatalogId() ? 'Editar' : 'Nuevo' }}
+              {{ catalogModalKind() === 'supplierTypes' ? 'tipo de proveedor' : 'categoría de materia prima' }}
+            </h3>
+            <button type="button" (click)="closeCatalogModal()" class="rounded-lg p-1.5 text-stone-500 hover:bg-stone-100">
+              <mat-icon class="text-base">close</mat-icon>
+            </button>
+          </div>
+
+          <div class="p-5 space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Código</label>
+              <input
+                type="text"
+                formControlName="code"
+                placeholder="ej: envases"
+                [disabled]="!!editingCatalogId()"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 disabled:opacity-60"
+              />
+              @if (catalogForm.controls.code.invalid && catalogForm.controls.code.touched) {
+                <p class="text-[11px] text-rose-600 mt-1">Solo letras minúsculas, números, guiones y guiones bajos.</p>
+              }
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Etiqueta</label>
+              <input
+                type="text"
+                formControlName="label"
+                placeholder="ej: Envases / Frascos y Tapas"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Descripción</label>
+              <input
+                type="text"
+                formControlName="description"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Color</label>
+              <select formControlName="color" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900">
+                @for (color of catalogColors; track color.value) {
+                  <option [value]="color.value">{{ color.label }}</option>
+                }
+              </select>
+            </div>
+            <label class="flex items-center gap-2 text-xs font-semibold text-stone-700 cursor-pointer">
+              <input type="checkbox" formControlName="active" class="w-4 h-4 rounded text-amber-600 border-stone-300" />
+              Valor activo (disponible para selección)
+            </label>
+          </div>
+
+          <div class="p-5 border-t border-stone-200 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              (click)="closeCatalogModal()"
+              class="px-4 py-2 rounded-xl border border-stone-200 text-xs font-semibold text-stone-700 min-h-[44px]"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold min-h-[44px]"
+            >
+              Guardar
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   }

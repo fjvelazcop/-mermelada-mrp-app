@@ -14,14 +14,17 @@ import { findBank } from '../app/core/data/venezuelan-banks.js';
 const unitSchema = z.enum(['kg', 'g', 'l', 'ml', 'unidades', 'cajas', 'paquetes']);
 const presentationSchema = z.enum([
   'pequena_250g',
+  'pequena_300g',
   'grande_1000g',
   'galon_5kg',
   'balde_15kg',
   'pote_20kg',
   'caja_20kg',
+  'caja_6kg',
   'otra',
 ]);
-const materialCategorySchema = z.enum(['fruta', 'aditivo', 'empaque', 'quimico']);
+// Validated against the editable `material_categories` catalog in the business layer.
+const materialCategorySchema = z.string().trim().min(1).max(60);
 const movementTypeSchema = z.enum([
   'entrada',
   'salida_produccion',
@@ -32,6 +35,7 @@ const salesOrderStatusSchema = z.enum([
   'en_produccion',
   'listo_despacho',
   'despachado',
+  'cobrado_parcial',
   'cobrado',
 ]);
 const priceTierSchema = z.enum([
@@ -55,6 +59,7 @@ const auditModuleSchema = z.enum([
   'ventas',
   'gastos',
   'compras',
+  'contabilidad',
 ]);
 const auditSeveritySchema = z.enum(['info', 'success', 'warning', 'critical']);
 const auditActionSchema = z.enum([
@@ -73,12 +78,25 @@ const auditActionSchema = z.enum([
   'alerta_stock_critico',
   'gasto_registrado',
   'gasto_eliminado',
+  'gasto_elegibilidad_actualizada',
+  'payable_registrado',
+  'payable_actualizado',
+  'payable_anulado',
+  'payable_pago_registrado',
   'proveedor_creado',
   'proveedor_actualizado',
   'proveedor_eliminado',
   'precio_proveedor_registrado',
+  'tipo_proveedor_creado',
+  'tipo_proveedor_actualizado',
+  'tipo_proveedor_eliminado',
+  'categoria_materia_prima_creada',
+  'categoria_materia_prima_actualizada',
+  'categoria_materia_prima_eliminada',
+  'operacion_reseteada',
   'pedido_venta_creado',
   'cobro_registrado',
+  'cobro_parcial_registrado',
   'factura_emitida',
   'factura_anulada',
   'factura_impresa',
@@ -89,6 +107,11 @@ const auditActionSchema = z.enum([
   'nota_fiscal_impresa',
   'libro_fiscal_cerrado',
   'libro_fiscal_exportado',
+  'valor_fiscal_referencia_creado',
+  'valor_fiscal_referencia_actualizado',
+  'valor_fiscal_referencia_anulado',
+  'valor_fiscal_referencia_vigencia_cerrada',
+  'configuracion_libros_actualizada',
 ]);
 const documentTypeSchema = z.enum([
   'factura_fiscal',
@@ -144,6 +167,9 @@ export const inventoryMovementSchema = z.object({
   costPerUnitBs: money.optional(),
   totalCostBs: money.optional(),
   referenceDoc: z.string().trim().max(200).optional(),
+  supplierId: z.string().trim().max(200).optional(),
+  supplierNameSnapshot: z.string().trim().max(200).optional(),
+  supplierTaxIdSnapshot: z.string().trim().max(60).optional(),
   date: dateLike,
   performedBy: z.string().trim().min(1).max(200),
   notes: z.string().max(1000).optional(),
@@ -286,13 +312,34 @@ export const supplierSchema = z.object({
   email: z.string().trim().max(200).optional(),
   fiscalAddress: z.string().trim().min(1).max(500),
   physicalAddress: z.string().trim().max(500).optional(),
-  supplierType: z.enum(['fruta', 'aditivo', 'empaque', 'quimico', 'servicios', 'otro']),
+  // Validated against the editable `supplier_types` catalog in the business layer.
+  supplierType: z.string().trim().min(1).max(60),
   paymentTerms: z.string().trim().min(1).max(200),
   status: z.enum(['activo', 'inactivo']),
   notes: z.string().max(2000).optional(),
 });
 
 export const supplierUpdateSchema = supplierSchema.partial();
+
+const catalogCodeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .regex(/^[a-z0-9_-]+$/, 'El código solo admite letras minúsculas, números, guiones y guiones bajos');
+
+const catalogValueSchema = z.object({
+  code: catalogCodeSchema,
+  label: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(500).optional(),
+  color: z.string().trim().max(40).optional(),
+  active: z.boolean().optional(),
+});
+
+export const supplierTypeSchema = catalogValueSchema;
+export const supplierTypeUpdateSchema = catalogValueSchema.partial();
+export const materialCategorySchemaInput = catalogValueSchema;
+export const materialCategoryUpdateSchema = catalogValueSchema.partial();
 
 export const supplierPriceSchema = z.object({
   // The supplier is taken from the `/api/suppliers/:id/prices` route; the body
@@ -509,6 +556,7 @@ export const expenseSchema = z
     exchangeRateUsed: positive.optional(),
     amountBs: money.optional(),
     supplierOrBeneficiary: z.string().trim().min(1).max(300),
+    supplierId: z.string().trim().max(200).optional(),
     taxId: z.string().trim().max(60).optional(),
     documentType: documentTypeSchema,
     documentNumber: z.string().trim().max(120).optional(),
@@ -551,6 +599,69 @@ export const expenseSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['issuingBankCode'],
+        message: 'El código de banco no existe en el catálogo SUDEBAN',
+      });
+    }
+  });
+
+export const payableStatusSchema = z.enum([
+  'pendiente',
+  'parcial',
+  'pagada',
+  'anulada',
+]);
+
+export const payableSchema = z.object({
+  supplierId: z.string().trim().max(200).optional(),
+  supplierName: z.string().trim().min(1).max(300),
+  taxId: z.string().trim().max(60).optional(),
+  invoiceNumber: z.string().trim().min(1).max(120),
+  controlNumber: z.string().trim().max(120).optional(),
+  issueDate: dateLike,
+  dueDate: dateLike,
+  amountUsd: positive,
+  exchangeRateUsed: positive.optional(),
+  amountBs: money.optional(),
+  taxAmountUsd: money.optional(),
+  category: z.string().trim().min(1).max(120),
+  status: payableStatusSchema.optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+export const payableUpdateSchema = z.object({
+  status: payableStatusSchema.optional(),
+  dueDate: dateLike.optional(),
+  category: z.string().trim().min(1).max(120).optional(),
+  notes: z.string().max(2000).optional(),
+  taxAmountUsd: money.optional(),
+});
+
+export const payablePaymentSchema = z
+  .object({
+    bankCode: z.string().trim().min(1).max(10),
+    bankName: z.string().trim().min(1).max(200).optional(),
+    paymentMethod: paymentMethodSchema,
+    reference: z.string().trim().min(1).max(200),
+    amountUsd: positive.optional(),
+    exchangeRateUsed: positive.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      !BANK_PAYMENT_METHODS.includes(
+        data.paymentMethod as (typeof BANK_PAYMENT_METHODS)[number]
+      )
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['paymentMethod'],
+        message: 'El pago debe registrarse con un método de pago bancario',
+      });
+      return;
+    }
+    if (!findBank(data.bankCode)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bankCode'],
         message: 'El código de banco no existe en el catálogo SUDEBAN',
       });
     }
@@ -601,8 +712,43 @@ export const fiscalSettingsSchema = z
       'revisar',
     ]),
     printNotes: z.string().max(2000),
+    digitalInvoicingEnabled: z.boolean(),
+    digitalInvoicingProvider: z.string().trim().max(200),
+    digitalInvoicingProviderTaxId: z.string().trim().max(60),
+    digitalInvoicingApiUrl: z.union([
+      z.literal(''),
+      z.string().trim().url().max(500),
+    ]),
+    digitalInvoicingEnvironment: z.enum(['pruebas', 'produccion']),
+    digitalInvoicingCertificateLabel: z.string().trim().max(200),
+    digitalInvoicingCertificateExpiry: z.string().trim().max(30),
+    digitalInvoicingStartDate: z.union([
+      z.literal(''),
+      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use la fecha YYYY-MM-DD'),
+    ]),
+    digitalInvoicingNotes: z.string().max(2000),
   })
-  .partial();
+  .partial()
+  .superRefine((data, ctx) => {
+    if (!data.digitalInvoicingEnabled) return;
+    const requiredFields = [
+      'digitalInvoicingProvider',
+      'digitalInvoicingProviderTaxId',
+      'digitalInvoicingApiUrl',
+      'digitalInvoicingEnvironment',
+      'digitalInvoicingStartDate',
+    ] as const;
+    for (const key of requiredFields) {
+      const value = (data as Record<string, unknown>)[key];
+      if (value === undefined || value === null || String(value).trim() === '') {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: 'Complete este campo para marcar la facturación digital como preparada',
+        });
+      }
+    }
+  });
 
 const fiscalObligationKeySchema = z.enum([
   'tax_regime',
@@ -655,6 +801,92 @@ export const fiscalObligationUpdateSchema = z.object({
   }
 });
 
+const fiscalReferenceDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use la fecha YYYY-MM-DD')
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+  }, 'Indique una fecha válida');
+
+const optionalFiscalReferenceDateSchema = z.union([
+  z.literal(''),
+  fiscalReferenceDateSchema,
+]);
+
+export const fiscalReferenceIdParamsSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+});
+
+export const fiscalReferenceQuerySchema = z.object({
+  kind: z.enum(['iva', 'ut']).optional(),
+  date: fiscalReferenceDateSchema.optional(),
+  includeAnnulled: z.enum(['true', 'false']).optional(),
+});
+
+export const fiscalReferenceSchema = z
+  .object({
+    kind: z.enum(['iva', 'ut']),
+    value: z.coerce.number().finite().positive(),
+    valueUnit: z.enum(['percent', 'bs']),
+    effectiveFrom: fiscalReferenceDateSchema,
+    effectiveTo: optionalFiscalReferenceDateSchema,
+    instrumentType: z.string().trim().max(80),
+    instrumentNumber: z.string().trim().max(120),
+    officialGazette: z.string().trim().max(200),
+    publicationDate: optionalFiscalReferenceDateSchema,
+    legalBasis: z.string().trim().max(500),
+    notes: z.string().trim().max(4000),
+    status: z.enum(['referencia', 'confirmado', 'historico', 'anulado']),
+    confirmedByAccountant: z.boolean(),
+    supportDocument: z.string().trim().max(500),
+  })
+  .superRefine((data, ctx) => {
+    if (data.kind === 'iva' && data.valueUnit !== 'percent') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['valueUnit'],
+        message: 'El IVA se expresa como porcentaje',
+      });
+    }
+    if (data.kind === 'ut' && data.valueUnit !== 'bs') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['valueUnit'],
+        message: 'La UT se expresa en bolívares',
+      });
+    }
+    if (data.valueUnit === 'percent' && data.value > 100) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['value'],
+        message: 'La alícuota debe estar entre 0 y 100',
+      });
+    }
+    if (data.effectiveTo && data.effectiveTo < data.effectiveFrom) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['effectiveTo'],
+        message: 'La fecha de fin no puede ser anterior al inicio de vigencia',
+      });
+    }
+  });
+
+export const fiscalReferenceAnnulmentSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+});
+
+export const accountingBookSettingsSchema = z.object({
+  approvedFormats: z.string().trim().min(1).max(100),
+  auxiliaryFormat: z.string().trim().min(1).max(50),
+  pagination: z.string().trim().max(500),
+  signatureText: z.string().trim().max(500),
+  signatureRole: z.string().trim().max(200),
+  exchangeRatePolicy: z.literal('documento_con_fallback'),
+  notes: z.string().trim().max(4000),
+  approvedAt: optionalFiscalReferenceDateSchema,
+});
+
 export const fiscalInvoiceAnnulmentSchema = z.object({
   reason: z.string().trim().min(3).max(500),
 });
@@ -700,6 +932,30 @@ export const fiscalAdjustmentNoteSchema = z.object({
 export const fiscalPeriodParamsSchema = z.object({
   year: z.coerce.number().int().min(2000).max(9999),
   month: z.coerce.number().int().min(1).max(12),
+});
+
+/** Parámetros de consulta para generar un libro contable. */
+export const accountingBookQuerySchema = z.object({
+  type: z.enum([
+    'diario',
+    'mayor',
+    'balance_comprobacion',
+    'balance_general',
+    'inventario',
+    'estado_resultados',
+    'compras',
+    'ventas',
+    'retenciones',
+    'caja_banco',
+    'auxiliar_cxc',
+    'auxiliar_cxp',
+  ]),
+  year: z.coerce.number().int().min(2000).max(9999),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
+export const expenseFiscalEligibilitySchema = z.object({
+  fiscalBookEligible: z.boolean(),
 });
 
 export const exchangeRateUpdateSchema = z.object({
@@ -755,6 +1011,8 @@ export const authModuleSchema = z.enum([
   'payroll',
   'expenses',
   'suppliers',
+  'supplier_types',
+  'material_categories',
   'settings',
   'architecture',
   'activation',
@@ -824,6 +1082,101 @@ export const notificationRecipientUpdateSchema =
 
 export const idParamsSchema = z.object({
   id: z.string().trim().min(1).max(200),
+});
+
+// --- CONTABILIDAD (FASE 1) ---
+const accountCodeLike = z.string().trim().min(1).max(30).regex(/^\d+(\.\d+)*$/);
+
+export const accountTypeSchema = z.enum([
+  'activo',
+  'pasivo',
+  'patrimonio',
+  'ingreso',
+  'gasto',
+  'costo',
+]);
+
+export const accountSchema = z.object({
+  code: accountCodeLike,
+  name: z.string().trim().min(1).max(200),
+  type: accountTypeSchema,
+  nature: z.enum(['debito', 'credito']),
+  parentCode: accountCodeLike.optional(),
+  description: z.string().max(1000).optional(),
+  active: z.boolean().optional(),
+});
+
+export const accountUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().max(1000).optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Debe enviar al menos un campo para actualizar',
+  });
+
+const accountingEntrySourceSchema = z.enum([
+  'manual',
+  'venta',
+  'cobro',
+  'gasto',
+  'pago_cxp',
+  'nomina',
+  'inventario',
+  'nota_credito',
+  'nota_debito',
+  'retencion',
+]);
+
+export const accountingEntryLineSchema = z.object({
+  accountCode: accountCodeLike,
+  debit: money.optional(),
+  credit: money.optional(),
+  memo: z.string().max(500).optional(),
+});
+
+export const accountingEntrySchema = z
+  .object({
+    date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD'),
+    description: z.string().trim().min(1).max(500),
+    sourceType: accountingEntrySourceSchema.optional(),
+    sourceId: z.string().trim().max(200).optional(),
+    exchangeRateUsed: positive.optional(),
+    status: z.enum(['borrador', 'confirmado']).optional(),
+    lines: z.array(accountingEntryLineSchema).min(2).max(50),
+  })
+  .superRefine((data, ctx) => {
+    let debit = 0;
+    let credit = 0;
+    data.lines.forEach((line, index) => {
+      const d = line.debit ?? 0;
+      const c = line.credit ?? 0;
+      if ((d > 0) === (c > 0)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['lines', index],
+          message: 'Cada línea debe ser débito o crédito, no ambos ni ninguno',
+        });
+      }
+      debit += d;
+      credit += c;
+    });
+    if (Math.abs(debit - credit) > 0.01) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lines'],
+        message: 'El asiento debe estar balanceado (débitos = créditos)',
+      });
+    }
+  });
+
+export const accountingEntryAnnulmentSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const accountingPeriodKeySchema = z.object({
+  key: z.string().trim().regex(/^\d{4}-\d{2}$/, 'Formato YYYY-MM'),
 });
 
 const activationCurrencySchema = z.enum(['USD', 'Bs']);

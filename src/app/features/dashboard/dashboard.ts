@@ -879,4 +879,26 @@ export class DashboardComponent implements OnDestroy {
       rows
     );
   }
+
+  /** Color de la etiqueta de categoría según el catálogo editable de inventario. */
+  public categoryBadgeClass(category: string): string {
+    const config = this.api.materialCategories().find((item) => item.code === category);
+    const color = config?.color || 'stone';
+    const map: Record<string, string> = {
+      emerald: 'bg-emerald-100 text-emerald-800',
+      amber: 'bg-amber-100 text-amber-800',
+      blue: 'bg-blue-100 text-blue-800',
+      violet: 'bg-purple-100 text-purple-800',
+      orange: 'bg-orange-100 text-orange-800',
+      rose: 'bg-rose-100 text-rose-800',
+      stone: 'bg-stone-100 text-stone-700',
+    };
+    return map[color] || map['stone'];
+  }
+
+  public categoryLabel(category: string): string {
+    return (
+      this.api.materialCategories().find((item) => item.code === category)?.label || category
+    );
+  }
 }

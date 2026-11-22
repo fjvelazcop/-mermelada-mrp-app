@@ -1062,17 +1062,11 @@
                 <div>
                   <div class="flex items-center gap-2">
                     <span class="font-mono text-xs font-bold text-stone-500">{{ alert.materialCode }}</span>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
-                      [class.bg-emerald-100]="alert.category === 'fruta'"
-                      [class.text-emerald-800]="alert.category === 'fruta'"
-                      [class.bg-amber-100]="alert.category === 'aditivo'"
-                      [class.text-amber-800]="alert.category === 'aditivo'"
-                      [class.bg-blue-100]="alert.category === 'empaque'"
-                      [class.text-blue-800]="alert.category === 'empaque'"
-                      [class.bg-purple-100]="alert.category === 'quimico'"
-                      [class.text-purple-800]="alert.category === 'quimico'"
+                    <span
+                      class="px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
+                      [class]="categoryBadgeClass(alert.category)"
                     >
-                      {{ alert.category }}
+                      {{ categoryLabel(alert.category) }}
                     </span>
                   </div>
                   <h3 class="font-bold text-stone-900 text-sm mt-0.5 leading-snug">

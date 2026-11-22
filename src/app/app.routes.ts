@@ -17,6 +17,7 @@ export const routes: Routes = [
       {path: 'sales', children: []},
       {path: 'payroll', children: []},
       {path: 'expenses', children: []},
+      {path: 'accounting', children: []},
       {path: 'suppliers', children: []},
       {path: 'settings', children: []},
       {

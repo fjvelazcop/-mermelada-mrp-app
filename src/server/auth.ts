@@ -43,7 +43,10 @@ export type ModuleId =
   | 'sales'
   | 'payroll'
   | 'expenses'
+  | 'accounting'
   | 'suppliers'
+  | 'supplier_types'
+  | 'material_categories'
   | 'settings'
   | 'architecture'
   | 'activation';
@@ -59,7 +62,10 @@ export const MODULE_IDS: ModuleId[] = [
   'sales',
   'payroll',
   'expenses',
+  'accounting',
   'suppliers',
+  'supplier_types',
+  'material_categories',
   'settings',
   'architecture',
   'activation',
@@ -118,7 +124,10 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     sales: full,
     payroll: full,
     expenses: full,
+    accounting: full,
     suppliers: full,
+    supplier_types: full,
+    material_categories: full,
     settings: full,
     architecture: full,
     activation: none,
@@ -131,7 +140,10 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     sales: full,
     payroll: full,
     expenses: full,
+    accounting: full,
     suppliers: full,
+    supplier_types: full,
+    material_categories: full,
     settings: full,
     architecture: full,
     activation: full,
@@ -144,7 +156,10 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     sales: createOnly,
     payroll: none,
     expenses: none,
+    accounting: none,
     suppliers: createOnly,
+    supplier_types: none,
+    material_categories: none,
     settings: none,
     architecture: none,
     activation: none,
@@ -157,7 +172,10 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     sales: none,
     payroll: none,
     expenses: none,
+    accounting: none,
     suppliers: none,
+    supplier_types: none,
+    material_categories: none,
     settings: none,
     architecture: none,
     activation: none,
@@ -170,7 +188,10 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     sales: readExport,
     payroll: read,
     expenses: write,
+    accounting: readExport,
     suppliers: write,
+    supplier_types: none,
+    material_categories: none,
     settings: none,
     architecture: read,
     activation: none,
@@ -183,7 +204,10 @@ export const ROLE_PERMISSIONS: Record<BuiltInRoleId, Record<ModuleId, ModulePerm
     sales: { view: true, create: true, edit: false, delete: false, export: true },
     payroll: none,
     expenses: none,
+    accounting: none,
     suppliers: write,
+    supplier_types: none,
+    material_categories: none,
     settings: none,
     architecture: read,
     activation: none,
@@ -1460,9 +1484,12 @@ export const requireAdmin = requireRole('admin', 'master');
 
 function resolveModule(path: string): ModuleId | null {
   if (path.startsWith('/api/activations')) return 'activation';
+  if (path.startsWith('/api/accounting')) return 'accounting';
   if (path.startsWith('/api/fiscal-adjustment-notes')) return 'sales';
   if (path.startsWith('/api/fiscal-books')) return 'settings';
   if (path.startsWith('/api/fiscal-invoices')) return 'sales';
+  if (path.startsWith('/api/material-categories')) return 'material_categories';
+  if (path.startsWith('/api/supplier-types')) return 'supplier_types';
   if (path.startsWith('/api/inventory')) return 'inventory';
   if (path.startsWith('/api/recipes')) return 'production';
   if (path.startsWith('/api/production-orders')) return 'production';
@@ -1472,6 +1499,7 @@ function resolveModule(path: string): ModuleId | null {
   if (path.startsWith('/api/payroll')) return 'payroll';
   if (path.startsWith('/api/costing')) return 'costing';
   if (path.startsWith('/api/expenses')) return 'expenses';
+  if (path.startsWith('/api/payables')) return 'expenses';
   if (path.startsWith('/api/fiscal-settings')) return 'settings';
   if (path.startsWith('/api/exchange-rates')) return 'settings';
   if (path.startsWith('/api/notifications')) return 'settings';

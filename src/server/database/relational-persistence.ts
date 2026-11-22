@@ -1,6 +1,11 @@
 import type { Database } from 'better-sqlite3';
 import type { DatabaseState } from '../erp-database.js';
 import {
+  Account,
+  AccountingBookSettings,
+  AccountingEntry,
+  AccountingEntryLine,
+  AccountingPeriod,
   AuditLogEntry,
   Customer,
   DailyExchangeRates,
@@ -13,16 +18,22 @@ import {
   FiscalPeriodClosure,
   FiscalObligationHistoryEntry,
   FiscalObligationRecord,
+  FiscalReferenceValue,
   FiscalSettings,
   FinishedGood,
   InventoryMovement,
+  MaterialCategoryConfig,
+  Payable,
+  PayablePayment,
   PayrollWeek,
   ProductionOrder,
   RawMaterial,
   RecipeBOM,
+  SalesCollection,
   SalesOrder,
   Supplier,
   SupplierPrice,
+  SupplierTypeConfig,
 } from '../../app/core/models/erp.models.js';
 import { getDb } from './persistence.js';
 
@@ -99,6 +110,9 @@ export function loadRelationalState(): DatabaseState | null {
       costPerUnitBs: o(r['cost_per_unit_bs']),
       totalCostBs: o(r['total_cost_bs']),
       referenceDoc: o(r['reference_doc']),
+      supplierId: o(r['supplier_id']),
+      supplierNameSnapshot: o(r['supplier_name_snapshot']),
+      supplierTaxIdSnapshot: o(r['supplier_tax_id_snapshot']),
       date: r['movement_date'],
       performedBy: r['performed_by'],
     })
@@ -235,7 +249,16 @@ export function loadRelationalState(): DatabaseState | null {
   const salesOrders = (
     db.prepare('SELECT * FROM sales_orders ORDER BY rowid').all() as Row[]
   ).map(
-    (r): SalesOrder => ({
+    (r): SalesOrder => {
+      const collections: SalesCollection[] | undefined = r['collections_json']
+        ? JSON.parse(r['collections_json'])
+        : undefined;
+      const lastCollection: SalesCollection | undefined = collections?.length
+        ? collections[collections.length - 1]
+        : r['collection_json']
+          ? (JSON.parse(r['collection_json']) as SalesCollection)
+          : undefined;
+      return {
       id: r['id'],
       orderNumber: r['order_number'],
       customerId: r['customer_id'],
@@ -279,7 +302,41 @@ export function loadRelationalState(): DatabaseState | null {
       productionOrderId: o(r['production_order_id']),
       notes: o(r['notes']),
       createdBy: o(r['created_by']),
-      collection: r['collection_json'] ? JSON.parse(r['collection_json']) : undefined,
+      collections,
+      collection: lastCollection,
+      };
+    }
+  );
+
+  const supplierTypes = (
+    db.prepare('SELECT * FROM supplier_types ORDER BY rowid').all() as Row[]
+  ).map(
+    (r): SupplierTypeConfig => ({
+      id: r['id'],
+      code: r['code'],
+      label: r['label'],
+      description: o(r['description']) ?? '',
+      color: r['color'] || 'stone',
+      active: r['active'] === 1,
+      isSystem: r['is_system'] === 1,
+      createdAt: r['created_at'],
+      updatedAt: r['updated_at'],
+    })
+  );
+
+  const materialCategories = (
+    db.prepare('SELECT * FROM material_categories ORDER BY rowid').all() as Row[]
+  ).map(
+    (r): MaterialCategoryConfig => ({
+      id: r['id'],
+      code: r['code'],
+      label: r['label'],
+      description: o(r['description']) ?? '',
+      color: r['color'] || 'stone',
+      active: r['active'] === 1,
+      isSystem: r['is_system'] === 1,
+      createdAt: r['created_at'],
+      updatedAt: r['updated_at'],
     })
   );
 
@@ -430,6 +487,7 @@ export function loadRelationalState(): DatabaseState | null {
       exchangeRateUsed: r['exchange_rate_used'],
       amountBs: r['amount_bs'],
       supplierOrBeneficiary: r['supplier_or_beneficiary'],
+      supplierId: o(r['supplier_id']),
       taxId: o(r['tax_id']),
       documentType: r['document_type'],
       documentNumber: o(r['document_number']),
@@ -446,6 +504,50 @@ export function loadRelationalState(): DatabaseState | null {
       accountingAccountCode: o(r['accounting_account_code']),
       accountingAccountName: o(r['accounting_account_name']),
       fiscalBookEligible: r['fiscal_book_eligible'] === 1,
+      payableId: o(r['payable_id']),
+    })
+  );
+
+  const payablePayments = (
+    db.prepare('SELECT * FROM payable_payments ORDER BY rowid').all() as Row[]
+  ).map(
+    (r): PayablePayment => ({
+      id: r['id'],
+      payableId: r['payable_id'],
+      bankCode: r['bank_code'],
+      bankName: r['bank_name'],
+      paymentMethod: r['payment_method'],
+      reference: r['reference'],
+      amountUsd: r['amount_usd'],
+      amountBs: r['amount_bs'],
+      exchangeRateUsed: r['exchange_rate_used'],
+      paidAt: r['paid_at'],
+      paidBy: r['paid_by'],
+    })
+  );
+
+  const payables = (db.prepare('SELECT * FROM payables ORDER BY rowid').all() as Row[]).map(
+    (r): Payable => ({
+      id: r['id'],
+      payableNumber: r['payable_number'],
+      supplierId: o(r['supplier_id']),
+      supplierName: r['supplier_name'],
+      taxId: o(r['tax_id']),
+      invoiceNumber: r['invoice_number'],
+      controlNumber: o(r['control_number']),
+      issueDate: r['issue_date'],
+      dueDate: r['due_date'],
+      amountUsd: r['amount_usd'],
+      exchangeRateUsed: r['exchange_rate_used'],
+      amountBs: r['amount_bs'],
+      taxAmountUsd: o(r['tax_amount_usd']),
+      category: r['category'],
+      status: r['status'],
+      notes: o(r['notes']),
+      createdBy: o(r['created_by']),
+      createdAt: o(r['created_at']),
+      updatedAt: o(r['updated_at']),
+      expenseId: o(r['expense_id']),
     })
   );
 
@@ -496,10 +598,31 @@ export function loadRelationalState(): DatabaseState | null {
         islrWithholdingAgent: fiscalRow['islr_withholding_agent'] === 1,
         islrWithholdingPercent: fiscalRow['islr_withholding_percent'] ?? 0,
         specialTaxpayer: fiscalRow['special_taxpayer'] === 1,
+        accountingEnabled: fiscalRow['accounting_enabled'] !== 0,
+        vatWithholdingEnabled: fiscalRow['vat_withholding_enabled'] === 1,
+        islrWithholdingEnabled: fiscalRow['islr_withholding_enabled'] === 1,
         booksFormat: fiscalRow['books_format'] ?? 'xlsx',
         historicalOrdersTreatment:
           fiscalRow['historical_orders_treatment'] ?? 'revisar',
         printNotes: fiscalRow['print_notes'],
+        digitalInvoicingEnabled:
+          fiscalRow['digital_invoicing_enabled'] === 1,
+        digitalInvoicingProvider:
+          fiscalRow['digital_invoicing_provider'] ?? '',
+        digitalInvoicingProviderTaxId:
+          fiscalRow['digital_invoicing_provider_tax_id'] ?? '',
+        digitalInvoicingApiUrl:
+          fiscalRow['digital_invoicing_api_url'] ?? '',
+        digitalInvoicingEnvironment:
+          fiscalRow['digital_invoicing_environment'] ?? 'pruebas',
+        digitalInvoicingCertificateLabel:
+          fiscalRow['digital_invoicing_certificate_label'] ?? '',
+        digitalInvoicingCertificateExpiry:
+          fiscalRow['digital_invoicing_certificate_expiry'] ?? '',
+        digitalInvoicingStartDate:
+          fiscalRow['digital_invoicing_start_date'] ?? '',
+        digitalInvoicingNotes:
+          fiscalRow['digital_invoicing_notes'] ?? '',
       }
     : ({} as FiscalSettings);
 
@@ -536,6 +659,68 @@ export function loadRelationalState(): DatabaseState | null {
     })
   );
 
+  const fiscalReferenceValues = (
+    db
+      .prepare('SELECT * FROM fiscal_reference_values ORDER BY effective_from DESC, rowid DESC')
+      .all() as Row[]
+  ).map(
+    (r): FiscalReferenceValue => ({
+      id: r['id'],
+      kind: r['kind'],
+      value: r['value'],
+      valueUnit: r['value_unit'],
+      effectiveFrom: r['effective_from'],
+      effectiveTo: r['effective_to'] ?? '',
+      instrumentType: r['instrument_type'] ?? '',
+      instrumentNumber: r['instrument_number'] ?? '',
+      officialGazette: r['official_gazette'] ?? '',
+      publicationDate: r['publication_date'] ?? '',
+      legalBasis: r['legal_basis'] ?? '',
+      notes: r['notes'] ?? '',
+      status: r['status'] ?? 'referencia',
+      confirmedByAccountant: r['confirmed_by_accountant'] === 1,
+      supportDocument: r['support_document'] ?? '',
+      createdAt: r['created_at'],
+      createdBy: r['created_by'],
+      updatedAt: r['updated_at'],
+      annulledAt: r['annulled_at'] ?? '',
+      annulledReason: r['annulled_reason'] ?? '',
+      annulledBy: r['annulled_by'] ?? '',
+    })
+  );
+
+  const bookSettingsRow = db
+    .prepare('SELECT * FROM accounting_book_settings WHERE id = 1')
+    .get() as Row | undefined;
+  const accountingBookSettings: AccountingBookSettings = bookSettingsRow
+    ? {
+        id: 1,
+        approvedFormats: bookSettingsRow['approved_formats'] ?? 'xlsx,pdf',
+        auxiliaryFormat: bookSettingsRow['auxiliary_format'] ?? 'csv',
+        pagination: bookSettingsRow['pagination'] ?? '',
+        signatureText: bookSettingsRow['signature_text'] ?? '',
+        signatureRole: bookSettingsRow['signature_role'] ?? '',
+        exchangeRatePolicy:
+          bookSettingsRow['exchange_rate_policy'] ?? 'documento_con_fallback',
+        notes: bookSettingsRow['notes'] ?? '',
+        approvedAt: bookSettingsRow['approved_at'] ?? '',
+        updatedAt: bookSettingsRow['updated_at'] ?? '',
+        updatedBy: bookSettingsRow['updated_by'] ?? '',
+      }
+    : {
+        id: 1,
+        approvedFormats: 'xlsx,pdf',
+        auxiliaryFormat: 'csv',
+        pagination: '',
+        signatureText: '',
+        signatureRole: '',
+        exchangeRatePolicy: 'documento_con_fallback',
+        notes: '',
+        approvedAt: '',
+        updatedAt: '',
+        updatedBy: '',
+      };
+
   const fiscalInvoices = (
     db
       .prepare('SELECT * FROM fiscal_invoices ORDER BY issued_at DESC')
@@ -548,6 +733,7 @@ export function loadRelationalState(): DatabaseState | null {
       controlNumber: r['control_number'],
       saleCondition: r['sale_condition'] ?? 'contado',
       paymentMethod: r['payment_method'] ?? 'efectivo_bs',
+      creditDays: r['credit_days'] ?? 0,
       salesOrderId: o(r['sales_order_id']),
       salesOrderNumber: o(r['sales_order_number']),
       emitterSnapshot: JSON.parse(r['emitter_snapshot']),
@@ -662,6 +848,82 @@ export function loadRelationalState(): DatabaseState | null {
     })
   );
 
+  const accounts = (
+    db.prepare('SELECT * FROM accounts ORDER BY level, code').all() as Row[]
+  ).map(
+    (r): Account => ({
+      id: r['id'],
+      code: r['code'],
+      name: r['name'],
+      type: r['type'],
+      nature: r['nature'],
+      parentCode: o(r['parent_code']),
+      level: r['level'],
+      active: r['active'] === 1,
+      isSystem: r['is_system'] === 1,
+      description: o(r['description']),
+      createdAt: r['created_at'],
+      updatedAt: r['updated_at'],
+    })
+  );
+
+  const accountingPeriods = (
+    db.prepare('SELECT * FROM accounting_periods ORDER BY key').all() as Row[]
+  ).map(
+    (r): AccountingPeriod => ({
+      id: r['id'],
+      key: r['key'],
+      startDate: r['start_date'],
+      endDate: r['end_date'],
+      status: r['status'],
+      closedAt: o(r['closed_at']),
+      closedBy: o(r['closed_by']),
+    })
+  );
+
+  const accountingEntries = (
+    db.prepare('SELECT * FROM accounting_entries ORDER BY entry_date, entry_number').all() as Row[]
+  ).map(
+    (r): AccountingEntry => {
+      const lines = (
+        db
+          .prepare('SELECT * FROM accounting_entry_lines WHERE entry_id = ? ORDER BY line_order')
+          .all(r['id']) as Row[]
+      ).map(
+        (l): AccountingEntryLine => ({
+          id: l['id'],
+          accountId: l['account_id'],
+          accountCode: l['account_code'],
+          accountName: l['account_name'],
+          debit: l['debit'],
+          credit: l['credit'],
+          memo: o(l['memo']),
+        })
+      );
+      return {
+        id: r['id'],
+        entryNumber: r['entry_number'],
+        date: r['entry_date'],
+        description: r['description'],
+        sourceType: r['source_type'],
+        sourceId: o(r['source_id']),
+        status: r['status'],
+        lines,
+        totalDebit: r['total_debit'],
+        totalCredit: r['total_credit'],
+        currency: r['currency'],
+        exchangeRateUsed: r['exchange_rate_used'],
+        periodKey: r['period_key'],
+        createdBy: r['created_by'],
+        createdAt: r['created_at'],
+        updatedAt: r['updated_at'],
+        confirmedAt: o(r['confirmed_at']),
+        annulledAt: o(r['annulled_at']),
+        annulmentReason: o(r['annulment_reason']),
+      };
+    }
+  );
+
   return {
     rawMaterials,
     inventoryMovements,
@@ -670,6 +932,8 @@ export function loadRelationalState(): DatabaseState | null {
     productionOrders,
     customers,
     salesOrders,
+    supplierTypes,
+    materialCategories,
     suppliers,
     supplierPrices,
     deliveryNotes,
@@ -677,9 +941,16 @@ export function loadRelationalState(): DatabaseState | null {
     payrollWeeks,
     expenses,
     expenseCategories,
+    payables,
+    payablePayments,
+    accounts,
+    accountingEntries,
+    accountingPeriods,
     fiscalSettings,
     fiscalObligations,
     fiscalObligationHistory,
+    fiscalReferenceValues,
+    accountingBookSettings,
     fiscalInvoices,
     fiscalAdjustmentNotes,
     fiscalPeriodClosures,
@@ -707,9 +978,17 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM fiscal_period_closures;
       DELETE FROM fiscal_obligation_history;
       DELETE FROM fiscal_obligations;
+      DELETE FROM fiscal_reference_values;
+      DELETE FROM accounting_book_settings;
       DELETE FROM fiscal_invoices;
       DELETE FROM fiscal_settings;
       DELETE FROM expense_categories;
+      DELETE FROM accounting_entry_lines;
+      DELETE FROM accounting_entries;
+      DELETE FROM accounting_periods;
+      DELETE FROM accounts;
+      DELETE FROM payable_payments;
+      DELETE FROM payables;
       DELETE FROM expenses;
       DELETE FROM payroll_weeks;
       DELETE FROM employees;
@@ -718,6 +997,8 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM customers;
       DELETE FROM supplier_prices;
       DELETE FROM suppliers;
+      DELETE FROM material_categories;
+      DELETE FROM supplier_types;
       DELETE FROM production_orders;
       DELETE FROM recipes;
       DELETE FROM finished_goods;
@@ -751,8 +1032,9 @@ export function saveRelationalState(state: DatabaseState): void {
       INSERT INTO inventory_movements (
         id, material_id, material_name, type, quantity, cost_per_unit,
         total_cost, exchange_rate_used, cost_per_unit_bs, total_cost_bs,
-        reference_doc, movement_date, performed_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reference_doc, supplier_id, supplier_name_snapshot, supplier_tax_id_snapshot,
+        movement_date, performed_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const m of snapshot.inventoryMovements) {
       insertMovement.run(
@@ -767,6 +1049,9 @@ export function saveRelationalState(state: DatabaseState): void {
         v(m.costPerUnitBs),
         v(m.totalCostBs),
         v(m.referenceDoc),
+        v(m.supplierId),
+        v(m.supplierNameSnapshot),
+        v(m.supplierTaxIdSnapshot),
         m.date,
         m.performedBy
       );
@@ -935,8 +1220,8 @@ export function saveRelationalState(state: DatabaseState): void {
         status, exchange_rate_used, subtotal,
         tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
         has_delivery_note, delivery_note_number, production_order_id, notes,
-        created_by, collection_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_by, collection_json, collections_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertSalesItem = db.prepare(`
       INSERT INTO sales_order_items (
@@ -972,7 +1257,8 @@ export function saveRelationalState(state: DatabaseState): void {
         v(order.productionOrderId),
         v(order.notes),
         v(order.createdBy),
-        v(order.collection ? JSON.stringify(order.collection) : undefined)
+        v(order.collection ? JSON.stringify(order.collection) : undefined),
+        v(order.collections?.length ? JSON.stringify(order.collections) : undefined)
       );
       for (const item of order.items) {
         insertSalesItem.run(
@@ -1115,12 +1401,12 @@ export function saveRelationalState(state: DatabaseState): void {
       INSERT INTO expenses (
         id, expense_number, expense_date, concept, category, category_label,
         amount_usd, exchange_rate_used, amount_bs, supplier_or_beneficiary,
-        tax_id, document_type, document_number, payment_method,
+        supplier_id, tax_id, document_type, document_number, payment_method,
         payment_reference, issuing_bank_code, issuing_bank_name,
         notes, registered_by, tax_category,
         tax_rate_percent, tax_amount_usd, tax_amount_bs,
-        accounting_account_code, accounting_account_name, fiscal_book_eligible
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        accounting_account_code, accounting_account_name, fiscal_book_eligible, payable_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const e of snapshot.expenses) {
       insertExpense.run(
@@ -1134,6 +1420,7 @@ export function saveRelationalState(state: DatabaseState): void {
         e.exchangeRateUsed,
         e.amountBs,
         e.supplierOrBeneficiary,
+        v(e.supplierId),
         v(e.taxId),
         e.documentType,
         v(e.documentNumber),
@@ -1149,8 +1436,154 @@ export function saveRelationalState(state: DatabaseState): void {
         v(e.taxAmountBs),
         v(e.accountingAccountCode),
         v(e.accountingAccountName),
-        b(e.fiscalBookEligible)
+        b(e.fiscalBookEligible),
+        v(e.payableId)
       );
+    }
+
+    const insertPayable = db.prepare(`
+      INSERT INTO payables (
+        id, payable_number, supplier_id, supplier_name, tax_id, invoice_number,
+        control_number, issue_date, due_date, amount_usd, exchange_rate_used,
+        amount_bs, tax_amount_usd, category, status, notes, created_by,
+        created_at, updated_at, expense_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const p of snapshot.payables ?? []) {
+      insertPayable.run(
+        p.id,
+        p.payableNumber,
+        v(p.supplierId),
+        p.supplierName,
+        v(p.taxId),
+        p.invoiceNumber,
+        v(p.controlNumber),
+        p.issueDate,
+        p.dueDate,
+        p.amountUsd,
+        p.exchangeRateUsed,
+        p.amountBs,
+        v(p.taxAmountUsd),
+        p.category,
+        p.status,
+        v(p.notes),
+        v(p.createdBy),
+        p.createdAt ?? new Date().toISOString(),
+        p.updatedAt ?? new Date().toISOString(),
+        v(p.expenseId)
+      );
+    }
+
+    const insertPayablePayment = db.prepare(`
+      INSERT INTO payable_payments (
+        id, payable_id, bank_code, bank_name, payment_method, reference,
+        amount_usd, amount_bs, exchange_rate_used, paid_at, paid_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const payment of snapshot.payablePayments ?? []) {
+      insertPayablePayment.run(
+        payment.id,
+        payment.payableId,
+        payment.bankCode,
+        payment.bankName,
+        payment.paymentMethod,
+        payment.reference,
+        payment.amountUsd,
+        payment.amountBs,
+        payment.exchangeRateUsed,
+        payment.paidAt,
+        payment.paidBy
+      );
+    }
+
+    const insertAccount = db.prepare(`
+      INSERT INTO accounts (
+        id, code, name, type, nature, parent_code, level, active, is_system,
+        description, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const account of snapshot.accounts ?? []) {
+      insertAccount.run(
+        account.id,
+        account.code,
+        account.name,
+        account.type,
+        account.nature,
+        v(account.parentCode),
+        account.level,
+        b(account.active),
+        b(account.isSystem),
+        v(account.description),
+        account.createdAt,
+        account.updatedAt
+      );
+    }
+
+    const insertAccountingPeriod = db.prepare(`
+      INSERT INTO accounting_periods (
+        id, key, start_date, end_date, status, closed_at, closed_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const period of snapshot.accountingPeriods ?? []) {
+      insertAccountingPeriod.run(
+        period.id,
+        period.key,
+        period.startDate,
+        period.endDate,
+        period.status,
+        v(period.closedAt),
+        v(period.closedBy)
+      );
+    }
+
+    const insertAccountingEntry = db.prepare(`
+      INSERT INTO accounting_entries (
+        id, entry_number, entry_date, description, source_type, source_id,
+        status, total_debit, total_credit, currency, exchange_rate_used,
+        period_key, created_by, created_at, updated_at, confirmed_at,
+        annulled_at, annulment_reason
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertAccountingLine = db.prepare(`
+      INSERT INTO accounting_entry_lines (
+        id, entry_id, account_id, account_code, account_name, debit, credit,
+        memo, line_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const entry of snapshot.accountingEntries ?? []) {
+      insertAccountingEntry.run(
+        entry.id,
+        entry.entryNumber,
+        entry.date,
+        entry.description,
+        entry.sourceType,
+        v(entry.sourceId),
+        entry.status,
+        entry.totalDebit,
+        entry.totalCredit,
+        entry.currency,
+        entry.exchangeRateUsed,
+        entry.periodKey,
+        entry.createdBy,
+        entry.createdAt,
+        entry.updatedAt,
+        v(entry.confirmedAt),
+        v(entry.annulledAt),
+        v(entry.annulmentReason)
+      );
+      entry.lines.forEach((line, index) => {
+        insertAccountingLine.run(
+          line.id,
+          entry.id,
+          line.accountId,
+          line.accountCode,
+          line.accountName,
+          line.debit,
+          line.credit,
+          v(line.memo),
+          index
+        );
+      });
     }
 
     const insertExpenseCategory = db.prepare(`
@@ -1184,8 +1617,14 @@ export function saveRelationalState(state: DatabaseState): void {
         authorization_valid_until, branch_name, branch_address,
         vat_withholding_agent, vat_withholding_percent,
         islr_withholding_agent, islr_withholding_percent, special_taxpayer,
-        books_format, historical_orders_treatment, print_notes
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        accounting_enabled, vat_withholding_enabled, islr_withholding_enabled,
+        books_format, historical_orders_treatment, print_notes,
+        digital_invoicing_enabled, digital_invoicing_provider,
+        digital_invoicing_provider_tax_id, digital_invoicing_api_url,
+        digital_invoicing_environment, digital_invoicing_certificate_label,
+        digital_invoicing_certificate_expiry, digital_invoicing_start_date,
+        digital_invoicing_notes
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       b(snapshot.fiscalSettings.enabled),
       snapshot.fiscalSettings.companyName,
@@ -1212,9 +1651,21 @@ export function saveRelationalState(state: DatabaseState): void {
       b(snapshot.fiscalSettings.islrWithholdingAgent),
       snapshot.fiscalSettings.islrWithholdingPercent,
       b(snapshot.fiscalSettings.specialTaxpayer),
+      b(snapshot.fiscalSettings.accountingEnabled ?? true),
+      b(snapshot.fiscalSettings.vatWithholdingEnabled ?? false),
+      b(snapshot.fiscalSettings.islrWithholdingEnabled ?? false),
       snapshot.fiscalSettings.booksFormat,
       snapshot.fiscalSettings.historicalOrdersTreatment,
-      snapshot.fiscalSettings.printNotes
+      snapshot.fiscalSettings.printNotes,
+      b(snapshot.fiscalSettings.digitalInvoicingEnabled ?? false),
+      snapshot.fiscalSettings.digitalInvoicingProvider ?? '',
+      snapshot.fiscalSettings.digitalInvoicingProviderTaxId ?? '',
+      snapshot.fiscalSettings.digitalInvoicingApiUrl ?? '',
+      snapshot.fiscalSettings.digitalInvoicingEnvironment ?? 'pruebas',
+      snapshot.fiscalSettings.digitalInvoicingCertificateLabel ?? '',
+      snapshot.fiscalSettings.digitalInvoicingCertificateExpiry ?? '',
+      snapshot.fiscalSettings.digitalInvoicingStartDate ?? '',
+      snapshot.fiscalSettings.digitalInvoicingNotes ?? ''
     );
 
     const insertFiscalObligation = db.prepare(`
@@ -1257,15 +1708,80 @@ export function saveRelationalState(state: DatabaseState): void {
       );
     }
 
+    const insertFiscalReferenceValue = db.prepare(`
+      INSERT INTO fiscal_reference_values (
+        id, kind, value, value_unit, effective_from, effective_to,
+        instrument_type, instrument_number, official_gazette, publication_date,
+        legal_basis, notes, status, confirmed_by_accountant, support_document,
+        created_at, created_by, updated_at, annulled_at, annulled_reason, annulled_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const item of snapshot.fiscalReferenceValues || []) {
+      insertFiscalReferenceValue.run(
+        item.id,
+        item.kind,
+        item.value,
+        item.valueUnit,
+        item.effectiveFrom,
+        item.effectiveTo ?? '',
+        item.instrumentType ?? '',
+        item.instrumentNumber ?? '',
+        item.officialGazette ?? '',
+        item.publicationDate ?? '',
+        item.legalBasis ?? '',
+        item.notes ?? '',
+        item.status ?? 'referencia',
+        b(item.confirmedByAccountant),
+        item.supportDocument ?? '',
+        item.createdAt,
+        item.createdBy,
+        item.updatedAt,
+        item.annulledAt ?? '',
+        item.annulledReason ?? '',
+        item.annulledBy ?? ''
+      );
+    }
+
+    const bookSettings = snapshot.accountingBookSettings ?? {
+      id: 1,
+      approvedFormats: 'xlsx,pdf',
+      auxiliaryFormat: 'csv',
+      pagination: '',
+      signatureText: '',
+      signatureRole: '',
+      exchangeRatePolicy: 'documento_con_fallback',
+      notes: '',
+      approvedAt: '',
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'sistema',
+    };
+    db.prepare(`
+      INSERT INTO accounting_book_settings (
+        id, approved_formats, auxiliary_format, pagination, signature_text,
+        signature_role, exchange_rate_policy, notes, approved_at, updated_at, updated_by
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      bookSettings.approvedFormats ?? 'xlsx,pdf',
+      bookSettings.auxiliaryFormat ?? 'csv',
+      bookSettings.pagination ?? '',
+      bookSettings.signatureText ?? '',
+      bookSettings.signatureRole ?? '',
+      bookSettings.exchangeRatePolicy ?? 'documento_con_fallback',
+      bookSettings.notes ?? '',
+      bookSettings.approvedAt ?? '',
+      bookSettings.updatedAt ?? new Date().toISOString(),
+      bookSettings.updatedBy ?? 'sistema'
+    );
+
     const insertFiscalInvoice = db.prepare(`
       INSERT INTO fiscal_invoices (
         id, serie, invoice_number, control_number, sales_order_id,
-        sale_condition, payment_method,
+        sale_condition, payment_method, credit_days,
         sales_order_number, emitter_snapshot, customer_snapshot, items_json,
         subtotal, tax_amount, total, subtotal_bs, tax_amount_bs, total_bs,
         exchange_rate_used, status, issued_at, annulled_at, annulled_by,
         annulment_reason, print_count, period_year, period_month
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const invoice of snapshot.fiscalInvoices || []) {
       insertFiscalInvoice.run(
@@ -1276,6 +1792,7 @@ export function saveRelationalState(state: DatabaseState): void {
         v(invoice.salesOrderId),
         invoice.saleCondition,
         invoice.paymentMethod,
+        invoice.creditDays ?? 0,
         v(invoice.salesOrderNumber),
         JSON.stringify(invoice.emitterSnapshot),
         JSON.stringify(invoice.customerSnapshot),
@@ -1433,6 +1950,44 @@ export function saveRelationalState(state: DatabaseState): void {
         supplier.status,
         v(supplier.notes),
         supplier.createdAt
+      );
+    }
+
+    const insertSupplierType = db.prepare(`
+      INSERT INTO supplier_types (
+        id, code, label, description, color, active, is_system, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const type of snapshot.supplierTypes || []) {
+      insertSupplierType.run(
+        type.id,
+        type.code,
+        type.label,
+        v(type.description),
+        type.color || 'stone',
+        b(type.active),
+        b(type.isSystem),
+        type.createdAt,
+        type.updatedAt
+      );
+    }
+
+    const insertMaterialCategory = db.prepare(`
+      INSERT INTO material_categories (
+        id, code, label, description, color, active, is_system, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const category of snapshot.materialCategories || []) {
+      insertMaterialCategory.run(
+        category.id,
+        category.code,
+        category.label,
+        v(category.description),
+        category.color || 'stone',
+        b(category.active),
+        b(category.isSystem),
+        category.createdAt,
+        category.updatedAt
       );
     }
 

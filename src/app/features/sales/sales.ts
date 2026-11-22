@@ -1,12 +1,15 @@
 import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@angular/core';
+import {DatePipe} from '@angular/common';
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {DeliveryNote, FiscalPaymentMethod, FiscalSaleCondition, FinishedGood, PresentationType, PriceTierType, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
+import {DeliveryNote, FiscalPaymentMethod, FiscalSaleCondition, FinishedGood, PresentationType, PriceTierType, SalesCollection, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {VENEZUELAN_BANKS, bankLabel, findBank} from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel, exportToPdf, downloadDeliveryNotePdf} from '../../core/utils/export.utils';
 import {FiscalInvoicesComponent} from '../fiscal-invoices/fiscal-invoices';
+import {AccountsReceivableComponent} from '../accounts-receivable/accounts-receivable';
+import {outstandingForOrder} from './sales-collections';
 
 export interface PriceTierOption {
   tier: PriceTierType;
@@ -37,11 +40,24 @@ export interface DraftOrderItem {
 @Component({
   selector: 'app-sales',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, FiscalInvoicesComponent],
+  imports: [
+    MatIconModule,
+    ReactiveFormsModule,
+    DatePipe,
+    VeCurrencyPipe,
+    VeNumberPipe,
+    FiscalInvoicesComponent,
+    AccountsReceivableComponent,
+  ],
   templateUrl: './sales.html',
 })
 export class SalesComponent {
   public api = inject(ErpApiService);
+
+  /** Main module tabs: delivery notes, accounts receivable and fiscal invoicing. */
+  public activeSalesTab = signal<'notas' | 'cxc' | 'fiscal'>('notas');
+  public canViewFiscalTab = computed(() => !this.api.isSupervisorPlanta());
+  public canViewCxcTab = computed(() => !this.api.isSupervisorPlanta());
 
   public isNewOrderModalOpen = signal<boolean>(false);
   public isNewCustomerModalOpen = signal<boolean>(false);
@@ -50,6 +66,12 @@ export class SalesComponent {
   public isCollectModalOpen = signal<boolean>(false);
   public collectingOrder = signal<SalesOrder | null>(null);
   public collectingBankQuery = signal<string>('');
+  /** Saldo pendiente del pedido en cobro; precarga el modal de abonos. */
+  public collectingBalance = signal<number>(0);
+  public isCollectionsDrawerOpen = signal<boolean>(false);
+  public collectionsHistoryOrder = signal<SalesOrder | null>(null);
+  public collectionsHistory = signal<SalesCollection[]>([]);
+  public loadingCollections = signal<boolean>(false);
   public isOrderDetailModalOpen = signal<boolean>(false);
   public selectedOrderDetail = signal<SalesOrder | null>(null);
   public banks = VENEZUELAN_BANKS;
@@ -591,15 +613,71 @@ export class SalesComponent {
 
   // --- SALES COLLECTION (BANK RECEIVER MANDATORY) ---
 
+  /** Misma regla de saldo que Cuentas por Cobrar. */
+  public orderOutstanding(order: SalesOrder) {
+    return outstandingForOrder(
+      order,
+      this.api.fiscalInvoices(),
+      this.api.fiscalAdjustmentNotes()
+    );
+  }
+
+  public canCollectOrder(order: SalesOrder): boolean {
+    return (
+      !this.api.isSupervisorPlanta() && this.orderOutstanding(order).balanceUsd > 0.01
+    );
+  }
+
+  public orderStatusLabel(order: SalesOrder): string {
+    if (order.status === 'cobrado_parcial') return 'Cobrado parcial';
+    switch (order.status) {
+      case 'cobrado':
+        return 'Cobrado';
+      case 'despachado':
+        return 'Despachado';
+      case 'listo_despacho':
+        return 'Listo en Bodega';
+      case 'en_produccion':
+        return 'En Marmita (MTO)';
+      default:
+        return 'Pendiente Stock';
+    }
+  }
+
+  /** Abre el drawer con el historial de abonos del pedido. */
+  public async viewCollections(order: SalesOrder): Promise<void> {
+    this.collectionsHistoryOrder.set(order);
+    this.collectionsHistory.set([]);
+    this.loadingCollections.set(true);
+    this.isCollectionsDrawerOpen.set(true);
+    try {
+      this.collectionsHistory.set(await this.api.getSalesOrderCollections(order.id));
+    } finally {
+      this.loadingCollections.set(false);
+    }
+  }
+
+  public closeCollectionsDrawer(): void {
+    this.isCollectionsDrawerOpen.set(false);
+    this.collectionsHistoryOrder.set(null);
+    this.collectionsHistory.set([]);
+  }
+
   public openCollectModal(order: SalesOrder) {
     const rate =
       order.exchangeRateUsed || this.api.exchangeRates()?.currentUsd || 48.35;
+    const balance = this.orderOutstanding(order).balanceUsd;
+    if (balance <= 0) {
+      this.api.showToast('Este pedido ya tiene el saldo cancelado.', 'error');
+      return;
+    }
     this.collectingOrder.set(order);
+    this.collectingBalance.set(balance);
     this.collectForm.reset({
       bankCode: '',
       paymentMethod: 'transferencia_bancaria',
       reference: '',
-      amountUsd: order.total,
+      amountUsd: balance,
       exchangeRateUsed: rate,
     });
     this.collectingBankQuery.set('');
@@ -610,6 +688,7 @@ export class SalesComponent {
     this.isCollectModalOpen.set(false);
     this.collectingOrder.set(null);
     this.collectingBankQuery.set('');
+    this.collectingBalance.set(0);
   }
 
   public onCollectBankChange(value: string) {
@@ -626,6 +705,19 @@ export class SalesComponent {
       return;
     }
     const v = this.collectForm.getRawValue();
+    const outstanding = this.orderOutstanding(order);
+    if (Number(v.amountUsd) > outstanding.balanceUsd + 0.01) {
+      this.api.showToast(
+        `El monto supera el saldo pendiente ($${formatVeNumber(outstanding.balanceUsd, 2)}).`,
+        'error'
+      );
+      return;
+    }
+    const reference = v.reference.trim().toLowerCase();
+    if (outstanding.collections.some((entry) => entry.reference.trim().toLowerCase() === reference)) {
+      this.api.showToast('Esa referencia ya fue registrada para este pedido.', 'error');
+      return;
+    }
     const bank = findBank(v.bankCode);
     if (!bank) {
       this.api.showToast(

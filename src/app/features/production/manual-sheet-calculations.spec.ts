@@ -2,13 +2,16 @@ import {
   DEFAULT_SHEET_YIELD_PERCENT,
   calculateIngredientMassKg,
   calculateMarmitaPresentationUnits,
+  calculateMermaKg,
   calculateObtainedUnits,
   calculateObtainedUnitsFromIngredients,
   calculatePackagingEstimate,
   calculatePresentationsEstimate,
+  calculateSheetMerma,
   calculateSheetMatrixTotals,
   calculateTotalKgFromIngredients,
   normalizePresentationUnits,
+  reconcileSheet,
   requiresManualPresentationUnits,
   sumPresentationUnits,
 } from './manual-sheet-calculations';
@@ -37,6 +40,32 @@ describe('manual sheet calculations', () => {
           acidG: 0,
         })
       ).toBe(10);
+    });
+  });
+
+  describe('merma', () => {
+    const inputs = {
+      guavaKg: 60,
+      sugarKg: 40,
+      starchKg: 1,
+      chemicalG: 500,
+      acidG: 200,
+      // Gasoil/agua is process consumption and must not enter the mass balance.
+      waterGasOil: 40,
+    };
+
+    it('is ingredient mass minus captured kilos', () => {
+      expect(calculateMermaKg(101.7, 90)).toBe(11.7);
+      expect(calculateSheetMerma({...inputs, totalKg: 90})).toBe(11.7);
+    });
+
+    it('never includes gasoil/agua in the mass or merma', () => {
+      expect(calculateIngredientMassKg(inputs)).toBe(101.7);
+      expect(calculateSheetMerma({...inputs, totalKg: 101.7})).toBe(0);
+    });
+
+    it('clamps negative balances to zero', () => {
+      expect(calculateMermaKg(100, 120)).toBe(0);
     });
   });
 
@@ -319,6 +348,77 @@ describe('manual sheet calculations', () => {
         { presentationId: 'cunete', units: 0, assignedKg: 0 },
       ]);
       expect(totals.totalUnits).toBe(0);
+    });
+  });
+
+  describe('reconcileSheet', () => {
+    const presentations = [
+      {id: 'cunete', presentationKg: 20},
+      {id: 'caja', presentationKg: 20},
+    ];
+    const marmitas = [
+      {
+        number: 1,
+        totalKg: 100,
+        presentationUnits: [
+          {presentationId: 'cunete', units: 3},
+          {presentationId: 'caja', units: 2},
+        ],
+      },
+      {
+        number: 2,
+        totalKg: 60,
+        presentationUnits: [
+          {presentationId: 'cunete', units: 1},
+          {presentationId: 'caja', units: 2},
+        ],
+      },
+    ];
+
+    function reconcile(overrides: {
+      obtainedUnits?: number;
+      estimatedKg?: number;
+      packagingCost?: number;
+    } = {}) {
+      return reconcileSheet({
+        matrix: calculateSheetMatrixTotals(marmitas, presentations),
+        obtainedUnits: overrides.obtainedUnits ?? 8,
+        estimatedKg: overrides.estimatedKg ?? 160,
+        presentationPackagingCosts: [
+          {id: 'cunete', packagingCost: 12},
+          {id: 'caja', packagingCost: 8},
+        ],
+        packagingCost: overrides.packagingCost ?? 20,
+      });
+    }
+
+    it('confirma que filas, columnas, kilos, obtenidas y empaques cuadran', () => {
+      const result = reconcile();
+      expect(result.ok).toBe(true);
+      expect(result.checks.length).toBe(7);
+      expect(result.checks.every((check) => check.ok)).toBe(true);
+      expect(result.totalUnits).toBe(8);
+      expect(result.totalAssignedKg).toBe(160);
+      expect(result.totalEstimatedKg).toBe(160);
+      expect(result.packagingCost).toBe(20);
+    });
+
+    it('detecta una Cant. obtenida diferente a la matriz', () => {
+      const result = reconcile({obtainedUnits: 7});
+      const failed = result.checks.filter((check) => !check.ok).map((check) => check.key);
+      expect(failed).toContain('obtainedUnits');
+      expect(result.ok).toBe(false);
+    });
+
+    it('detecta empaques que no coinciden con el resumen', () => {
+      const result = reconcile({packagingCost: 22});
+      const failed = result.checks.filter((check) => !check.ok).map((check) => check.key);
+      expect(failed).toEqual(['packagingCost']);
+    });
+
+    it('tolera diferencias de redondeo de un centavo', () => {
+      expect(reconcile({obtainedUnits: 8.01}).ok).toBe(true);
+      expect(reconcile({packagingCost: 20.01}).ok).toBe(true);
     });
   });
 });

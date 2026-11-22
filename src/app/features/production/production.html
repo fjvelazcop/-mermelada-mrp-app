@@ -675,7 +675,7 @@
 
           <div class="border border-stone-200 rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
-              <table class="min-w-[1120px] w-full text-xs">
+              <table class="min-w-[1220px] w-full text-xs">
                 <thead class="bg-stone-100 text-stone-600">
                   <tr>
                     <th class="px-2 py-2 text-left font-semibold">Marmita</th>
@@ -689,6 +689,7 @@
                     <th class="px-2 py-2 text-center font-semibold">Hora finalizada</th>
                     <th class="px-2 py-2 text-right font-semibold">Cant. obtenida / por presentación</th>
                     <th class="px-2 py-2 text-right font-semibold">Kilos totales</th>
+                    <th class="px-2 py-2 text-right font-semibold" title="Insumos (sin agua/gasoil) menos kilos totales">Merma kg</th>
                     <th class="px-2 py-2 text-center font-semibold">Reproceso</th>
                   </tr>
                 </thead>
@@ -769,6 +770,9 @@
                           <span class="mt-0.5 block text-center text-[9px] font-semibold uppercase tracking-wide text-amber-700" title="Ajustado manualmente; se recalcula si cambian los insumos o el rendimiento">manual</span>
                         }
                       </td>
+                      <td class="px-2 py-1.5 text-right font-mono text-stone-700" title="Merma = insumos (sin agua/gasoil) − kilos totales">
+                        {{ sheetMermaRows()[i] | number:'1.2-2' }}
+                      </td>
                       <td class="px-1 py-1.5 text-center">
                         <input type="checkbox" formControlName="reprocess" class="accent-amber-600" />
                       </td>
@@ -787,6 +791,7 @@
                     <td class="px-2 py-2 text-center text-stone-400">—</td>
                     <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().obtainedUnits | number:'1.2-2' }}</td>
                     <td class="px-2 py-2 text-right font-mono">{{ sheetTotals().totalKg | number:'1.2-2' }}</td>
+                    <td class="px-2 py-2 text-right font-mono text-amber-800">{{ sheetTotals().mermaKg | number:'1.2-2' }}</td>
                     <td class="px-2 py-2 text-center text-stone-400">—</td>
                   </tr>
                 </tfoot>
@@ -804,7 +809,8 @@
               <strong>Kilos totales ÷ peso por envase</strong> cuando hay una sola presentación.
               Con varias presentaciones, capture las unidades de cada presentación por marmita y el
               total se suma automáticamente. Los kilos totales se pueden editar; al cambiar una base
-              relevante las cantidades se recalculan.
+              relevante las cantidades se recalculan. La <strong>Merma kg</strong> es insumos (sin
+              agua/gasoil) menos kilos totales: el gasoil se muestra aparte y nunca suma masa.
             </span>
           </p>
 
@@ -1007,6 +1013,52 @@
                 </div>
               </div>
 
+              <!-- CUADRE DE CANTIDADES: verificación independiente de unidades, kilos y empaques -->
+              <div
+                class="mt-3 rounded-xl border p-3"
+                [class.border-emerald-300]="sheetReconciliation().ok"
+                [class.bg-emerald-50]="sheetReconciliation().ok"
+                [class.border-amber-300]="!sheetReconciliation().ok"
+                [class.bg-amber-50]="!sheetReconciliation().ok"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div class="flex items-center gap-1.5">
+                    <mat-icon class="text-sm" [class.text-emerald-700]="sheetReconciliation().ok" [class.text-amber-700]="!sheetReconciliation().ok">
+                      {{ sheetReconciliation().ok ? 'check_circle' : 'warning' }}
+                    </mat-icon>
+                    <h5 class="text-[11px] font-bold uppercase tracking-wide text-stone-700">Cuadre de cantidades</h5>
+                  </div>
+                  <span class="text-[10px] font-mono text-stone-600">
+                    {{ sheetReconciliation().totalUnits | number:'1.0-2' }} ud ·
+                    {{ sheetReconciliation().totalAssignedKg | number:'1.2-2' }} kg asignados ·
+                    {{ sheetReconciliation().packagingCost | veCurrency:'$':2 }} empaques
+                  </span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                  @for (check of sheetReconciliation().checks; track check.key) {
+                    <div class="flex items-start gap-1.5 rounded-lg bg-white/70 border border-stone-200 px-2 py-1.5">
+                      <mat-icon class="text-xs mt-0.5" [class.text-emerald-700]="check.ok" [class.text-rose-700]="!check.ok">
+                        {{ check.ok ? 'check' : 'close' }}
+                      </mat-icon>
+                      <div class="min-w-0">
+                        <span class="block text-[10px] leading-tight text-stone-600">{{ check.label }}</span>
+                        <span class="block text-[10px] font-mono text-stone-500">
+                          {{ check.actual | number:'1.2-2' }} vs {{ check.expected | number:'1.2-2' }}
+                          @if (!check.ok) {
+                            <span class="font-bold text-rose-700">(diff {{ check.difference | number:'1.2-2' }})</span>
+                          }
+                        </span>
+                      </div>
+                    </div>
+                  }
+                </div>
+                @if (!sheetReconciliation().ok) {
+                  <p class="mt-2 text-[10px] text-amber-800">
+                    Revise las unidades por marmita y presentación: los totales no coinciden entre el detalle y el resumen.
+                  </p>
+                }
+              </div>
+
               <div class="mt-3 pt-3 border-t border-stone-200 space-y-1.5 text-xs">
                 @for (line of sc.presentations; track line.id) {
                   <div class="flex items-center justify-between gap-2">
@@ -1054,6 +1106,10 @@
                     </p>
                   }
                 }
+                <div class="flex items-center justify-between border-t border-amber-200 pt-1.5 mt-1">
+                  <span class="font-semibold text-amber-900">Merma total del lote</span>
+                  <span class="font-mono font-bold text-amber-800">{{ sheetTotals().mermaKg | number:'1.2-2' }} kg</span>
+                </div>
               </div>
             </div>
 
@@ -1369,6 +1425,10 @@
                 <span class="block text-[10px] uppercase tracking-wide text-stone-400 font-semibold">Kilos totales</span>
                 <span class="font-mono font-bold text-stone-900">{{ sheet.totals.totalKg | number:'1.2-2' }}</span>
               </div>
+              <div class="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <span class="block text-[10px] uppercase tracking-wide text-amber-700 font-semibold">Merma (sin gasoil)</span>
+                <span class="font-mono font-bold text-amber-800">{{ (sheet.totals.mermaKg || 0) | number:'1.2-2' }} kg</span>
+              </div>
               @if (api.canViewPrices()) {
                 <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5">
                   <span class="block text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">Valor producción</span>
@@ -1379,7 +1439,7 @@
 
             <div class="mt-4 border border-stone-200 rounded-xl overflow-hidden">
               <div class="overflow-x-auto">
-                <table class="min-w-[1000px] w-full text-xs">
+                <table class="min-w-[1100px] w-full text-xs">
                   <thead class="bg-stone-100 text-stone-600">
                     <tr>
                       <th class="px-2 py-2 text-left font-semibold">Marmita</th>
@@ -1393,6 +1453,7 @@
                       <th class="px-2 py-2 text-center font-semibold">Hora</th>
                       <th class="px-2 py-2 text-right font-semibold">Cant. obtenida</th>
                       <th class="px-2 py-2 text-right font-semibold">Kilos totales</th>
+                      <th class="px-2 py-2 text-right font-semibold">Merma kg</th>
                       <th class="px-2 py-2 text-center font-semibold">Reproceso</th>
                     </tr>
                   </thead>
@@ -1419,6 +1480,7 @@
                           }
                         </td>
                         <td class="px-2 py-1.5 text-right font-mono">{{ row.totalKg | number:'1.2-2' }}</td>
+                        <td class="px-2 py-1.5 text-right font-mono text-amber-800">{{ savedSheetMerma(row) | number:'1.2-2' }}</td>
                         <td class="px-2 py-1.5 text-center">
                           <span
                             class="text-[10px] font-semibold px-1.5 py-0.5 rounded border"
@@ -1445,6 +1507,7 @@
                       <td class="px-2 py-2 text-center text-stone-400">—</td>
                       <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.obtainedUnits | number:'1.2-2' }}</td>
                       <td class="px-2 py-2 text-right font-mono">{{ sheet.totals.totalKg | number:'1.2-2' }}</td>
+                      <td class="px-2 py-2 text-right font-mono text-amber-800">{{ (sheet.totals.mermaKg || 0) | number:'1.2-2' }}</td>
                       <td class="px-2 py-2 text-center text-stone-400">—</td>
                     </tr>
                   </tfoot>

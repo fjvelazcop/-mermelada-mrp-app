@@ -2,16 +2,33 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {RawMaterial, MaterialCategory, UnitOfMeasure} from '../../core/models/erp.models';
+import {
+  RawMaterial,
+  InventoryMovement,
+  MaterialCategory,
+  UnitOfMeasure,
+  DEFAULT_MATERIAL_CATEGORIES,
+} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
 
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
+import {
+  SupplierAutocompleteComponent,
+  SupplierSelection,
+} from '../../shared/components/supplier-autocomplete/supplier-autocomplete';
+import {
+  filterMaterials,
+  filterMovements,
+  MovementTypeFilter,
+  normalizeSearchText,
+  summarizeMovementsByMaterial,
+} from './inventory.filters';
 
 @Component({
   selector: 'app-inventory',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, AuditLog],
+  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, AuditLog, SupplierAutocompleteComponent],
   templateUrl: './inventory.html',
 })
 export class InventoryComponent {
@@ -19,9 +36,19 @@ export class InventoryComponent {
 
   public activeInventoryTab = signal<'stock' | 'movements' | 'audit'>('stock');
   public selectedCategory = signal<string>('all');
+  public materialSearch = signal<string>('');
   public isMovementModalOpen = signal<boolean>(false);
   public isNewMaterialModalOpen = signal<boolean>(false);
   public selectedMaterialForMovement = signal<RawMaterial | null>(null);
+
+  /** Texto tecleado en el campo nombre del modal de nuevo insumo (para el autocomplete). */
+  public materialNameInput = signal<string>('');
+  public movementSearch = signal<string>('');
+  public movementMaterialFilter = signal<string>('all');
+  public movementTypeFilter = signal<MovementTypeFilter>('all');
+  public movementDateFrom = signal<string>('');
+  public movementDateTo = signal<string>('');
+  public expandedMovement = signal<string | null>(null);
 
   // Currency view toggle: 'USD' ($) or 'Bs' (Bolívares)
   public currencyMode = signal<'USD' | 'Bs'>('USD');
@@ -34,6 +61,11 @@ export class InventoryComponent {
     costPerUnit: new FormControl<number>(1.25, {nonNullable: true, validators: [Validators.required, Validators.min(0)]}),
     exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     referenceDoc: new FormControl<string>('', {nonNullable: true}),
+    /** Texto visible del selector; no se envía al servidor. */
+    supplierQuery: new FormControl<string>('', {nonNullable: true}),
+    supplierId: new FormControl<string>('', {nonNullable: true}),
+    supplierNameSnapshot: new FormControl<string>('', {nonNullable: true}),
+    supplierTaxIdSnapshot: new FormControl<string>('', {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
   });
 
@@ -50,16 +82,70 @@ export class InventoryComponent {
     notes: new FormControl<string>('', {nonNullable: true}),
   });
 
-  public filteredMaterials = computed(() => {
-    const all = this.api.rawMaterials();
-    const cat = this.selectedCategory();
-    if (cat === 'all') return all;
-    if (cat === 'alertas') return all.filter(m => m.currentStock <= m.minStock);
-    return all.filter(m => m.category === cat);
+  /** Categorías activas del catálogo administrable; fallback para datos no migrados. */
+  public materialCategories = computed(() => {
+    const catalog = this.api.materialCategories().filter((category) => category.active);
+    return catalog.length ? catalog : DEFAULT_MATERIAL_CATEGORIES.filter((c) => c.active);
+  });
+
+  public categoryLabel(code: string): string {
+    return (
+      this.materialCategories().find((category) => category.code === code)?.label || code
+    );
+  }
+
+  public defaultMaterialCategory(): MaterialCategory {
+    return this.materialCategories()[0]?.code || 'fruta';
+  }
+
+  public filteredMaterials = computed(() =>
+    filterMaterials(this.api.rawMaterials(), {
+      search: this.materialSearch(),
+      category: this.selectedCategory(),
+      categoryLabels: Object.fromEntries(
+        this.materialCategories().map((category) => [category.code, category.label])
+      ),
+    })
+  );
+
+  /** Sugerencias de nombres existentes para el autocomplete del modal. */
+  public materialNameSuggestions = computed(() => {
+    const term = normalizeSearchText(this.materialNameInput());
+    if (!term) return [];
+    return this.api
+      .rawMaterials()
+      .filter((material) => normalizeSearchText(material.name).includes(term))
+      .slice(0, 8);
+  });
+
+  /** Coincidencia exacta (ignorando tildes y mayúsculas) para avisar de duplicados. */
+  public exactMaterialMatch = computed(() => {
+    const term = normalizeSearchText(this.materialNameInput());
+    if (!term) return null;
+    return (
+      this.api
+        .rawMaterials()
+        .find((material) => normalizeSearchText(material.name) === term) || null
+    );
   });
 
   public finishedGoods = computed(() => this.api.finishedGoods());
   public movements = computed(() => this.api.inventoryMovements());
+
+  public filteredMovements = computed(() =>
+    filterMovements(this.movements(), {
+      search: this.movementSearch(),
+      materialId: this.movementMaterialFilter(),
+      type: this.movementTypeFilter(),
+      dateFrom: this.movementDateFrom(),
+      dateTo: this.movementDateTo(),
+    })
+  );
+
+  public movementSummaries = computed(() =>
+    summarizeMovementsByMaterial(this.filteredMovements())
+  );
+
   public inventoryAuditCount = computed(() =>
     this.api.auditLogs().filter(l => l.module === 'inventario').length
   );
@@ -74,11 +160,21 @@ export class InventoryComponent {
         exchangeRateUsed: activeRate,
         quantity: mat.unit === 'g' ? 100 : 10,
         type: 'entrada',
-        referenceDoc: 'Factura Compra Insumos #' + Math.floor(Math.random() * 900 + 100),
+        // El número de factura real lo confirma el usuario; no se inventa.
+        referenceDoc: '',
+        supplierQuery: '',
+        supplierId: '',
+        supplierNameSnapshot: '',
+        supplierTaxIdSnapshot: '',
       });
     } else {
       this.movementForm.patchValue({
         exchangeRateUsed: activeRate,
+        referenceDoc: '',
+        supplierQuery: '',
+        supplierId: '',
+        supplierNameSnapshot: '',
+        supplierTaxIdSnapshot: '',
       });
     }
     this.isMovementModalOpen.set(true);
@@ -89,9 +185,25 @@ export class InventoryComponent {
     this.selectedMaterialForMovement.set(null);
   }
 
+  /** Guarda la razón social y el RIF/Cédula vigentes al momento del movimiento. */
+  public onSupplierSelected(selection: SupplierSelection): void {
+    this.movementForm.patchValue({
+      supplierId: selection.supplierId,
+      supplierNameSnapshot: selection.businessName,
+      supplierTaxIdSnapshot: selection.taxId,
+    });
+  }
+
   public async submitMovement() {
     if (this.movementForm.invalid) return;
     const v = this.movementForm.getRawValue();
+    if (v.type === 'entrada' && v.referenceDoc.trim() && !v.supplierId) {
+      this.api.showToast(
+        'Selecciona el proveedor de la factura o captura el documento como nota sin factura.',
+        'error'
+      );
+      return;
+    }
     await this.api.recordMovement({
       materialId: v.materialId,
       type: v.type,
@@ -99,15 +211,71 @@ export class InventoryComponent {
       costPerUnit: Number(v.costPerUnit),
       exchangeRateUsed: Number(v.exchangeRateUsed),
       referenceDoc: v.referenceDoc,
+      supplierId: v.supplierId || undefined,
+      supplierNameSnapshot: v.supplierNameSnapshot || undefined,
+      supplierTaxIdSnapshot: v.supplierTaxIdSnapshot || undefined,
       notes: v.notes,
     });
     this.closeMovementModal();
   }
 
+  /** Mantiene sincronizados el signal del autocomplete y el FormControl del nombre. */
+  public onMaterialNameInput(value: string): void {
+    this.materialNameInput.set(value);
+    this.newMaterialForm.controls.name.setValue(value);
+  }
+
+  /** Precarga el formulario con un insumo existente sin reutilizar su código. */
+  public applyMaterialSuggestion(material: RawMaterial): void {
+    this.materialNameInput.set(material.name);
+    this.newMaterialForm.patchValue({
+      name: material.name,
+      category: material.category,
+      unit: material.unit,
+      costPerUnit: material.costPerUnit,
+      supplier: material.supplier || '',
+      minStock: material.minStock,
+      notes: material.notes || '',
+    });
+  }
+
+  public clearMaterialSearch(): void {
+    this.materialSearch.set('');
+  }
+
+  public resetMovementFilters(): void {
+    this.movementSearch.set('');
+    this.movementMaterialFilter.set('all');
+    this.movementTypeFilter.set('all');
+    this.movementDateFrom.set('');
+    this.movementDateTo.set('');
+  }
+
+  /** Salta a la pestaña de movimientos con el insumo ya filtrado. */
+  public viewMaterialMovements(material: RawMaterial): void {
+    this.movementMaterialFilter.set(material.id);
+    this.movementSearch.set('');
+    this.movementTypeFilter.set('all');
+    this.movementDateFrom.set('');
+    this.movementDateTo.set('');
+    this.activeInventoryTab.set('movements');
+  }
+
+  public toggleMovementDetails(id: string): void {
+    this.expandedMovement.update((current) => (current === id ? null : id));
+  }
+
+  public movementTypeLabel(type: InventoryMovement['type']): string {
+    if (type === 'entrada') return 'Compra / Entrada';
+    if (type === 'salida_produccion') return 'Consumo Cocción';
+    return 'Ajuste Merma';
+  }
+
   public openNewMaterialModal() {
+    this.materialNameInput.set('');
     this.newMaterialForm.reset({
       code: 'MP-' + Math.floor(Math.random() * 900 + 100),
-      category: 'fruta',
+      category: this.defaultMaterialCategory(),
       currentStock: 50,
       minStock: 20,
       unit: 'kg',
@@ -285,10 +453,12 @@ export class InventoryComponent {
       `Monto Total (${isBs ? 'Bs.' : 'USD'})`,
       'Tasa del Día Aplicada (Bs./USD)',
       'Documento / Referencia',
+      'Proveedor',
+      'RIF / Cédula',
       'Responsable',
     ];
 
-    const rows = this.movements().map(m => {
+    const rows = this.filteredMovements().map(m => {
       const rate = m.exchangeRateUsed || this.api.exchangeRates()?.currentUsd || 48.35;
       const unitCost = isBs ? (m.costPerUnitBs || m.costPerUnit * rate) : m.costPerUnit;
       const totalCost = isBs ? (m.totalCostBs || m.totalCost * rate) : m.totalCost;
@@ -301,6 +471,8 @@ export class InventoryComponent {
         formatVeNumber(totalCost, 2),
         formatVeNumber(rate, 2),
         m.referenceDoc || 'S/R',
+        m.supplierNameSnapshot || '',
+        m.supplierTaxIdSnapshot || '',
         m.performedBy,
       ];
     });
@@ -319,10 +491,12 @@ export class InventoryComponent {
       `Monto Total (${isBs ? 'Bs.' : 'USD'})`,
       'Tasa del Día (Bs./USD)',
       'Documento de Referencia',
+      'Proveedor',
+      'RIF / Cédula',
       'Responsable',
     ];
 
-    const rows = this.movements().map(m => {
+    const rows = this.filteredMovements().map(m => {
       const rate = m.exchangeRateUsed || this.api.exchangeRates()?.currentUsd || 48.35;
       const unitCost = isBs ? (m.costPerUnitBs || m.costPerUnit * rate) : m.costPerUnit;
       const totalCost = isBs ? (m.totalCostBs || m.totalCost * rate) : m.totalCost;
@@ -335,6 +509,8 @@ export class InventoryComponent {
         formatVeNumber(totalCost, 2),
         formatVeNumber(rate, 2),
         m.referenceDoc || 'S/R',
+        m.supplierNameSnapshot || '',
+        m.supplierTaxIdSnapshot || '',
         m.performedBy,
       ];
     });
@@ -363,10 +539,11 @@ export class InventoryComponent {
       `Total (${isBs ? 'Bs.' : '$'})`,
       'Tasa (Bs.)',
       'Documento',
+      'Proveedor',
     ];
 
     let totalDesembolsos = 0;
-    const rows = this.movements().map(m => {
+    const rows = this.filteredMovements().map(m => {
       const itemRate = m.exchangeRateUsed || rate;
       const unitCost = isBs ? (m.costPerUnitBs || m.costPerUnit * itemRate) : m.costPerUnit;
       const totalCost = isBs ? (m.totalCostBs || m.totalCost * itemRate) : m.totalCost;
@@ -382,6 +559,7 @@ export class InventoryComponent {
         `${isBs ? 'Bs. ' : '$ '}${formatVeNumber(totalCost, 2)}`,
         formatVeNumber(itemRate, 2),
         m.referenceDoc || '-',
+        m.supplierNameSnapshot || '-',
       ];
     });
 

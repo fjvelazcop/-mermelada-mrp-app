@@ -1,10 +1,20 @@
 import {ChangeDetectionStrategy, Component, computed, effect, inject, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
-import {FormControl, FormGroup, FormsModule, ReactiveFormsModule, Validators} from '@angular/forms';
+import {
+  AbstractControl,
+  FormControl,
+  FormGroup,
+  FormsModule,
+  ReactiveFormsModule,
+  ValidationErrors,
+  Validators,
+} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
+import {FiscalReferenceValuesComponent} from '../fiscal-reference-values/fiscal-reference-values';
 import {
   AppModuleId,
+  DigitalInvoicingEnvironment,
   FiscalBooksFormat,
   FiscalObligationApplicability,
   FiscalObligationKey,
@@ -24,10 +34,29 @@ interface ModuleConfigMeta {
   description: string;
 }
 
+/** Solo exige datos completos cuando la casilla de preparación está marcada. */
+function digitalInvoicingReadyValidator(
+  control: AbstractControl
+): ValidationErrors | null {
+  if (control.get('digitalInvoicingEnabled')?.value !== true) return null;
+  const requiredKeys = [
+    'digitalInvoicingProvider',
+    'digitalInvoicingProviderTaxId',
+    'digitalInvoicingApiUrl',
+    'digitalInvoicingEnvironment',
+    'digitalInvoicingStartDate',
+  ];
+  const missing = requiredKeys.some((key) => {
+    const value = control.get(key)?.value;
+    return value === undefined || value === null || String(value).trim() === '';
+  });
+  return missing ? {digitalInvoicingIncomplete: true} : null;
+}
+
 @Component({
   selector: 'app-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatIconModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatIconModule, FiscalReferenceValuesComponent],
   templateUrl: './settings.html',
 })
 export class Settings {
@@ -81,6 +110,46 @@ export class Settings {
   public showRoleModal = signal<boolean>(false);
   public selectedRoleIdForMatrix = signal<string>('supervisor_planta');
 
+  // Editable catalogs (supplier types & material categories)
+  public catalogModalKind = signal<'supplierTypes' | 'materialCategories' | null>(null);
+  public editingCatalogId = signal<string | null>(null);
+  public catalogForm = new FormGroup({
+    code: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.pattern(/^[a-z0-9_-]+$/)],
+    }),
+    label: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(2)],
+    }),
+    description: new FormControl<string>('', {nonNullable: true}),
+    color: new FormControl<string>('stone', {nonNullable: true}),
+    active: new FormControl<boolean>(true, {nonNullable: true}),
+  });
+  public catalogColors = [
+    {label: 'Carbón', value: 'stone'},
+    {label: 'Esmeralda', value: 'emerald'},
+    {label: 'Ámbar', value: 'amber'},
+    {label: 'Azul', value: 'blue'},
+    {label: 'Violeta', value: 'violet'},
+    {label: 'Naranja', value: 'orange'},
+    {label: 'Rojo', value: 'rose'},
+  ];
+  public canManageSupplierTypes = computed(
+    () => this.isAdmin() || this.api.hasPermission('supplier_types', 'canEdit')
+  );
+  public canManageMaterialCategories = computed(
+    () => this.isAdmin() || this.api.hasPermission('material_categories', 'canEdit')
+  );
+  public canDeleteSupplierTypes = computed(
+    () => this.isAdmin() || this.api.hasPermission('supplier_types', 'canDelete')
+  );
+  public canDeleteMaterialCategories = computed(
+    () => this.isAdmin() || this.api.hasPermission('material_categories', 'canDelete')
+  );
+
+  public resetOperationalRunning = signal<boolean>(false);
+
   // Metadata for all system modules
   public modulesList: ModuleConfigMeta[] = [
     {
@@ -124,6 +193,30 @@ export class Settings {
       name: 'Gastos & Egresos Operativos',
       icon: 'receipt_long',
       description: 'Registro de gastos operativos, viajes, alquiler, retiros de socios y soporte para libros fiscales.',
+    },
+    {
+      id: 'accounting',
+      name: 'Contabilidad',
+      icon: 'account_balance',
+      description: 'Plan de cuentas, asientos de doble entrada, períodos mensuales y retenciones (bloqueadas hasta #13).',
+    },
+    {
+      id: 'suppliers',
+      name: 'Proveedores',
+      icon: 'local_shipping',
+      description: 'Directorio de proveedores, tipos de proveedor y catálogo de precios de insumos.',
+    },
+    {
+      id: 'supplier_types',
+      name: 'Tipos de Proveedor',
+      icon: 'category',
+      description: 'Administrar el catálogo de tipos de proveedor usado en el directorio de compras.',
+    },
+    {
+      id: 'material_categories',
+      name: 'Categorías de Materia Prima',
+      icon: 'inventory_2',
+      description: 'Administrar el catálogo de categorías usado en inventario y producción.',
     },
     {
       id: 'settings',
@@ -187,7 +280,16 @@ export class Settings {
     booksFormat: new FormControl<FiscalBooksFormat>('xlsx', {nonNullable: true}),
     historicalOrdersTreatment: new FormControl<HistoricalOrdersTreatment>('revisar', {nonNullable: true}),
     printNotes: new FormControl<string>('', {nonNullable: true}),
-  });
+    digitalInvoicingEnabled: new FormControl<boolean>(false, {nonNullable: true}),
+    digitalInvoicingProvider: new FormControl<string>('', {nonNullable: true}),
+    digitalInvoicingProviderTaxId: new FormControl<string>('', {nonNullable: true}),
+    digitalInvoicingApiUrl: new FormControl<string>('', {nonNullable: true}),
+    digitalInvoicingEnvironment: new FormControl<DigitalInvoicingEnvironment>('pruebas', {nonNullable: true}),
+    digitalInvoicingCertificateLabel: new FormControl<string>('', {nonNullable: true}),
+    digitalInvoicingCertificateExpiry: new FormControl<string>('', {nonNullable: true}),
+    digitalInvoicingStartDate: new FormControl<string>('', {nonNullable: true}),
+    digitalInvoicingNotes: new FormControl<string>('', {nonNullable: true}),
+  }, {validators: [digitalInvoicingReadyValidator]});
 
   public fiscalObligationForm = new FormGroup({
     applicability: new FormControl<FiscalObligationApplicability>('pendiente', {
@@ -244,6 +346,15 @@ export class Settings {
         booksFormat: cfg.booksFormat,
         historicalOrdersTreatment: cfg.historicalOrdersTreatment,
         printNotes: cfg.printNotes,
+        digitalInvoicingEnabled: cfg.digitalInvoicingEnabled,
+        digitalInvoicingProvider: cfg.digitalInvoicingProvider,
+        digitalInvoicingProviderTaxId: cfg.digitalInvoicingProviderTaxId,
+        digitalInvoicingApiUrl: cfg.digitalInvoicingApiUrl,
+        digitalInvoicingEnvironment: cfg.digitalInvoicingEnvironment,
+        digitalInvoicingCertificateLabel: cfg.digitalInvoicingCertificateLabel,
+        digitalInvoicingCertificateExpiry: cfg.digitalInvoicingCertificateExpiry,
+        digitalInvoicingStartDate: cfg.digitalInvoicingStartDate,
+        digitalInvoicingNotes: cfg.digitalInvoicingNotes,
       });
     });
 
@@ -295,6 +406,119 @@ export class Settings {
 
   public setFiscalSubsection(subsection: 'settings' | 'obligations') {
     this.fiscalSubsection.set(subsection);
+  }
+
+  // --- EDITABLE CATALOGS ---
+
+  public openCatalogModal(
+    kind: 'supplierTypes' | 'materialCategories',
+    value?: {id: string; code: string; label: string; description: string; color: string; active: boolean}
+  ) {
+    this.catalogModalKind.set(kind);
+    this.editingCatalogId.set(value?.id ?? null);
+    this.catalogForm.reset({
+      code: value?.code ?? '',
+      label: value?.label ?? '',
+      description: value?.description ?? '',
+      color: value?.color ?? 'stone',
+      active: value?.active ?? true,
+    });
+  }
+
+  public closeCatalogModal() {
+    this.catalogModalKind.set(null);
+    this.editingCatalogId.set(null);
+  }
+
+  public async saveCatalogValue() {
+    const kind = this.catalogModalKind();
+    if (!kind) return;
+    if (this.catalogForm.invalid) {
+      this.catalogForm.markAllAsTouched();
+      return;
+    }
+    const v = this.catalogForm.getRawValue();
+    const data = {
+      code: v.code.trim(),
+      label: v.label.trim(),
+      description: v.description.trim(),
+      color: v.color,
+      active: v.active,
+    };
+    const editingId = this.editingCatalogId();
+    try {
+      if (kind === 'supplierTypes') {
+        if (editingId) await this.api.updateSupplierType(editingId, data);
+        else await this.api.addSupplierType(data);
+      } else {
+        if (editingId) await this.api.updateMaterialCategory(editingId, data);
+        else await this.api.addMaterialCategory(data);
+      }
+      this.closeCatalogModal();
+    } catch {
+      // Toast handled by the API service.
+    }
+  }
+
+  public async deleteCatalogValue(
+    kind: 'supplierTypes' | 'materialCategories',
+    id: string,
+    code: string
+  ) {
+    const confirmed = window.confirm(
+      `¿Eliminar ${kind === 'supplierTypes' ? 'el tipo de proveedor' : 'la categoría'} "${code}"? ` +
+        'No se puede eliminar si está asociado a registros existentes.'
+    );
+    if (!confirmed) return;
+    try {
+      if (kind === 'supplierTypes') await this.api.deleteSupplierType(id);
+      else await this.api.deleteMaterialCategory(id);
+    } catch {
+      // Toast handled by the API service.
+    }
+  }
+
+  public catalogBadgeClass(color: string): string {
+    const map: Record<string, string> = {
+      emerald: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      amber: 'bg-amber-100 text-amber-800 border-amber-200',
+      blue: 'bg-blue-100 text-blue-800 border-blue-200',
+      violet: 'bg-violet-100 text-violet-800 border-violet-200',
+      orange: 'bg-orange-100 text-orange-800 border-orange-200',
+      rose: 'bg-rose-100 text-rose-800 border-rose-200',
+      stone: 'bg-stone-100 text-stone-700 border-stone-200',
+    };
+    return map[color] || map['stone'];
+  }
+
+  public catalogDotClass(color: string): string {
+    const map: Record<string, string> = {
+      emerald: 'bg-emerald-500',
+      amber: 'bg-amber-500',
+      blue: 'bg-blue-500',
+      violet: 'bg-violet-500',
+      orange: 'bg-orange-500',
+      rose: 'bg-rose-500',
+      stone: 'bg-stone-500',
+    };
+    return map[color] || map['stone'];
+  }
+
+  public async executeOperationalReset() {
+    const confirmed = window.confirm(
+      'OPERACIÓN DESTRUCTIVA: se eliminarán gastos, órdenes de producción y movimientos de ' +
+        'inventario, y se pondrán en cero las existencias de materias primas y productos ' +
+        'terminados. Los maestros (productos, recetas, clientes, proveedores) se conservan. ¿Continuar?'
+    );
+    if (!confirmed) return;
+    this.resetOperationalRunning.set(true);
+    try {
+      await this.api.resetOperationalData();
+    } catch {
+      // Toast handled by the API service.
+    } finally {
+      this.resetOperationalRunning.set(false);
+    }
   }
 
   private async loadNotifications() {
@@ -460,6 +684,15 @@ export class Settings {
       booksFormat: cfg.booksFormat,
       historicalOrdersTreatment: cfg.historicalOrdersTreatment,
       printNotes: cfg.printNotes,
+      digitalInvoicingEnabled: cfg.digitalInvoicingEnabled,
+      digitalInvoicingProvider: cfg.digitalInvoicingProvider,
+      digitalInvoicingProviderTaxId: cfg.digitalInvoicingProviderTaxId,
+      digitalInvoicingApiUrl: cfg.digitalInvoicingApiUrl,
+      digitalInvoicingEnvironment: cfg.digitalInvoicingEnvironment,
+      digitalInvoicingCertificateLabel: cfg.digitalInvoicingCertificateLabel,
+      digitalInvoicingCertificateExpiry: cfg.digitalInvoicingCertificateExpiry,
+      digitalInvoicingStartDate: cfg.digitalInvoicingStartDate,
+      digitalInvoicingNotes: cfg.digitalInvoicingNotes,
     });
     this.fiscalSaved.set(false);
   }
@@ -599,7 +832,10 @@ export class Settings {
       sales: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       payroll: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       expenses: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
+      accounting: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       suppliers: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
+      supplier_types: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
+      material_categories: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       settings: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       architecture: {canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false},
       activation: {canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false},

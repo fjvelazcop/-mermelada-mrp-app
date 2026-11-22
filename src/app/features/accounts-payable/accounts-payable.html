@@ -1,0 +1,670 @@
+<!-- CUENTAS POR PAGAR -->
+<section class="bg-white border border-stone-200 rounded-xl p-5 shadow-xs">
+  <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-3 mb-5">
+    <div>
+      <h2 class="text-lg font-bold text-stone-900 flex items-center gap-2">
+        <mat-icon class="text-rose-700">account_balance</mat-icon>
+        Cuentas por pagar
+      </h2>
+      <p class="text-xs text-stone-500 mt-1">
+        Facturas de proveedores por liquidar, vencimientos y antigüedad al {{ reportDate }}. USD canónico con Bs. derivado.
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      @if (canExport()) {
+        <button
+          type="button"
+          (click)="export('csv')"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-lg"
+        >
+          <mat-icon class="text-sm">file_download</mat-icon> CSV
+        </button>
+        <button
+          type="button"
+          (click)="export('excel')"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg"
+        >
+          <mat-icon class="text-sm">table_view</mat-icon> Excel
+        </button>
+        <button
+          type="button"
+          (click)="export('pdf')"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-rose-700 hover:bg-rose-800 text-white rounded-lg"
+        >
+          <mat-icon class="text-sm">picture_as_pdf</mat-icon> PDF
+        </button>
+      }
+      @if (canCreate()) {
+        <button
+          type="button"
+          (click)="openCreateModal()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white rounded-lg"
+        >
+          <mat-icon class="text-sm">add</mat-icon> Registrar factura
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+    <div class="bg-rose-50 border border-rose-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-rose-800 block">Total por pagar</span>
+      <span class="text-lg font-bold font-mono text-rose-950 block mt-1">
+        {{ currencyMode() === 'Bs' ? totals().balanceBs : totals().balanceUsd | veCurrency: currency() }}
+      </span>
+      <span class="text-[10px] text-rose-700">{{ totals().documentCount }} facturas</span>
+    </div>
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-amber-800 block">Vencido</span>
+      <span class="text-lg font-bold font-mono text-amber-950 block mt-1">
+        {{ currencyMode() === 'Bs' ? totals().overdueBs : totals().overdueUsd | veCurrency: currency() }}
+      </span>
+      <span class="text-[10px] text-amber-700">{{ totals().overduePercent }}% del saldo</span>
+    </div>
+    <div class="bg-stone-50 border border-stone-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-stone-500 block">Próximas a vencer</span>
+      <span class="text-lg font-bold font-mono text-stone-900 block mt-1">
+        {{ totals().dueSoonUsd | veCurrency: '$' }}
+      </span>
+      <span class="text-[10px] text-stone-500">en los próximos 15 días</span>
+    </div>
+    <div class="bg-stone-50 border border-stone-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-stone-500 block">Proveedores con saldo</span>
+      <span class="text-lg font-bold font-mono text-stone-900 block mt-1">{{ totals().supplierCount }}</span>
+      <span class="text-[10px] text-stone-500">con deuda pendiente</span>
+    </div>
+    <div class="bg-stone-50 border border-stone-200 rounded-xl p-3">
+      <span class="text-[10px] font-bold uppercase tracking-wide text-stone-500 block">Tasa de referencia</span>
+      <span class="text-lg font-bold font-mono text-stone-900 block mt-1">
+        {{ (api.exchangeRates()?.currentUsd || 48.35) | veCurrency: 'Bs.' }}
+      </span>
+      <span class="text-[10px] text-stone-500">Bs. por USD</span>
+    </div>
+  </div>
+
+  <!-- Aging -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-5">
+    @for (bucket of agingBuckets; track bucket) {
+      <button
+        type="button"
+        (click)="bucketFilter.set(bucketFilter() === bucket ? 'todos' : bucket)"
+        class="text-left border rounded-lg px-3 py-2 transition-colors"
+        [class.border-rose-500]="bucketFilter() === bucket"
+        [class.bg-rose-50]="bucketFilter() === bucket"
+        [class.border-stone-200]="bucketFilter() !== bucket"
+        [class.bg-stone-50]="bucketFilter() !== bucket"
+      >
+        <span class="text-[10px] font-bold uppercase text-stone-500 block">{{ bucketLabel(bucket) }}</span>
+        <span class="text-sm font-bold font-mono text-stone-900 block">
+          {{ bucketTotals(bucket).usd | veCurrency: currency() }}
+        </span>
+        <span class="text-[10px] text-stone-500">{{ bucketTotals(bucket).count }} doc.</span>
+      </button>
+    }
+  </div>
+
+  <!-- Filtros -->
+  <div class="border-t border-stone-200 pt-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div>
+      <label for="cxp-search" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Buscar</label>
+      <input
+        id="cxp-search"
+        type="text"
+        [value]="searchTerm()"
+        (input)="searchTerm.set($any($event.target).value)"
+        placeholder="Proveedor, RIF, factura o control"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      />
+    </div>
+    <div>
+      <label for="cxp-status" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Estado</label>
+      <select
+        id="cxp-status"
+        [value]="statusFilter()"
+        (change)="statusFilter.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        <option value="todos">Todos</option>
+        <option value="pendientes">Pendientes</option>
+        <option value="vencidas">Vencidas</option>
+        <option value="parciales">Pago parcial</option>
+        <option value="pagadas">Pagadas</option>
+      </select>
+    </div>
+    <div>
+      <label for="cxp-supplier" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Proveedor</label>
+      <select
+        id="cxp-supplier"
+        [value]="supplierFilter()"
+        (change)="supplierFilter.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        <option value="">Todos</option>
+        @for (supplier of api.suppliers(); track supplier.id) {
+          <option [value]="supplier.id">{{ supplier.businessName }}</option>
+        }
+      </select>
+    </div>
+    <div>
+      <label for="cxp-bucket" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Antigüedad</label>
+      <select
+        id="cxp-bucket"
+        [value]="bucketFilter()"
+        (change)="bucketFilter.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        @for (option of bucketOptions; track option) {
+          <option [value]="option">{{ filterBucketLabel(option) }}</option>
+        }
+      </select>
+    </div>
+    <div>
+      <label for="cxp-sort" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Ordenar por</label>
+      <select
+        id="cxp-sort"
+        [value]="sortBy()"
+        (change)="sortBy.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        @for (option of sortOptions; track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-4 mb-4">
+    <label class="inline-flex items-center gap-1.5 text-xs text-stone-700 cursor-pointer">
+      <input
+        type="checkbox"
+        [checked]="groupBySupplier()"
+        (change)="groupBySupplier.set($any($event.target).checked)"
+        class="accent-rose-700"
+      />
+      Agrupar por proveedor
+    </label>
+    <div class="inline-flex rounded-lg border border-stone-200 overflow-hidden">
+      <button
+        type="button"
+        (click)="currencyMode.set('USD')"
+        class="px-3 py-1.5 text-xs font-semibold"
+        [class.bg-stone-900]="currencyMode() === 'USD'"
+        [class.text-white]="currencyMode() === 'USD'"
+        [class.text-stone-600]="currencyMode() !== 'USD'"
+      >USD</button>
+      <button
+        type="button"
+        (click)="currencyMode.set('Bs')"
+        class="px-3 py-1.5 text-xs font-semibold"
+        [class.bg-stone-900]="currencyMode() === 'Bs'"
+        [class.text-white]="currencyMode() === 'Bs'"
+        [class.text-stone-600]="currencyMode() !== 'Bs'"
+      >Bs.</button>
+    </div>
+    <button
+      type="button"
+      (click)="resetFilters()"
+      class="ml-auto text-xs font-semibold text-stone-500 hover:text-stone-900"
+    >Limpiar filtros</button>
+  </div>
+
+  @if (!filteredRows().length) {
+    <div class="border border-dashed border-stone-300 rounded-xl p-8 text-center">
+      <mat-icon class="text-stone-400">receipt_long</mat-icon>
+      <p class="text-sm font-semibold text-stone-700 mt-2">No hay facturas por pagar con los filtros actuales.</p>
+      <p class="text-xs text-stone-500 mt-1">
+        Registra una factura de proveedor o ajusta la búsqueda y el estado.
+      </p>
+    </div>
+  } @else if (groupBySupplier()) {
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[760px] text-left text-xs border-collapse">
+        <thead>
+          <tr class="border-b border-stone-200 text-[10px] uppercase tracking-wide text-stone-500">
+            <th class="py-2 px-2 font-semibold">Proveedor</th>
+            <th class="py-2 px-2 font-semibold">RIF</th>
+            <th class="py-2 px-2 text-right font-semibold">Saldo</th>
+            <th class="py-2 px-2 text-right font-semibold">Vencido</th>
+            <th class="py-2 px-2 text-right font-semibold">Facturas</th>
+            <th class="py-2 px-2 font-semibold">Venc. más antiguo</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (summary of supplierSummaries(); track summary.supplierId) {
+            <tr class="border-b border-stone-100 hover:bg-stone-50/60">
+              <td class="py-2.5 px-2 font-semibold text-stone-900">{{ summary.supplierName }}</td>
+              <td class="py-2.5 px-2 font-mono text-stone-500">{{ summary.taxId || 'N/D' }}</td>
+              <td class="py-2.5 px-2 text-right font-mono font-bold text-rose-900">{{ summary.balanceUsd | veCurrency: '$' }}</td>
+              <td class="py-2.5 px-2 text-right font-mono font-semibold text-amber-800">{{ summary.overdueUsd | veCurrency: '$' }}</td>
+              <td class="py-2.5 px-2 text-right font-mono text-stone-600">{{ summary.documentCount }}</td>
+              <td class="py-2.5 px-2 font-mono text-stone-600">{{ summary.oldestDueDate || 'N/D' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[1100px] text-left text-xs border-collapse">
+        <thead>
+          <tr class="border-b border-stone-200 text-[10px] uppercase tracking-wide text-stone-500">
+            <th class="py-2 px-2 font-semibold">Proveedor / RIF</th>
+            <th class="py-2 px-2 font-semibold">Factura por pagar</th>
+            <th class="py-2 px-2 font-semibold">Vencimiento</th>
+            <th class="py-2 px-2 text-right font-semibold">Días</th>
+            <th class="py-2 px-2 text-right font-semibold">Total</th>
+            <th class="py-2 px-2 text-right font-semibold">Pagado acumulado</th>
+            <th class="py-2 px-2 text-right font-semibold">Saldo</th>
+            <th class="py-2 px-2 font-semibold">Estado</th>
+            <th class="py-2 px-2 font-semibold">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of sortedRows(); track row.id) {
+            <tr class="border-b border-stone-100 hover:bg-stone-50/60">
+              <td class="py-2.5 px-2">
+                <span class="font-semibold text-stone-900 block">{{ row.supplierName }}</span>
+                <span class="text-[10px] font-mono text-stone-500">{{ row.taxId || 'N/D' }}</span>
+              </td>
+              <td class="py-2.5 px-2">
+                <span class="font-mono font-semibold text-stone-800">{{ row.payableNumber }}</span>
+                <span class="text-[10px] text-stone-500 block">
+                  {{ row.invoiceNumber }} @if (row.controlNumber) { · Ctrl {{ row.controlNumber }} }
+                </span>
+              </td>
+              <td class="py-2.5 px-2 font-mono text-stone-600">{{ row.dueDate }}</td>
+              <td class="py-2.5 px-2 text-right font-mono" [class.text-rose-700]="row.daysOverdue > 0">
+                {{ row.daysOverdue }}
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono text-stone-700">
+                {{ displayAmount(row.totalUsd, row.exchangeRateUsed) | veCurrency: currency() }}
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono text-emerald-800">
+                {{ displayAmount(row.paidUsd, row.exchangeRateUsed) | veCurrency: currency() }}
+              </td>
+              <td class="py-2.5 px-2 text-right font-mono font-bold text-rose-900">
+                {{ displayAmount(row.balanceUsd, row.exchangeRateUsed) | veCurrency: currency() }}
+              </td>
+              <td class="py-2.5 px-2">
+                <span
+                  class="text-[10px] font-semibold px-2 py-0.5 rounded"
+                  [class.bg-rose-100]="row.status === 'vencida'"
+                  [class.text-rose-800]="row.status === 'vencida'"
+                  [class.bg-amber-100]="row.status === 'pendiente' || row.status === 'parcial'"
+                  [class.text-amber-800]="row.status === 'pendiente' || row.status === 'parcial'"
+                  [class.bg-emerald-100]="row.status === 'pagada'"
+                  [class.text-emerald-800]="row.status === 'pagada'"
+                  [class.bg-stone-100]="row.status === 'anulada'"
+                  [class.text-stone-500]="row.status === 'anulada'"
+                >{{ statusLabel(row) }}</span>
+                @if (row.expenseId) {
+                  <span class="text-[10px] text-emerald-700 block">Gasto generado</span>
+                }
+              </td>
+              <td class="py-2.5 px-2">
+                <div class="flex flex-col items-start gap-1">
+                  @if (row.paymentCount > 0) {
+                    <button
+                      type="button"
+                      (click)="openHistory(row.payable)"
+                      class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 rounded-lg hover:bg-sky-100"
+                      [title]="'Ver pagos de ' + row.payableNumber"
+                    >
+                      <mat-icon class="text-xs">receipt_long</mat-icon> Ver pagos
+                    </button>
+                  }
+                  @if (canEdit() && row.balanceUsd > 0) {
+                    <button
+                      type="button"
+                      (click)="openPayModal(row.payable)"
+                      class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-rose-700 text-white rounded-lg hover:bg-rose-800"
+                      [title]="'Registrar pago de ' + row.payableNumber"
+                    >
+                      <mat-icon class="text-xs">payments</mat-icon> Pagar
+                    </button>
+                  }
+                  @if (canEdit() && row.status !== 'anulada' && row.status !== 'pagada') {
+                    <button
+                      type="button"
+                      (click)="annulPayable(row.payable)"
+                      class="text-[10px] font-semibold text-stone-500 hover:text-rose-700"
+                    >Anular</button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <p class="text-[10px] text-stone-400 mt-4">
+    Los saldos se calculan con la factura menos la suma de pagos. Al liquidar el saldo se genera automáticamente un
+    comprobante de egreso (<span class="font-mono">payableId</span>) que alimenta el Libro de Compras; un pago parcial
+    no genera gasto.
+  </p>
+</section>
+
+<!-- MODAL: REGISTRAR FACTURA POR PAGAR -->
+@if (isCreateModalOpen()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+      <div class="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-start justify-between">
+        <div>
+          <h3 class="text-base font-bold text-stone-900">Registrar factura por pagar</h3>
+          <p class="text-xs text-stone-500 mt-0.5">Se numerará automáticamente como FAP.</p>
+        </div>
+        <button (click)="closeCreateModal()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <form [formGroup]="createForm" (ngSubmit)="submitPayable()" class="p-5 space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="cxp-create-supplier" class="block text-xs font-semibold text-stone-700 mb-1">Proveedor registrado</label>
+            <select
+              id="cxp-create-supplier"
+              [value]="createForm.controls.supplierId.value"
+              (change)="onSupplierChange($any($event.target).value)"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            >
+              <option value="">— Captura libre —</option>
+              @for (supplier of api.suppliers(); track supplier.id) {
+                <option [value]="supplier.id">{{ supplier.businessName }}</option>
+              }
+            </select>
+          </div>
+          <div>
+            <label for="cxp-create-name" class="block text-xs font-semibold text-stone-700 mb-1">Razón social *</label>
+            <input
+              id="cxp-create-name"
+              type="text"
+              formControlName="supplierName"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-taxid" class="block text-xs font-semibold text-stone-700 mb-1">RIF</label>
+            <input
+              id="cxp-create-taxid"
+              type="text"
+              formControlName="taxId"
+              placeholder="J-12345678-9"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-invoice" class="block text-xs font-semibold text-stone-700 mb-1">Nro. de factura *</label>
+            <input
+              id="cxp-create-invoice"
+              type="text"
+              formControlName="invoiceNumber"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-control" class="block text-xs font-semibold text-stone-700 mb-1">Nro. de control</label>
+            <input
+              id="cxp-create-control"
+              type="text"
+              formControlName="controlNumber"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-category" class="block text-xs font-semibold text-stone-700 mb-1">Categoría</label>
+            <select
+              id="cxp-create-category"
+              formControlName="category"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            >
+              @for (category of api.expenseCategories(); track category.id) {
+                <option [value]="category.id">{{ category.name }}</option>
+              }
+            </select>
+          </div>
+          <div>
+            <label for="cxp-create-issue" class="block text-xs font-semibold text-stone-700 mb-1">Fecha de emisión *</label>
+            <input
+              id="cxp-create-issue"
+              type="date"
+              formControlName="issueDate"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-due" class="block text-xs font-semibold text-stone-700 mb-1">Fecha de vencimiento *</label>
+            <input
+              id="cxp-create-due"
+              type="date"
+              formControlName="dueDate"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-amount" class="block text-xs font-semibold text-stone-700 mb-1">Monto USD *</label>
+            <input
+              id="cxp-create-amount"
+              type="number"
+              step="0.01"
+              min="0.01"
+              formControlName="amountUsd"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-rate" class="block text-xs font-semibold text-stone-700 mb-1">Tasa Bs./USD *</label>
+            <input
+              id="cxp-create-rate"
+              type="number"
+              step="0.01"
+              min="0.01"
+              formControlName="exchangeRateUsed"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-create-tax" class="block text-xs font-semibold text-stone-700 mb-1">IVA USD</label>
+            <input
+              id="cxp-create-tax"
+              type="number"
+              step="0.01"
+              min="0"
+              formControlName="taxAmountUsd"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+        </div>
+        <div>
+          <label for="cxp-create-notes" class="block text-xs font-semibold text-stone-700 mb-1">Notas</label>
+          <textarea
+            id="cxp-create-notes"
+            rows="2"
+            formControlName="notes"
+            class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+          <button
+            type="button"
+            (click)="closeCreateModal()"
+            class="px-4 py-2 text-xs font-semibold bg-stone-100 text-stone-700 rounded-lg hover:bg-stone-200"
+          >Cancelar</button>
+          <button
+            type="submit"
+            [disabled]="createForm.invalid || saving()"
+            class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50"
+          >Registrar factura</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+<!-- MODAL: REGISTRAR PAGO -->
+@if (isPayModalOpen() && payingPayable(); as payable) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
+      <div class="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-start justify-between">
+        <div>
+          <h3 class="text-base font-bold text-stone-900">Registrar pago</h3>
+          <p class="text-xs text-stone-500 mt-1">
+            {{ payable.payableNumber }} · {{ payable.supplierName }} · Total ${{ payable.amountUsd | veNumber:2 }}
+          </p>
+          <p class="text-[11px] text-rose-800 bg-rose-50 border border-rose-200 rounded px-2 py-1 mt-2">
+            Saldo pendiente <strong>{{ outstandingFor(payable) | veCurrency: '$':2 }}</strong>
+          </p>
+        </div>
+        <button (click)="closePayModal()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <form [formGroup]="payForm" (ngSubmit)="submitPayment()" class="p-5 space-y-4">
+        <div>
+          <label for="cxp-pay-bank" class="block text-xs font-semibold text-stone-700 mb-1">Banco pagador SUDEBAN *</label>
+          <input
+            id="cxp-pay-bank"
+            type="text"
+            list="cxp-pay-banks"
+            [value]="bankLabel(findBank(payForm.controls.bankCode.value) || {code: '', name: ''})"
+            (input)="payForm.controls.bankCode.setValue(findBank($any($event.target).value)?.code || '')"
+            placeholder="Escribe el nombre del banco"
+            class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+          />
+          <datalist id="cxp-pay-banks">
+            @for (bank of banks; track bank.code) {
+              <option [value]="bankLabel(bank)">{{ bank.code }}</option>
+            }
+          </datalist>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="cxp-pay-method" class="block text-xs font-semibold text-stone-700 mb-1">Método de pago</label>
+            <select
+              id="cxp-pay-method"
+              formControlName="paymentMethod"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            >
+              @for (method of bankPaymentMethods; track method.value) {
+                <option [value]="method.value">{{ method.label }}</option>
+              }
+            </select>
+          </div>
+          <div>
+            <label for="cxp-pay-reference" class="block text-xs font-semibold text-stone-700 mb-1">Referencia *</label>
+            <input
+              id="cxp-pay-reference"
+              type="text"
+              formControlName="reference"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-pay-amount" class="block text-xs font-semibold text-stone-700 mb-1">Monto pagado USD *</label>
+            <input
+              id="cxp-pay-amount"
+              type="number"
+              step="0.01"
+              min="0.01"
+              [max]="outstandingFor(payable)"
+              formControlName="amountUsd"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+          <div>
+            <label for="cxp-pay-rate" class="block text-xs font-semibold text-stone-700 mb-1">Tasa Bs./USD *</label>
+            <input
+              id="cxp-pay-rate"
+              type="number"
+              step="0.01"
+              min="0.01"
+              formControlName="exchangeRateUsed"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+            />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+          <button
+            type="button"
+            (click)="closePayModal()"
+            class="px-4 py-2 text-xs font-semibold bg-stone-100 text-stone-700 rounded-lg hover:bg-stone-200"
+          >Cancelar</button>
+          <button
+            type="submit"
+            [disabled]="payForm.invalid || saving()"
+            class="px-4 py-2 text-xs font-semibold bg-rose-700 text-white rounded-lg hover:bg-rose-800 disabled:opacity-50"
+          >Registrar pago</button>
+        </div>
+      </form>
+    </div>
+  </div>
+}
+
+<!-- DRAWER: HISTORIAL DE PAGOS -->
+@if (isHistoryOpen() && historyPayable(); as payable) {
+  <div
+    class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs"
+    role="presentation"
+    tabindex="0"
+    (click)="closeHistory()"
+    (keydown.escape)="closeHistory()"
+  ></div>
+  <aside class="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl overflow-y-auto">
+    <div class="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-start justify-between">
+      <div>
+        <div class="flex items-center gap-2">
+          <mat-icon class="text-sky-700">receipt_long</mat-icon>
+          <h3 class="text-base font-bold text-stone-900">Historial de pagos</h3>
+        </div>
+        <p class="text-xs text-stone-500 mt-1">{{ payable.payableNumber }} · {{ payable.supplierName }}</p>
+      </div>
+      <button (click)="closeHistory()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="p-5 space-y-3">
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-stone-50 border border-stone-200 rounded-lg p-3">
+          <span class="text-[10px] font-bold uppercase text-stone-400 block">Total factura</span>
+          <span class="text-sm font-bold font-mono text-stone-900">{{ payable.amountUsd | veCurrency: '$':2 }}</span>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+          <span class="text-[10px] font-bold uppercase text-emerald-700 block">Pagado</span>
+          <span class="text-sm font-bold font-mono text-emerald-900">
+            {{ payable.amountUsd - outstandingFor(payable) | veCurrency: '$':2 }}
+          </span>
+        </div>
+        <div class="bg-rose-50 border border-rose-200 rounded-lg p-3 col-span-2">
+          <span class="text-[10px] font-bold uppercase text-rose-700 block">Saldo pendiente</span>
+          <span class="text-sm font-bold font-mono text-rose-900">{{ outstandingFor(payable) | veCurrency: '$':2 }}</span>
+        </div>
+      </div>
+
+      @for (payment of paymentHistory(); track payment.id) {
+        <div class="border border-stone-200 rounded-xl p-3">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm font-bold font-mono text-stone-900">{{ payment.amountUsd | veCurrency: '$':2 }}</span>
+            <span class="text-[10px] font-mono text-stone-500">{{ payment.paidAt | date:'dd-MM-yyyy HH:mm' }}</span>
+          </div>
+          <div class="mt-1 text-[11px] text-stone-600 space-y-0.5">
+            <p>Banco: <span class="font-semibold">{{ payment.bankName }} ({{ payment.bankCode }})</span></p>
+            <p>Referencia: <span class="font-mono">{{ payment.reference }}</span></p>
+            <p>Método: {{ payment.paymentMethod.replace('_', ' ') }}</p>
+            <p>Tasa: {{ payment.exchangeRateUsed | veCurrency: 'Bs.':2 }} · {{ payment.amountBs | veCurrency: 'Bs.':2 }}</p>
+            <p class="text-stone-400">Registrado por {{ payment.paidBy }}</p>
+          </div>
+        </div>
+      } @empty {
+        <p class="text-xs text-stone-400 italic py-4">Esta factura aún no tiene pagos registrados.</p>
+      }
+    </div>
+  </aside>
+}

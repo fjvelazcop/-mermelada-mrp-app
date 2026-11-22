@@ -1,6 +1,6 @@
 # Manual de Administración — Mermelada ERP
 
-**Versión:** 1.3 · **Última actualización:** 31/10/2026
+**Versión:** 1.4 · **Última actualización:** 22/11/2026
 **Audiencia:** responsable técnico / administrador del sistema.
 **Documentos relacionados:** [`MANUAL-USUARIO.md`](./MANUAL-USUARIO.md), [`../DEPLOYMENT.md`](../DEPLOYMENT.md), [`../README.md`](../README.md).
 
@@ -436,6 +436,8 @@ Datos que se guardan en la tabla `fiscal_settings` de SQLite:
 | IVA y numeración | alícuota, prefijo/serie, siguiente número de factura, consecutivos de notas de crédito/débito, prefijo y siguiente número de control, autorización SENIAT y vigencia |
 | Retenciones | condición de agente de IVA/ISLR y porcentajes aplicables |
 | SPE y libros | Sujeto Pasivo Especial, formato de libros (XLSX/CSV/PDF/TXT) y tratamiento de órdenes históricas |
+| Contabilidad (v14) | `accountingEnabled` (activo), `vatWithholdingEnabled` y `islrWithholdingEnabled` (ambos `false` hasta validar #13) |
+| Facturación digital (v15) | casilla de preparación, proveedor, RIF del proveedor, URL/API, ambiente, etiqueta/serial y vencimiento del certificado, fecha prevista y notas; **no emite ni envía al SENIAT** |
 | Impresión | leyendas legales que se imprimen en los documentos |
 
 Cada guardado actualiza la base de datos de forma inmediata y genera un evento
@@ -443,6 +445,14 @@ de auditoría con actor, rol, campos modificados y valores anteriores/nuevos.
 El código de autorización se redacta y no aparece en el detalle del evento.
 Los cambios se consultan en `GET /api/audit-logs?module=ventas`; conserva hasta
 500 eventos recientes, por lo que no debe tratarse como archivo legal inmutable.
+
+**Transición a SPE:** el cambio real de `taxRegime` de `ordinario` a `especial`
+ejecuta `updateFiscalSettings` en servidor y fuerza `specialTaxpayer=true`,
+`vatWithholdingAgent=true` e `islrWithholdingAgent=true`. El evento de auditoría
+incluye `autoSpecialTaxpayerTransition: true`. No se activan
+`vatWithholdingEnabled` ni `islrWithholdingEnabled`. La reversión no desmarca
+automáticamente estos campos: debe revisarse manualmente.
+
 Antes de emitir documentos fiscales, el administrador debe confirmar estos
 valores con el contador. Antes de habilitar emisión real, revise RIF del emisor/cliente,
 alícuotas, tasa BCV, prefijos y consecutivos disponibles. El servidor verifica
@@ -473,14 +483,21 @@ cuenta de acceso predeterminada.
 
 Estado de las fases:
 
-| Fase | Alcance | Estado |
+| Fase (plan original) | Alcance | Estado |
 |---|---|---|
 | 0 | Datos fiscales validados, régimen de IVA, series y numeración | Implementado; falta confirmar datos reales con el contador |
 | 1 | Factura fiscal imprimible, anulación y notas de crédito/débito | Implementado técnicamente; pendiente validación normativa |
 | 2 | Libros mensuales de Ventas/Compras, conciliación, cierre y exportación | Implementado; CSV auditado con hash y cierre bloqueante |
-| 3 | Contabilidad formal: plan de cuentas, Diario, Mayor, Inventarios y Balances/estados financieros | Por definir con contador en [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13) |
-| 4 | Retenciones de IVA/ISLR y comprobantes | Solo si el contador confirma que aplican |
-| 5 | Facturación digital y migración a SNAT/2026/00093 | Pendiente de requisitos oficiales; fecha límite 19/04/2027 |
+| 3 | Contabilidad formal: plan de cuentas, Diario, Mayor, Inventarios y Balances/estados financieros | **En curso**: plan base, asientos, Diario, Mayor, Balances, Estado de resultados e Inventario disponibles como **borrador/prueba**; formatos y saldos pendientes en [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13) |
+| 4 | Retenciones de IVA/ISLR y comprobantes | Bloqueado hasta validación contable; flags en `false` |
+| 5 | Facturación digital y migración a SNAT/2026/00093 | Configuración de **preparación** implementada (v15); sin emisión real ni envío al SENIAT; fecha límite 19/04/2027 |
+
+El plan de ejecución ampliado usa ocho hitos (0–7): la **Fase 0** es el gate de
+validación contable del issue #13 y la **Fase 1** (núcleo contable) ya está
+implementada. Se han adelantado entregables no sensibles de las fases 2–7:
+libros y reportes en modo **BORRADOR / PRUEBA** y la configuración de
+facturación digital como preparación. La emisión digital real, las retenciones y
+los consecutivos oficiales se ejecutarán solo después de cerrar ese gate.
 
 La normativa vigente aplica hasta el **18/04/2027**; el nuevo régimen
 (`SNAT/2026/00093`) entra en vigor el **19/04/2027**. Cualquier cambio fiscal
@@ -531,6 +548,161 @@ diferencias, los documentos incluidos y los archivos descargados antes de
 confirmar. Para corregir información tras el cierre debe seguirse el
 procedimiento contable aplicable; no modifique SQLite directamente.
 
+### 9.6. Núcleo contable (Fase 1 del plan ampliado)
+
+**Migración v14.** Antes de aplicarla se creó
+`backups/mermelada-2026-11-22T01-46-31-760Z.db`. La migración crea
+`accounts`, `accounting_entries`, `accounting_entry_lines` y
+`accounting_periods`, además de las columnas `accounting_enabled`,
+`vat_withholding_enabled` e `islr_withholding_enabled` en `fiscal_settings`.
+El plan base de 35 cuentas se siembra automáticamente incluso en bases
+existentes; verifique con:
+
+```bash
+node -e "const D=require('better-sqlite3');const d=new D('data/mermelada.db',{readonly:true});console.log(d.prepare('SELECT MAX(version) v FROM schema_migrations').get(),d.prepare('SELECT COUNT(*) c FROM accounts').get());"
+```
+
+Resultado esperado: versión `14` y 35 cuentas (`is_system=1`).
+
+**API y RBAC.** El módulo top-level `accounting` se protege con RBAC propio;
+admin/master tienen todos los permisos. Confirmar/anular asientos y
+cerrar/reabrir períodos están restringidos a esos roles. Las rutas
+`/api/payables*` siguen protegidas por `expenses` y no cambiaron. Los 9 paths y
+los esquemas `Account`, `AccountInput`, `AccountingEntry`,
+`AccountingEntryInput`, `AccountingPeriod`, `AccountingBookRow`,
+`AccountingBookMetadata` y `AccountingBookReport` están documentados en
+`/api/openapi.json`.
+
+**Reglas de asientos.** Todo asiento debe estar balanceado; las líneas no
+pueden tener débito y crédito a la vez y deben referirse a cuentas activas. Los
+asientos automáticos usan `sourceType + sourceId` como clave de idempotencia y
+se confirman solos. Un período cerrado bloquea nuevos asientos de ese mes;
+solo admin/master puede reabrirlo. La anulación conserva auditoría con motivo.
+
+**Verificación de la Fase 1:** `npm run build`, `npm run lint`,
+`npm test -- --watch=false` (74/74), `npm run test:server` (415/415), verificación
+de `/api/openapi.json`, reinicio de PM2 y `GET /api/health` → 200 con DB v16.
+
+### 9.7. Libros contables provisionales
+
+Los libros no requieren migración: se calculan en memoria desde asientos,
+facturación, cobros, pagos, gastos e inventario. El endpoint es
+`GET /api/accounting/books?type=<tipo>&year=<yyyy>&month=<mm>`, protegido por el
+módulo `accounting` (acción `view`). Devuelve `422` si el tipo, año o mes son
+inválidos.
+
+Tipos disponibles: `diario`, `mayor`, `balance_comprobacion`,
+`balance_general`, `inventario`, `estado_resultados`, `compras`, `ventas`,
+`retenciones`, `caja_banco`, `auxiliar_cxc` y `auxiliar_cxp`.
+
+`inventario` valora el stock actual con las cuentas provisionales `1.03.01`
+(Materia Prima) y `1.03.02` (Producto Terminado) del plan base. No es un
+inventario formal: no incluye apertura auditada ni ajustes de cierre.
+
+Cada respuesta incluye razón social, RIF, dirección fiscal, período, estado,
+moneda USD y Bs. (columnas pareadas), tasa por documento con fallback a
+`currentUsd`, columnas finales `Tasa Bs./USD` y `Origen de la tasa`, usuario,
+saldo de control en ambas monedas, hash, leyenda
+**BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13)** y
+firma. `retenciones` devuelve `SIN OPERACIONES`: las banderas
+`vatWithholdingEnabled` e `islrWithholdingEnabled` siguen en `false`.
+
+### 9.8. Configuración de facturación digital (preparación)
+
+**Migración v15.** Backup previo:
+`backups/mermelada-2026-11-22T03-42-01-675Z.db`. La migración añade columnas a
+`fiscal_settings` para guardar proveedor autorizado, RIF del proveedor, URL/API,
+ambiente (`pruebas`/`produccion`), etiqueta/serial y vencimiento del certificado,
+fecha prevista de inicio y notas. No se almacenan claves privadas ni tokens.
+
+La casilla «Configuración de facturación digital preparada / borrador» solo
+marca que los datos están completos. Cuando está marcada, el backend exige
+proveedor, RIF, URL, ambiente y fecha prevista; si está desmarcada, se pueden
+guardar campos parciales como borrador. En ningún caso se emite un documento
+digital ni se contacta al SENIAT. La transición a emisión real requiere licencia,
+proveedor autorizado, integración y validación contable.
+
+### 9.9. Fase 0: histórico de IVA/UT y parámetros pendientes
+
+**Migración v16.** Backup previo:
+`backups/mermelada-2026-11-22T04-41-19-913Z.db`. La migración crea
+`fiscal_reference_values` e `accounting_book_settings` y siembra IVA 16% desde
+`2020-01-01` y UT Bs. 43,00 desde `2025-06-02`, ambos en estado `referencia`,
+`confirmedByAccountant=false`. IGTF queda confirmado como **no aplica**
+(`false`) con referencia G.O.E. 6.687 / Decreto 4.972; no existe campo de
+cálculo activo.
+
+Ruta: **Configuración → IVA / UT e Historial (#13)** (solo admin/master).
+Pestañas IVA/UT con:
+
+- tabla de vigencias, valor, instrumento, gaceta, estado y confirmación;
+- alta, edición y **anulación lógica con motivo** (sin borrado físico);
+- cierre automático de la vigencia anterior al día previo, con auditoría;
+- consulta del valor vigente por fecha;
+- formulario de parámetros de libros: formato aprobado `xlsx,pdf`, CSV auxiliar,
+  paginación, firma, política de tasa y notas.
+
+Los valores son **solo referencia/consulta**: no modifican
+`fiscalSettings.taxRatePercent`, retenciones ni cálculos de facturas/libros
+hasta cerrar la Fase 0 / #13. Los eventos quedan en `GET /api/audit-logs`.
+
+**Criterios confirmados por el usuario (2026-11-22)**, registrados también en
+**Configuración → Datos Fiscales → Obligaciones y validaciones**:
+
+- Contribuyente **ordinario**, giro **fabricación de mermelada**; SPE `no_aplica`
+  mientras se mantenga esa condición.
+- Retenciones **practicadas** `no_aplica` (`vatWithholdingEnabled=false` e
+  `islrWithholdingEnabled=false`): no se retiene al pagar. Solo se contempla el
+  **registro/control de comprobantes de retención recibidos de clientes SPE al
+  cobrar**, sin cálculo real ni consecutivos hasta cerrar #13. El Libro de
+  Retenciones se genera `SIN OPERACIONES` con la dirección `Recibida (cliente SPE)`.
+- IGTF `no_aplica` (`false`), sin cálculo activo; revisar si cambia la condición
+  de contribuyente o el manejo de divisas.
+- IVA **16%** general por defecto para **mermelada procesada/envasada, azúcar,
+  empaques/envases y gastos generales**. Exento **0%** previsto para materias
+  primas agrícolas primarias en estado natural «según aplique»; **8%** solo para
+  supuestos taxativos confirmados. Compras/Ventas separan base imponible,
+  exento e impuesto, pero no calculan 0%/8% hasta cerrar #13.
+- ISLR: catálogo de referencia de los seis rubros habituales del giro
+  (honorarios profesionales, servicios técnicos/especializados, obras y
+  servicios en general, fletes/transporte, publicidad y arrendamientos), con
+  persona natural/jurídica y UT Bs. 43,00. Sustraendo y alícuotas del art. 9
+  del Decreto 1.808 quedan **pendientes del contador**.
+- El plan de cuentas base tiene **35 cuentas activas del sistema** (migración
+  v14): `1.01.01` Caja, `1.01.02` Bancos, `1.02.01` Clientes, `2.01.01`
+  Proveedores, `1.03.01` Materia Prima, `1.03.02` Producto Terminado,
+  `1.04.01` Crédito Fiscal IVA, `2.02.01` IVA por Pagar y `2.02.02` Retenciones
+  por Pagar (practicadas). No existe cuenta dedicada a **retenciones recibidas**
+  de comprobantes que emitan clientes SPE al cobrar. Saldos de apertura, fecha
+  de corte, formatos legales, firma definitiva y numeración de libro/página se
+  ajustan con el contador al cerrar la Fase 0.
+- Facturación digital: solo configuración/borrador, sin emisión real ni envío
+  al SENIAT.
+
+El catálogo de referencia se consulta con `GET /api/fiscal-reference-catalog`
+(solo admin/master) y se muestra en la misma pantalla en dos tablas de **solo
+lectura**. No tiene POST/PUT, no crea migración y no modifica `taxRatePercent`,
+retenciones ni libros; se ajusta en código cuando el contador valide los
+supuestos. Todas sus filas están en `referencia` con
+`confirmedByAccountant=false`.
+
+El plan de cuentas vigente se consulta en `GET /api/accounting/accounts` y en
+**Contabilidad → Plan de cuentas**: 35 cuentas activas y del sistema, sembradas
+en la migración v14, con caja/bancos, CxC, CxP, inventario e IVA ya presentes.
+No se han creado cuentas nuevas ni modificado asientos por los criterios de
+esta ronda. La cuenta para retenciones recibidas, la separación de IVA 8% y el
+plan definitivo (base 35 frente a VEN-NIF de 167) quedan pendientes del
+contador; si se aprueba una cuenta nueva se hará con migración v17 y backup
+previo.
+
+**Cierre formal pendiente (#13):** validación final de exentos/8% y conceptos
+ISLR, cuenta contable para retenciones recibidas, saldos de apertura, fecha de
+corte, formatos legales finales, firma y numeración de libro/página.
+
+Formatos y columnas: `docs/PLANTILLAS-LIBROS.md`. Matriz de obligaciones y
+cuestionario pendiente: `docs/MATRIZ-OBLIGACIONES-FISCALES.md` y
+`docs/CUESTIONARIO-CONTADOR-ISSUE13.md`.
+
 ---
 
 ## 10. Solución de problemas
@@ -571,6 +743,14 @@ procedimiento contable aplicable; no modifique SQLite directamente.
       USD/BCV verificadas.
 - [ ] Serie, número de factura, números de notas y control revisados para evitar
       reutilizar consecutivos.
+- [ ] Migración v14 aplicada con respaldo previo y 35 cuentas sembradas en
+      `accounts`.
+- [ ] Migración v15 aplicada con respaldo previo; columnas de facturación digital
+      presentes en `fiscal_settings` y casilla en modo preparación.
+- [ ] Módulo **Contabilidad** visible solo para roles con permiso; admin/master
+      confirman/anulan asientos y cierran períodos.
+- [ ] Plan de cuentas base, cuentas de control de IVA/retenciones y asientos
+      automáticos revisados con el contador en el issue #13.
 - [ ] Un período de libros exportado y conciliado en pruebas antes del primer
       cierre operativo.
 - [ ] Revisión de documentos, leyendas, tasas y libros completada con el contador

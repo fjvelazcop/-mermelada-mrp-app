@@ -294,6 +294,31 @@ describe('role-based access control', () => {
     expect(production.status).toBe(200);
   });
 
+  it('grants catalog administration only to root roles', async () => {
+    const { token: adminToken } = await login('admin');
+    const { token: operatorToken } = await login('operador');
+
+    for (const path of ['/api/supplier-types', '/api/material-categories']) {
+      const allowed = await fetch(`${baseUrl}${path}`, {
+        headers: authed(adminToken),
+      });
+      expect(allowed.status).toBe(200);
+
+      const denied = await fetch(`${baseUrl}${path}`, {
+        headers: authed(operatorToken),
+      });
+      expect(denied.status).toBe(403);
+      expect(((await denied.json()) as { code: string }).code).toBe('FORBIDDEN');
+    }
+
+    const resetDenied = await fetch(`${baseUrl}/api/system/reset-operational`, {
+      method: 'POST',
+      headers: { ...authed(operatorToken), 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(resetDenied.status).toBe(403);
+  });
+
   it('distinguishes create from edit permissions for cost analysts', async () => {
     const { token } = await login('costos');
 
@@ -432,6 +457,45 @@ describe('role-based access control', () => {
     expect(forbidden.status).toBe(403);
   });
 
+  it('maps /api/payables to the expenses RBAC module', async () => {
+    const { token: operatorToken } = await login('operador');
+    const forbiddenRead = await fetch(`${baseUrl}/api/payables`, {
+      headers: authed(operatorToken),
+    });
+    expect(forbiddenRead.status).toBe(403);
+
+    const forbiddenWrite = await fetch(`${baseUrl}/api/payables`, {
+      method: 'POST',
+      headers: {...authed(operatorToken), 'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        supplierName: 'Proveedor restringido',
+        invoiceNumber: 'F-RBAC-001',
+        issueDate: '2026-11-01',
+        dueDate: '2026-12-01',
+        amountUsd: 10,
+        exchangeRateUsed: 50,
+        category: 'otros',
+      }),
+    });
+    expect(forbiddenWrite.status).toBe(403);
+
+    const { token: adminToken } = await login('admin');
+    const allowed = await fetch(`${baseUrl}/api/payables`, {
+      method: 'POST',
+      headers: {...authed(adminToken), 'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        supplierName: 'Proveedor autorizado',
+        invoiceNumber: 'F-RBAC-002',
+        issueDate: '2026-11-01',
+        dueDate: '2026-12-01',
+        amountUsd: 10,
+        exchangeRateUsed: 50,
+        category: 'otros',
+      }),
+    });
+    expect(allowed.status).toBe(201);
+  });
+
   it('reserves the demo reset for administrators', async () => {
     const { token: operatorToken } = await login('operador');
     const forbidden = await fetch(`${baseUrl}/api/system/reset`, {
@@ -517,7 +581,8 @@ describe('database-backed roles and permissions', () => {
     const rows = getDb()
       .prepare('SELECT COUNT(*) AS count FROM auth_role_permissions')
       .get() as { count: number };
-    expect(rows.count).toBe(66);
+    // 6 roles x 14 modules (including accounting, supplier_types and material_categories)
+    expect(rows.count).toBe(84);
     expect(auth.getRolePermissions('does-not-exist')).toBeNull();
   });
 

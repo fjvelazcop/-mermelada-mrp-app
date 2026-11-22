@@ -3,6 +3,7 @@ import {HttpClient} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 import {
   RawMaterial,
+  MaterialCategoryConfig,
   InventoryMovement,
   FinishedGood,
   RecipeBOM,
@@ -11,6 +12,7 @@ import {
   ProductionSheetPresentationLine,
   Customer,
   SalesOrder,
+  SalesCollection,
   DeliveryNote,
   Employee,
   PayrollWeek,
@@ -18,6 +20,10 @@ import {
   FiscalObligationKey,
   FiscalObligationRecord,
   FiscalObligationsResponse,
+  FiscalReferenceCatalogResponse,
+  FiscalReferenceInput,
+  FiscalReferenceValue,
+  FiscalReferenceValuesResponse,
   FiscalInvoice,
   FiscalAdjustmentNote,
   FiscalBooksReport,
@@ -35,10 +41,20 @@ import {
   SystemUser,
   SettingsSection,
   AuditLogEntry,
+  Account,
+  AccountingBookReport,
+  AccountingBookSettings,
+  AccountingBookSettingsInput,
+  AccountingBookType,
+  AccountingEntry,
+  AccountingPeriod,
   Expense,
   ExpenseCategoryConfig,
+  Payable,
+  PayablePayment,
   Supplier,
   SupplierPrice,
+  SupplierTypeConfig,
   NotificationRecipient,
   TunnelSessionsResponse,
   NotificationDispatchResult,
@@ -72,7 +88,10 @@ export class ErpApiService {
         sales: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         payroll: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         expenses: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        accounting: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        supplier_types: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        material_categories: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         settings: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         architecture: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
@@ -92,7 +111,10 @@ export class ErpApiService {
         sales: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         payroll: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         expenses: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        accounting: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        supplier_types: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
+        material_categories: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         settings: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         architecture: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
         activation: { canView: true, canCreate: true, canEdit: true, canDelete: true, canExport: true },
@@ -112,7 +134,10 @@ export class ErpApiService {
         sales: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
         payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        accounting: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         suppliers: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: false },
+        supplier_types: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        material_categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
@@ -132,7 +157,10 @@ export class ErpApiService {
         sales: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        accounting: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         suppliers: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        supplier_types: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        material_categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
@@ -152,7 +180,10 @@ export class ErpApiService {
         sales: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
         payroll: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+        accounting: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: true },
         suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+        supplier_types: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        material_categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
@@ -172,7 +203,10 @@ export class ErpApiService {
         sales: { canView: true, canCreate: true, canEdit: false, canDelete: false, canExport: true },
         payroll: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         expenses: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        accounting: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         suppliers: { canView: true, canCreate: true, canEdit: true, canDelete: false, canExport: true },
+        supplier_types: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
+        material_categories: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         settings: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         architecture: { canView: true, canCreate: false, canEdit: false, canDelete: false, canExport: false },
         activation: { canView: false, canCreate: false, canEdit: false, canDelete: false, canExport: false },
@@ -846,15 +880,28 @@ export class ErpApiService {
   public salesOrders = signal<SalesOrder[]>([]);
   public suppliers = signal<Supplier[]>([]);
   public supplierPrices = signal<SupplierPrice[]>([]);
+  public supplierTypes = signal<SupplierTypeConfig[]>([]);
+  public materialCategories = signal<MaterialCategoryConfig[]>([]);
   public deliveryNotes = signal<DeliveryNote[]>([]);
   public employees = signal<Employee[]>([]);
   public payrollWeeks = signal<PayrollWeek[]>([]);
   public expenses = signal<Expense[]>([]);
   public expenseCategories = signal<ExpenseCategoryConfig[]>([]);
+  public payables = signal<Payable[]>([]);
+  public payablePayments = signal<PayablePayment[]>([]);
+  public accounts = signal<Account[]>([]);
+  public accountingEntries = signal<AccountingEntry[]>([]);
+  public accountingPeriods = signal<AccountingPeriod[]>([]);
+  public accountingBook = signal<AccountingBookReport | null>(null);
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
   public fiscalObligations = signal<FiscalObligationRecord[]>([]);
   public fiscalObligationHistory = signal<FiscalObligationsResponse['history']>([]);
+  public fiscalReferenceValues = signal<FiscalReferenceValue[]>([]);
+  public fiscalReferenceCatalog = signal<FiscalReferenceCatalogResponse | null>(null);
+  public activeIva = signal<FiscalReferenceValue | null>(null);
+  public activeUt = signal<FiscalReferenceValue | null>(null);
+  public accountingBookSettings = signal<AccountingBookSettings | null>(null);
   public fiscalInvoices = signal<FiscalInvoice[]>([]);
   public fiscalAdjustmentNotes = signal<FiscalAdjustmentNote[]>([]);
   public dashboardData = signal<any | null>(null);
@@ -1138,11 +1185,18 @@ export class ErpApiService {
         sOrders,
         supplierList,
         supplierPriceList,
+        supplierTypeList,
+        materialCategoryList,
         dNotes,
         staff,
         weeks,
         expensesList,
         expenseCategoriesList,
+        payablesList,
+        payablePaymentsList,
+        accountsList,
+        entriesList,
+        periodsList,
         costing,
         fiscal,
         invoices,
@@ -1161,11 +1215,18 @@ export class ErpApiService {
         firstValueFrom(this.http.get<SalesOrder[]>('/api/sales/orders')),
         firstValueFrom(this.http.get<Supplier[]>('/api/suppliers')).catch(() => []),
         firstValueFrom(this.http.get<SupplierPrice[]>('/api/suppliers/prices')).catch(() => []),
+        firstValueFrom(this.http.get<SupplierTypeConfig[]>('/api/supplier-types')).catch(() => []),
+        firstValueFrom(this.http.get<MaterialCategoryConfig[]>('/api/material-categories')).catch(() => []),
         firstValueFrom(this.http.get<DeliveryNote[]>('/api/sales/delivery-notes')),
         firstValueFrom(this.http.get<Employee[]>('/api/payroll/employees')),
         firstValueFrom(this.http.get<PayrollWeek[]>('/api/payroll/weeks')),
         firstValueFrom(this.http.get<Expense[]>('/api/expenses')).catch(() => []),
         firstValueFrom(this.http.get<ExpenseCategoryConfig[]>('/api/expenses/categories')).catch(() => []),
+        firstValueFrom(this.http.get<Payable[]>('/api/payables')).catch(() => []),
+        firstValueFrom(this.http.get<PayablePayment[]>('/api/payables/payments')).catch(() => []),
+        firstValueFrom(this.http.get<Account[]>('/api/accounting/accounts')).catch(() => []),
+        firstValueFrom(this.http.get<AccountingEntry[]>('/api/accounting/entries')).catch(() => []),
+        firstValueFrom(this.http.get<AccountingPeriod[]>('/api/accounting/periods')).catch(() => []),
         firstValueFrom(this.http.get<CostStructureAnalysis>('/api/costing/summary')),
         firstValueFrom(this.http.get<FiscalSettings>('/api/fiscal-settings')),
         firstValueFrom(this.http.get<FiscalInvoice[]>('/api/fiscal-invoices')).catch(() => []),
@@ -1189,11 +1250,18 @@ export class ErpApiService {
       this.salesOrders.set(sOrders);
       this.suppliers.set(supplierList || []);
       this.supplierPrices.set(supplierPriceList || []);
+      this.supplierTypes.set(supplierTypeList || []);
+      this.materialCategories.set(materialCategoryList || []);
       this.deliveryNotes.set(dNotes);
       this.employees.set(staff);
       this.payrollWeeks.set(weeks);
       this.expenses.set(expensesList || []);
       this.expenseCategories.set(expenseCategoriesList || []);
+      this.payables.set(payablesList || []);
+      this.payablePayments.set(payablePaymentsList || []);
+      this.accounts.set(accountsList || []);
+      this.accountingEntries.set(entriesList || []);
+      this.accountingPeriods.set(periodsList || []);
       this.costStructure.set(costing);
       this.fiscalSettings.set(fiscal);
       this.fiscalInvoices.set(invoices || []);
@@ -1280,6 +1348,9 @@ export class ErpApiService {
     costPerUnit: number;
     exchangeRateUsed?: number;
     referenceDoc?: string;
+    supplierId?: string;
+    supplierNameSnapshot?: string;
+    supplierTaxIdSnapshot?: string;
     notes?: string;
   }) {
     try {
@@ -1320,6 +1391,9 @@ export class ErpApiService {
           unit: mat ? mat.unit : undefined,
           costUsd: totalCost,
           referenceDoc: data.referenceDoc,
+          supplierId: data.supplierId,
+          supplierName: data.supplierNameSnapshot,
+          taxId: data.supplierTaxIdSnapshot,
           operatorNotes: data.notes,
         },
       });
@@ -1793,6 +1867,19 @@ export class ErpApiService {
     }
   }
 
+  /** Historial de abonos del pedido (fuente de verdad del saldo). */
+  public async getSalesOrderCollections(orderId: string): Promise<SalesCollection[]> {
+    try {
+      return await firstValueFrom<SalesCollection[]>(
+        this.http.get<SalesCollection[]>(`/api/sales/orders/${orderId}/collections`)
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al consultar los cobros';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
   public async collectSalesOrder(
     orderId: string,
     data: {
@@ -1873,6 +1960,9 @@ export class ErpApiService {
           itemName: res.concept,
           costUsd: res.amountUsd,
           referenceDoc: res.documentNumber || res.paymentReference,
+          supplierId: res.supplierId,
+          supplierName: res.supplierOrBeneficiary,
+          taxId: res.taxId,
           operatorNotes: res.notes,
         },
       });
@@ -1882,6 +1972,265 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar gasto';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  // --- CONTABILIDAD (FASE 1) ---
+  public async addAccount(
+    data: Omit<Account, 'id' | 'createdAt' | 'updatedAt' | 'isSystem' | 'level'>
+  ) {
+    try {
+      const res = await firstValueFrom(this.http.post<Account>('/api/accounting/accounts', data));
+      this.accounts.update((list) => [...list, res]);
+      this.showToast(`Cuenta ${res.code} creada exitosamente.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al crear la cuenta', 'error');
+      throw err;
+    }
+  }
+
+  public async updateAccount(
+    id: string,
+    updates: {name?: string; description?: string; active?: boolean}
+  ) {
+    try {
+      const res = await firstValueFrom(
+        this.http.patch<Account>(`/api/accounting/accounts/${id}`, updates)
+      );
+      this.accounts.update((list) => list.map((account) => account.id === id ? res : account));
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al actualizar la cuenta', 'error');
+      throw err;
+    }
+  }
+
+  public async createAccountingEntry(data: {
+    date: string;
+    description: string;
+    sourceType?: AccountingEntry['sourceType'];
+    sourceId?: string;
+    exchangeRateUsed?: number;
+    status?: 'borrador' | 'confirmado';
+    lines: {accountCode: string; debit?: number; credit?: number; memo?: string}[];
+  }) {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<AccountingEntry>('/api/accounting/entries', data)
+      );
+      this.accountingEntries.update((list) => [...list, res]);
+      this.showToast(`Asiento ${res.entryNumber} creado exitosamente.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al crear el asiento', 'error');
+      throw err;
+    }
+  }
+
+  public async confirmAccountingEntry(id: string) {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<AccountingEntry>(`/api/accounting/entries/${id}/confirm`, {})
+      );
+      this.accountingEntries.update((list) => list.map((entry) => entry.id === id ? res : entry));
+      this.showToast(`Asiento ${res.entryNumber} confirmado.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al confirmar el asiento', 'error');
+      throw err;
+    }
+  }
+
+  public async annulAccountingEntry(id: string, reason: string) {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<AccountingEntry>(`/api/accounting/entries/${id}/annul`, {reason})
+      );
+      this.accountingEntries.update((list) => list.map((entry) => entry.id === id ? res : entry));
+      this.showToast(`Asiento ${res.entryNumber} anulado.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al anular el asiento', 'error');
+      throw err;
+    }
+  }
+
+  public async setAccountingPeriodStatus(key: string, status: 'abierto' | 'cerrado') {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<AccountingPeriod>(`/api/accounting/periods/${key}/${status === 'cerrado' ? 'close' : 'open'}`, {})
+      );
+      this.accountingPeriods.update((list) => list.map((period) => period.key === key ? res : period));
+      this.showToast(`Período ${key} ${status === 'cerrado' ? 'cerrado' : 'abierto'}.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al actualizar el período', 'error');
+      throw err;
+    }
+  }
+
+  /** Obtiene un libro contable provisional del período solicitado. */
+  public async getAccountingBook(type: AccountingBookType, year: number, month: number) {
+    try {
+      const params = new URLSearchParams({type, year: String(year), month: String(month)});
+      const res = await firstValueFrom(
+        this.http.get<AccountingBookReport>(`/api/accounting/books?${params.toString()}`)
+      );
+      this.accountingBook.set(res);
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al generar el libro', 'error');
+      throw err;
+    }
+  }
+
+  // --- CUENTAS POR PAGAR (pestaña de Gastos) ---
+
+  public async addPayable(data: Omit<Payable, 'id' | 'payableNumber' | 'createdAt' | 'updatedAt'>) {
+    try {
+      const res = await firstValueFrom<Payable>(this.http.post<Payable>('/api/payables', data));
+      this.payables.update((list) => [res, ...list]);
+      await this.recordAuditLog({
+        module: 'gastos',
+        actionType: 'payable_registrado',
+        title: `Factura por pagar registrada: ${res.payableNumber}`,
+        description: `${res.supplierName} · Factura ${res.invoiceNumber} por $${res.amountUsd.toFixed(2)}. Vence ${res.dueDate}.`,
+        severity: 'info',
+        details: {
+          targetId: res.id,
+          targetCode: res.payableNumber,
+          itemName: res.supplierName,
+          costUsd: res.amountUsd,
+          referenceDoc: res.invoiceNumber,
+          payableId: res.id,
+        },
+      });
+      this.showToast(`Factura ${res.payableNumber} registrada en Cuentas por pagar.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al registrar la factura por pagar';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updatePayable(id: string, data: Partial<Payable>) {
+    try {
+      const res = await firstValueFrom<Payable>(
+        this.http.patch<Payable>(`/api/payables/${id}`, data)
+      );
+      this.payables.update((list) => list.map((entry) => (entry.id === id ? res : entry)));
+      await this.recordAuditLog({
+        module: 'gastos',
+        actionType: data.status === 'anulada' ? 'payable_anulado' : 'payable_actualizado',
+        title: `${data.status === 'anulada' ? 'Factura por pagar anulada' : 'Factura por pagar actualizada'}: ${res.payableNumber}`,
+        description: `${res.supplierName} · ${res.payableNumber}.`,
+        severity: data.status === 'anulada' ? 'warning' : 'info',
+        details: {targetId: res.id, targetCode: res.payableNumber, payableId: res.id},
+      });
+      this.showToast(`Factura ${res.payableNumber} actualizada.`);
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar la factura';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async getPayablePayments(payableId: string): Promise<PayablePayment[]> {
+    try {
+      return await firstValueFrom<PayablePayment[]>(
+        this.http.get<PayablePayment[]>(`/api/payables/${payableId}/payments`)
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al consultar los pagos';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async payPayable(
+    payableId: string,
+    data: {
+      bankCode: string;
+      bankName: string;
+      paymentMethod: PayablePayment['paymentMethod'];
+      reference: string;
+      amountUsd?: number;
+      exchangeRateUsed?: number;
+    }
+  ): Promise<{payable: Payable; payment: PayablePayment; expense?: Expense}> {
+    try {
+      const res = await firstValueFrom<{payable: Payable; payment: PayablePayment; expense?: Expense}>(
+        this.http.post<{payable: Payable; payment: PayablePayment; expense?: Expense}>(
+          `/api/payables/${payableId}/payments`,
+          data
+        )
+      );
+      this.payablePayments.update((list) => [res.payment, ...list]);
+      this.payables.update((list) =>
+        list.map((entry) => (entry.id === payableId ? res.payable : entry))
+      );
+      await this.recordAuditLog({
+        module: 'gastos',
+        actionType: 'payable_pago_registrado',
+        title: `Pago registrado: ${res.payable.payableNumber}`,
+        description: `$${res.payment.amountUsd.toFixed(2)} pagados a ${res.payable.supplierName} en ${data.bankName} (${data.bankCode}) · Ref. ${data.reference}.`,
+        severity: 'success',
+        details: {
+          targetId: res.payable.id,
+          targetCode: res.payable.payableNumber,
+          itemName: res.payable.supplierName,
+          costUsd: res.payment.amountUsd,
+          bankCode: data.bankCode,
+          bankName: data.bankName,
+          referenceDoc: data.reference,
+          payableId: res.payable.id,
+        },
+      });
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al registrar el pago';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  /** Include/exclude a gasto from the Libro de Compras (audited server-side). */
+  public async setExpenseFiscalEligibility(
+    id: string,
+    fiscalBookEligible: boolean
+  ): Promise<Expense> {
+    try {
+      const updated = await firstValueFrom(
+        this.http.patch<Expense>(`/api/expenses/${id}/fiscal-eligibility`, {
+          fiscalBookEligible,
+        })
+      );
+      this.expenses.update((list) =>
+        list.map((item) => (item.id === id ? updated : item))
+      );
+      this.showToast(
+        updated.fiscalBookEligible
+          ? `${updated.expenseNumber} incluido en el Libro de Compras.`
+          : `${updated.expenseNumber} excluido del Libro de Compras.`
+      );
+      return updated;
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'No se pudo actualizar la elegibilidad fiscal';
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1910,6 +2259,109 @@ export class ErpApiService {
       await this.refreshAllData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al eliminar gasto';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  // --- EDITABLE CATALOGS ---
+  public async addSupplierType(data: Omit<SupplierTypeConfig, 'id' | 'createdAt' | 'updatedAt' | 'isSystem'>) {
+    try {
+      const res = await firstValueFrom<SupplierTypeConfig>(
+        this.http.post<SupplierTypeConfig>('/api/supplier-types', data)
+      );
+      this.supplierTypes.update(list => [...list, res]);
+      this.showToast(`Tipo de proveedor "${res.label}" creado con éxito.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al crear tipo de proveedor';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updateSupplierType(id: string, data: Partial<SupplierTypeConfig>) {
+    try {
+      const res = await firstValueFrom<SupplierTypeConfig>(
+        this.http.put<SupplierTypeConfig>(`/api/supplier-types/${id}`, data)
+      );
+      this.supplierTypes.update(list => list.map(t => (t.id === id ? res : t)));
+      this.showToast(`Tipo de proveedor "${res.label}" actualizado.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar tipo de proveedor';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteSupplierType(id: string) {
+    try {
+      await firstValueFrom(this.http.delete(`/api/supplier-types/${id}`));
+      this.supplierTypes.update(list => list.filter(t => t.id !== id));
+      this.showToast('Tipo de proveedor eliminado exitosamente.');
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar tipo de proveedor';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async addMaterialCategory(data: Omit<MaterialCategoryConfig, 'id' | 'createdAt' | 'updatedAt' | 'isSystem'>) {
+    try {
+      const res = await firstValueFrom<MaterialCategoryConfig>(
+        this.http.post<MaterialCategoryConfig>('/api/material-categories', data)
+      );
+      this.materialCategories.update(list => [...list, res]);
+      this.showToast(`Categoría "${res.label}" creada con éxito.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al crear categoría de materia prima';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updateMaterialCategory(id: string, data: Partial<MaterialCategoryConfig>) {
+    try {
+      const res = await firstValueFrom<MaterialCategoryConfig>(
+        this.http.put<MaterialCategoryConfig>(`/api/material-categories/${id}`, data)
+      );
+      this.materialCategories.update(list => list.map(c => (c.id === id ? res : c)));
+      this.showToast(`Categoría "${res.label}" actualizada.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar categoría de materia prima';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteMaterialCategory(id: string) {
+    try {
+      await firstValueFrom(this.http.delete(`/api/material-categories/${id}`));
+      this.materialCategories.update(list => list.filter(c => c.id !== id));
+      this.showToast('Categoría de materia prima eliminada exitosamente.');
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar categoría de materia prima';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  /** Reset operativo: solo admin/master. Recarga todas las señales después. */
+  public async resetOperationalData() {
+    try {
+      const res = await firstValueFrom<{success: boolean; message: string}>(
+        this.http.post<{success: boolean; message: string}>('/api/system/reset-operational', {})
+      );
+      this.showToast(res.message || 'Reset operativo ejecutado.', 'success');
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al ejecutar el reset operativo';
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2023,6 +2475,119 @@ export class ErpApiService {
     }
     await this.refreshFiscalObligations();
     this.showToast('Obligación fiscal e historial actualizados.');
+  }
+
+  // --- VALORES FISCALES HISTÓRICOS (IVA / UT) ---
+  public async refreshFiscalReferenceCatalog(): Promise<FiscalReferenceCatalogResponse> {
+    try {
+      const catalog = await firstValueFrom(
+        this.http.get<FiscalReferenceCatalogResponse>('/api/fiscal-reference-catalog')
+      );
+      this.fiscalReferenceCatalog.set(catalog);
+      return catalog;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async refreshFiscalReferenceValues(
+    kind?: FiscalReferenceValue['kind'],
+    date?: string
+  ): Promise<void> {
+    try {
+      const params: Record<string, string> = {};
+      if (kind) params['kind'] = kind;
+      if (date) params['date'] = date;
+      const result = await firstValueFrom<
+        FiscalReferenceValuesResponse
+      >(this.http.get<FiscalReferenceValuesResponse>('/api/fiscal-reference-values', {params}));
+      this.fiscalReferenceValues.set(result.values);
+      this.activeIva.set(result.activeIva);
+      this.activeUt.set(result.activeUt);
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async createFiscalReferenceValue(
+    input: FiscalReferenceInput
+  ): Promise<FiscalReferenceValue> {
+    try {
+      const created = await firstValueFrom(
+        this.http.post<FiscalReferenceValue>('/api/fiscal-reference-values', input)
+      );
+      await this.refreshFiscalReferenceValues();
+      this.showToast('Valor de referencia fiscal creado.');
+      return created;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async updateFiscalReferenceValue(
+    id: string,
+    input: FiscalReferenceInput
+  ): Promise<FiscalReferenceValue> {
+    try {
+      const updated = await firstValueFrom(
+        this.http.put<FiscalReferenceValue>(`/api/fiscal-reference-values/${id}`, input)
+      );
+      await this.refreshFiscalReferenceValues();
+      this.showToast('Valor de referencia fiscal actualizado.');
+      return updated;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async annulFiscalReferenceValue(
+    id: string,
+    reason: string
+  ): Promise<FiscalReferenceValue> {
+    try {
+      const annulled = await firstValueFrom(
+        this.http.post<FiscalReferenceValue>(`/api/fiscal-reference-values/${id}/annul`, {reason})
+      );
+      await this.refreshFiscalReferenceValues();
+      this.showToast('Valor anulado; el historial se conserva.');
+      return annulled;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async refreshAccountingBookSettings(): Promise<AccountingBookSettings> {
+    try {
+      const settings = await firstValueFrom(
+        this.http.get<AccountingBookSettings>('/api/accounting-book-settings')
+      );
+      this.accountingBookSettings.set(settings);
+      return settings;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
+  }
+
+  public async updateAccountingBookSettings(
+    input: AccountingBookSettingsInput
+  ): Promise<AccountingBookSettings> {
+    try {
+      const updated = await firstValueFrom(
+        this.http.put<AccountingBookSettings>('/api/accounting-book-settings', input)
+      );
+      this.accountingBookSettings.set(updated);
+      this.showToast('Parámetros de libros guardados.');
+      return updated;
+    } catch (err: unknown) {
+      this.showToast(this.apiErrorMessage(err), 'error');
+      throw err;
+    }
   }
 
   // --- FISCAL INVOICES ---

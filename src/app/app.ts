@@ -11,6 +11,7 @@ import {CostingComponent} from './features/costing/costing';
 import {SalesComponent} from './features/sales/sales';
 import {PayrollComponent} from './features/payroll/payroll';
 import {ExpensesComponent} from './features/expenses/expenses';
+import {AccountingComponent} from './features/accounting/accounting';
 import {Settings} from './features/settings/settings';
 import {SuppliersComponent} from './features/suppliers/suppliers';
 import {ActivationComponent} from './features/activation/activation';
@@ -27,6 +28,7 @@ export type MainNavigationTab =
   | 'sales'
   | 'payroll'
   | 'expenses'
+  | 'accounting'
   | 'suppliers'
   | 'settings'
   | 'architecture'
@@ -45,6 +47,7 @@ export type MainNavigationTab =
     SalesComponent,
     PayrollComponent,
     ExpensesComponent,
+    AccountingComponent,
     SuppliersComponent,
     Settings,
     ActivationComponent,
@@ -74,6 +77,7 @@ export class App implements OnInit {
     sales: { label: 'Ventas', icon: 'point_of_sale' },
     payroll: { label: 'Nómina', icon: 'badge' },
     expenses: { label: 'Gastos', icon: 'receipt_long' },
+    accounting: { label: 'Contabilidad', icon: 'account_balance' },
     suppliers: { label: 'Proveedores', icon: 'local_shipping' },
     settings: { label: 'Config', icon: 'settings' },
     architecture: { label: 'Docs', icon: 'architecture' },

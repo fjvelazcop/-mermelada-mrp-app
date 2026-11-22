@@ -216,9 +216,21 @@ export class DatabaseExpertAgent {
       islrWithholdingAgent: false,
       islrWithholdingPercent: 0,
       specialTaxpayer: false,
+      accountingEnabled: true,
+      vatWithholdingEnabled: false,
+      islrWithholdingEnabled: false,
       booksFormat: 'xlsx',
       historicalOrdersTreatment: 'revisar',
       printNotes: 'Contribuyente Ordinario del IVA.',
+      digitalInvoicingEnabled: false,
+      digitalInvoicingProvider: '',
+      digitalInvoicingProviderTaxId: '',
+      digitalInvoicingApiUrl: '',
+      digitalInvoicingEnvironment: 'pruebas',
+      digitalInvoicingCertificateLabel: '',
+      digitalInvoicingCertificateExpiry: '',
+      digitalInvoicingStartDate: '',
+      digitalInvoicingNotes: 'Configuración de preparación. No emite ni envía al SENIAT.',
     };
   }
 

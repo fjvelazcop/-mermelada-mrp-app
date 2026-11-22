@@ -15,6 +15,7 @@ import type swaggerUiType from 'swagger-ui-express';
 const require = createRequire(import.meta.url);
 const swaggerUi = require('swagger-ui-express') as typeof swaggerUiType;
 import { dbInstance } from './erp-database.js';
+import { getFiscalReferenceCatalog } from './fiscal-reference-catalog.js';
 import { getDb, getDbPath } from './database/persistence.js';
 import {
   createActivation,
@@ -80,6 +81,13 @@ import {
   internalTunnelHandler,
 } from './tunnel.js';
 import {
+  accountSchema,
+  accountUpdateSchema,
+  accountingBookQuerySchema,
+  accountingBookSettingsSchema,
+  accountingEntryAnnulmentSchema,
+  accountingEntrySchema,
+  accountingPeriodKeySchema,
   auditLogSchema,
   activationCreateSchema,
   activationUpdateSchema,
@@ -93,11 +101,16 @@ import {
   exchangeRateUpdateSchema,
   expenseCategorySchema,
   expenseCategoryUpdateSchema,
+  expenseFiscalEligibilitySchema,
   expenseSchema,
   finishedGoodUpdateSchema,
   fiscalSettingsSchema,
   fiscalObligationParamsSchema,
   fiscalObligationUpdateSchema,
+  fiscalReferenceIdParamsSchema,
+  fiscalReferenceQuerySchema,
+  fiscalReferenceSchema,
+  fiscalReferenceAnnulmentSchema,
   fiscalAdjustmentNoteSchema,
   fiscalPeriodParamsSchema,
   fiscalInvoiceAnnulmentSchema,
@@ -112,6 +125,9 @@ import {
   passwordResetConfirmSchema,
   passwordResetRequestSchema,
   payrollWeekSchema,
+  payablePaymentSchema,
+  payableSchema,
+  payableUpdateSchema,
   productionOrderSchema,
   rawMaterialSchema,
   rawMaterialUpdateSchema,
@@ -122,11 +138,16 @@ import {
   salesCollectionSchema,
   salesOrderSchema,
   salesOrderStatusUpdateSchema,
+  materialCategorySchemaInput,
+  materialCategoryUpdateSchema,
+  supplierTypeSchema,
+  supplierTypeUpdateSchema,
   supplierPriceSchema,
   supplierSchema,
   supplierUpdateSchema,
   userCreateSchema,
   userUpdateSchema,
+  parseOrThrow,
   validateBody,
   validateParams,
 } from './validation.js';
@@ -621,6 +642,13 @@ export function createApiApp(): express.Express {
     '/api/inventory/movements',
     validateBody(inventoryMovementSchema),
     mutation((req, res) => {
+      if (
+        req.body.supplierId &&
+        !dbInstance.getSuppliers().some((s) => s.id === req.body.supplierId)
+      ) {
+        res.status(400).json({error: 'Proveedor no encontrado', code: 'INVALID_SUPPLIER'});
+        return;
+      }
       const mov = dbInstance.addInventoryMovement(req.body);
       res.status(201).json(mov);
     })
@@ -819,6 +847,78 @@ export function createApiApp(): express.Express {
     mutation((req, res) => {
       const created = dbInstance.addCustomer(req.body);
       res.status(201).json(created);
+    })
+  );
+
+  // --- EDITABLE CATALOGS: SUPPLIER TYPES ---
+  app.get(
+    '/api/supplier-types',
+    query((req, res) => {
+      res.json(dbInstance.getSupplierTypes());
+    })
+  );
+
+  app.post(
+    '/api/supplier-types',
+    validateBody(supplierTypeSchema),
+    mutation((req, res) => {
+      const created = dbInstance.addSupplierType(req.body, auditActor(req));
+      res.status(201).json(created);
+    })
+  );
+
+  app.put(
+    '/api/supplier-types/:id',
+    validateParams(idParamsSchema),
+    validateBody(supplierTypeUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateSupplierType(routeId(req), req.body, auditActor(req));
+      res.json(updated);
+    })
+  );
+
+  app.delete(
+    '/api/supplier-types/:id',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      dbInstance.deleteSupplierType(routeId(req), auditActor(req));
+      res.json({ success: true, message: 'Tipo de proveedor eliminado' });
+    })
+  );
+
+  // --- EDITABLE CATALOGS: MATERIAL CATEGORIES ---
+  app.get(
+    '/api/material-categories',
+    query((req, res) => {
+      res.json(dbInstance.getMaterialCategories());
+    })
+  );
+
+  app.post(
+    '/api/material-categories',
+    validateBody(materialCategorySchemaInput),
+    mutation((req, res) => {
+      const created = dbInstance.addMaterialCategory(req.body, auditActor(req));
+      res.status(201).json(created);
+    })
+  );
+
+  app.put(
+    '/api/material-categories/:id',
+    validateParams(idParamsSchema),
+    validateBody(materialCategoryUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateMaterialCategory(routeId(req), req.body, auditActor(req));
+      res.json(updated);
+    })
+  );
+
+  app.delete(
+    '/api/material-categories/:id',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      dbInstance.deleteMaterialCategory(routeId(req), auditActor(req));
+      res.json({ success: true, message: 'Categoría de materia prima eliminada' });
     })
   );
 
@@ -1021,6 +1121,19 @@ export function createApiApp(): express.Express {
     })
   );
 
+  app.get(
+    '/api/sales/orders/:id/collections',
+    validateParams(idParamsSchema),
+    query((req, res) => {
+      const order = dbInstance.getSalesOrder(routeId(req));
+      if (!order) {
+        res.status(404).json({ error: 'Pedido no encontrado', code: 'NOT_FOUND' });
+        return;
+      }
+      res.json(dbInstance.getSalesOrderCollections(order.id));
+    })
+  );
+
   app.post(
     '/api/sales/orders/:id/create-production-order',
     validateParams(idParamsSchema),
@@ -1171,6 +1284,13 @@ export function createApiApp(): express.Express {
     '/api/expenses',
     validateBody(expenseSchema),
     mutation((req, res) => {
+      if (
+        req.body.supplierId &&
+        !dbInstance.getSuppliers().some((s) => s.id === req.body.supplierId)
+      ) {
+        res.status(400).json({error: 'Proveedor no encontrado', code: 'INVALID_SUPPLIER'});
+        return;
+      }
       const bank = req.body.issuingBankCode
         ? findBank(req.body.issuingBankCode)
         : undefined;
@@ -1180,6 +1300,24 @@ export function createApiApp(): express.Express {
         issuingBankName: bank?.name,
       });
       res.status(201).json(created);
+    })
+  );
+
+  app.patch(
+    '/api/expenses/:id/fiscal-eligibility',
+    validateParams(idParamsSchema),
+    validateBody(expenseFiscalEligibilitySchema),
+    mutation((req, res) => {
+      const updated = dbInstance.setExpenseFiscalEligibility(
+        routeId(req),
+        req.body.fiscalBookEligible,
+        auditActor(req)
+      );
+      if (!updated) {
+        res.status(404).json({ error: 'Gasto no encontrado', code: 'NOT_FOUND' });
+        return;
+      }
+      res.json(updated);
     })
   );
 
@@ -1193,6 +1331,184 @@ export function createApiApp(): express.Express {
         return;
       }
       res.json({ success: true, message: 'Gasto eliminado exitosamente' });
+    })
+  );
+
+  // --- CONTABILIDAD (FASE 1): PLAN DE CUENTAS, ASIENTOS Y PERÍODOS ---
+  app.get(
+    '/api/accounting/books',
+    query((req, res) => {
+      const {type, year, month} = parseOrThrow(accountingBookQuerySchema, req.query);
+      res.json(dbInstance.getAccountingBook(type, year, month, auditActor(req)));
+    })
+  );
+
+  app.get(
+    '/api/accounting/accounts',
+    query((req, res) => res.json(dbInstance.getAccounts()))
+  );
+
+  app.post(
+    '/api/accounting/accounts',
+    validateBody(accountSchema),
+    mutation((req, res) => {
+      const created = dbInstance.addAccount(req.body, auditActor(req));
+      res.status(201).json(created);
+    })
+  );
+
+  app.patch(
+    '/api/accounting/accounts/:id',
+    validateParams(idParamsSchema),
+    validateBody(accountUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateAccount(routeId(req), req.body, auditActor(req));
+      if (!updated) {
+        res.status(404).json({error: 'Cuenta contable no encontrada', code: 'NOT_FOUND'});
+        return;
+      }
+      res.json(updated);
+    })
+  );
+
+  app.get(
+    '/api/accounting/entries',
+    query((req, res) => res.json(dbInstance.getAccountingEntries()))
+  );
+
+  app.post(
+    '/api/accounting/entries',
+    validateBody(accountingEntrySchema),
+    mutation((req, res) => {
+      const created = dbInstance.createAccountingEntry(req.body, auditActor(req));
+      res.status(201).json(created);
+    })
+  );
+
+  app.post(
+    '/api/accounting/entries/:id/confirm',
+    requireRole('admin', 'master'),
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      res.json(dbInstance.confirmAccountingEntry(routeId(req), auditActor(req)));
+    })
+  );
+
+  app.post(
+    '/api/accounting/entries/:id/annul',
+    requireRole('admin', 'master'),
+    validateParams(idParamsSchema),
+    validateBody(accountingEntryAnnulmentSchema),
+    mutation((req, res) => {
+      res.json(
+        dbInstance.annulAccountingEntry(routeId(req), req.body.reason, auditActor(req))
+      );
+    })
+  );
+
+  app.get(
+    '/api/accounting/periods',
+    query((req, res) => res.json(dbInstance.getAccountingPeriods()))
+  );
+
+  app.post(
+    '/api/accounting/periods/:key/close',
+    requireRole('admin', 'master'),
+    validateParams(accountingPeriodKeySchema),
+    mutation((req, res) => {
+      res.json(dbInstance.closeAccountingPeriod(String(req.params['key']), auditActor(req)));
+    })
+  );
+
+  app.post(
+    '/api/accounting/periods/:key/open',
+    requireRole('admin', 'master'),
+    validateParams(accountingPeriodKeySchema),
+    mutation((req, res) => {
+      res.json(dbInstance.openAccountingPeriod(String(req.params['key']), auditActor(req)));
+    })
+  );
+
+  // --- CUENTAS POR PAGAR (pestaña de Gastos) ---
+  app.get('/api/payables', query((req, res) => res.json(dbInstance.getPayables())));
+
+  // Static path goes before `/api/payables/:id` so it is not captured as an id.
+  app.get(
+    '/api/payables/payments',
+    query((req, res) => res.json(dbInstance.getPayablePayments()))
+  );
+
+  app.post(
+    '/api/payables',
+    validateBody(payableSchema),
+    mutation((req, res) => {
+      const created = dbInstance.addPayable(
+        {...req.body, status: req.body.status || 'pendiente'},
+        auditActor(req)
+      );
+      res.status(201).json(created);
+    })
+  );
+
+  app.get(
+    '/api/payables/:id',
+    validateParams(idParamsSchema),
+    query((req, res) => {
+      const payable = dbInstance.getPayable(routeId(req));
+      if (!payable) {
+        res.status(404).json({error: 'Factura por pagar no encontrada', code: 'NOT_FOUND'});
+        return;
+      }
+      res.json(payable);
+    })
+  );
+
+  app.patch(
+    '/api/payables/:id',
+    validateParams(idParamsSchema),
+    validateBody(payableUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updatePayable(routeId(req), req.body, auditActor(req));
+      if (!updated) {
+        res.status(404).json({error: 'Factura por pagar no encontrada', code: 'NOT_FOUND'});
+        return;
+      }
+      res.json(updated);
+    })
+  );
+
+  app.get(
+    '/api/payables/:id/payments',
+    validateParams(idParamsSchema),
+    query((req, res) => {
+      const payable = dbInstance.getPayable(routeId(req));
+      if (!payable) {
+        res.status(404).json({error: 'Factura por pagar no encontrada', code: 'NOT_FOUND'});
+        return;
+      }
+      res.json(dbInstance.getPayablePayments(payable.id));
+    })
+  );
+
+  app.post(
+    '/api/payables/:id/payments',
+    validateParams(idParamsSchema),
+    validateBody(payablePaymentSchema),
+    mutation((req, res) => {
+      const bank = findBank(req.body.bankCode);
+      if (!bank) {
+        res.status(422).json({
+          error: 'El código de banco no existe en el catálogo SUDEBAN',
+          code: 'VALIDATION_ERROR',
+        });
+        return;
+      }
+      const result = dbInstance.recordPayablePayment(
+        routeId(req),
+        {...req.body, bankCode: bank.code, bankName: req.body.bankName || bank.name},
+        auditActor(req)
+      );
+      res.status(201).json(result);
     })
   );
 
@@ -1291,6 +1607,116 @@ export function createApiApp(): express.Express {
         throw new ApiError(404, 'Obligación fiscal no encontrada');
       }
       res.json(updated);
+    })
+  );
+
+  // --- CATÁLOGO DE REFERENCIA FASE 0 (IVA / ISLR) ---
+  app.get(
+    '/api/fiscal-reference-catalog',
+    requireAdmin,
+    query((_req, res) => {
+      res.json(getFiscalReferenceCatalog());
+    })
+  );
+
+  // --- VALORES FISCALES HISTÓRICOS (IVA / UT) ---
+  app.get(
+    '/api/fiscal-reference-values',
+    requireAdmin,
+    query((req, res) => {
+      const params = parseOrThrow(fiscalReferenceQuerySchema, req.query);
+      const values = dbInstance.getFiscalReferenceValues(
+        params.kind,
+        params.includeAnnulled !== 'false'
+      );
+      const date = params.date || new Date().toISOString().slice(0, 10);
+      res.json({
+        values,
+        activeIva: dbInstance.getActiveFiscalReferenceValue('iva', date),
+        activeUt: dbInstance.getActiveFiscalReferenceValue('ut', date),
+        date,
+      });
+    })
+  );
+
+  app.get(
+    '/api/fiscal-reference-values/active',
+    requireAdmin,
+    query((req, res) => {
+      const params = parseOrThrow(fiscalReferenceQuerySchema, req.query);
+      if (!params.kind) {
+        throw new ApiError(400, 'Indique kind=iva o kind=ut');
+      }
+      const date = params.date || new Date().toISOString().slice(0, 10);
+      const value = dbInstance.getActiveFiscalReferenceValue(params.kind, date);
+      if (!value) {
+        throw new ApiError(404, 'No hay valor vigente para la fecha indicada');
+      }
+      res.json(value);
+    })
+  );
+
+  app.post(
+    '/api/fiscal-reference-values',
+    requireAdmin,
+    validateBody(fiscalReferenceSchema),
+    mutation((req, res) => {
+      res.status(201).json(
+        dbInstance.createFiscalReferenceValue(req.body, auditActor(req))
+      );
+    })
+  );
+
+  app.put(
+    '/api/fiscal-reference-values/:id',
+    requireAdmin,
+    validateParams(fiscalReferenceIdParamsSchema),
+    validateBody(fiscalReferenceSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateFiscalReferenceValue(
+        routeId(req),
+        req.body,
+        auditActor(req)
+      );
+      if (!updated) {
+        throw new ApiError(404, 'Valor fiscal de referencia no encontrado');
+      }
+      res.json(updated);
+    })
+  );
+
+  app.post(
+    '/api/fiscal-reference-values/:id/annul',
+    requireAdmin,
+    validateParams(fiscalReferenceIdParamsSchema),
+    validateBody(fiscalReferenceAnnulmentSchema),
+    mutation((req, res) => {
+      const annulled = dbInstance.annulFiscalReferenceValue(
+        routeId(req),
+        req.body.reason,
+        auditActor(req)
+      );
+      if (!annulled) {
+        throw new ApiError(404, 'Valor fiscal de referencia no encontrado');
+      }
+      res.json(annulled);
+    })
+  );
+
+  app.get(
+    '/api/accounting-book-settings',
+    requireAdmin,
+    query((_req, res) => {
+      res.json(dbInstance.getAccountingBookSettings());
+    })
+  );
+
+  app.put(
+    '/api/accounting-book-settings',
+    requireAdmin,
+    validateBody(accountingBookSettingsSchema),
+    mutation((req, res) => {
+      res.json(dbInstance.updateAccountingBookSettings(req.body, auditActor(req)));
     })
   );
 
@@ -1448,6 +1874,19 @@ export function createApiApp(): express.Express {
     '/api/reports/dashboard',
     query((req, res) => {
       res.json(dbInstance.getDashboardMetrics());
+    })
+  );
+
+  // --- OPERATIONAL RESET (admin/master only) ---
+  app.post(
+    '/api/system/reset-operational',
+    requireAdmin,
+    mutation((req, res) => {
+      dbInstance.resetOperationalData(auditActor(req));
+      res.json({
+        success: true,
+        message: 'Gastos, órdenes y movimientos eliminados; existencias en cero.',
+      });
     })
   );
 
