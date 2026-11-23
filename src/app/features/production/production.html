@@ -8,6 +8,7 @@
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
+      <app-module-help module="production" label="Ver ayuda de Producción" />
       @if (api.canViewPrices()) {
         <!-- Currency Switcher Toggle -->
         <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
@@ -695,6 +696,7 @@
                 </thead>
                 <tbody formArrayName="marmitas">
                   @for (row of sheetMarmitas.controls; track $index; let i = $index) {
+                    @let mt = sheetMatrix().marmitas[i];
                     <tr
                       [formGroupName]="i"
                       class="border-t border-stone-100 transition-colors hover:bg-amber-50/30"
@@ -750,8 +752,9 @@
                               </div>
                             }
                           </div>
-                          <span class="mt-0.5 block text-center text-[9px] font-semibold text-stone-500">
-                            Total {{ row.controls.obtainedUnits.value | number:'1.0-2' }} ud
+                          <span class="mt-0.5 block text-center text-[9px] font-semibold text-stone-500"
+                            title="Suma de las celdas de esta marmita en la matriz de presentaciones">
+                            Total {{ mt?.units | number:'1.0-2' }} ud
                           </span>
                         } @else {
                           <input type="number" min="0" step="0.01" formControlName="obtainedUnits"
@@ -764,10 +767,35 @@
                       </td>
                       <td class="px-1 py-1.5">
                         <input type="number" min="0" step="0.01" formControlName="totalKg"
-                          title="Se estima con los insumos × rendimiento. Puede editarlo."
+                          title="Se estima con los insumos × rendimiento. Puede editarlo; el desglose explica el valor mostrado."
                           class="w-20 rounded-md border border-stone-300 bg-white px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500" />
                         @if (isTotalKgManual(i + 1)) {
                           <span class="mt-0.5 block text-center text-[9px] font-semibold uppercase tracking-wide text-amber-700" title="Ajustado manualmente; se recalcula si cambian los insumos o el rendimiento">manual</span>
+                        }
+                        @if (totalKgBreakdown(i + 1); as bd) {
+                          <details class="mt-1 w-20 text-left">
+                            <summary class="cursor-pointer text-[9px] font-semibold text-amber-800 hover:underline">¿De dónde sale?</summary>
+                            <div class="mt-1 w-56 rounded-lg border border-amber-200 bg-amber-50/80 p-2 text-[9px] leading-snug text-amber-900 shadow-sm">
+                              @for (line of bd.lines; track line.label) {
+                                <div class="flex justify-between gap-2">
+                                  <span>{{ line.label }} <span class="text-amber-700">({{ line.detail }})</span></span>
+                                  <span class="font-mono">{{ line.kg | number:'1.2-2' }} kg</span>
+                                </div>
+                              }
+                              <div class="mt-1 flex justify-between border-t border-amber-200 pt-1 font-semibold">
+                                <span>Insumos (sin agua/gasoil)</span><span class="font-mono">{{ bd.ingredientKg | number:'1.2-2' }} kg</span>
+                              </div>
+                              <div class="flex justify-between">
+                                <span>× Rendimiento {{ bd.yieldPercent | number:'1.1-2' }}%</span><span class="font-mono">{{ bd.estimatedKg | number:'1.2-2' }} kg</span>
+                              </div>
+                              <div class="flex justify-between">
+                                <span>{{ bd.isManual ? 'Capturado por el operario' : 'Kilos totales' }}</span><span class="font-mono">{{ bd.capturedKg | number:'1.2-2' }} kg</span>
+                              </div>
+                              <div class="flex justify-between text-amber-700">
+                                <span>Merma = insumos − total</span><span class="font-mono">{{ bd.mermaKg | number:'1.2-2' }} kg</span>
+                              </div>
+                            </div>
+                          </details>
                         }
                       </td>
                       <td class="px-2 py-1.5 text-right font-mono text-stone-700" title="Merma = insumos (sin agua/gasoil) − kilos totales">
@@ -803,14 +831,14 @@
             <mat-icon class="text-sm text-amber-700">calculate</mat-icon>
             <span>
               <strong class="text-stone-700">Kilos totales</strong> se estima como
-              <strong>insumos (guayaba, azúcar, almidón, químico y ácido) × rendimiento</strong>;
-              el agua/gasoil es consumo de proceso y no suma masa.
-              <strong class="text-stone-700">Cant. obtenida</strong> se calcula como
-              <strong>Kilos totales ÷ peso por envase</strong> cuando hay una sola presentación.
-              Con varias presentaciones, capture las unidades de cada presentación por marmita y el
-              total se suma automáticamente. Los kilos totales se pueden editar; al cambiar una base
-              relevante las cantidades se recalculan. La <strong>Merma kg</strong> es insumos (sin
-              agua/gasoil) menos kilos totales: el gasoil se muestra aparte y nunca suma masa.
+              <strong>insumos (guayaba, azúcar, almidón, químico g ÷ 1000 y ácido g ÷ 1000) × rendimiento</strong>;
+              el agua/gasoil es consumo de proceso y no suma masa. El desglose «¿De dónde sale?» junto a cada
+              marmita muestra la cuenta exacta y avisa cuando el peso fue capturado manualmente.
+              <strong class="text-stone-700">Cant. obtenida</strong> es, con varias presentaciones, la suma de las
+              celdas de la matriz (fuente única de verdad para ambas grillas); con una sola presentación se calcula como
+              <strong>Kilos totales ÷ peso por envase</strong>. La <strong>Merma kg</strong> es insumos (sin
+              agua/gasoil) menos kilos totales, mientras que <strong>por asignar/envasar</strong> es kilos totales menos
+              los kilos representados por las unidades capturadas: son conceptos distintos.
             </span>
           </p>
 
@@ -884,7 +912,7 @@
                     <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Rendimiento (%)</label>
                     <input type="number" min="0.01" max="100" step="0.1" formControlName="rendimiento"
                       class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                    <span class="text-[10px] text-stone-400">Insumos → producto</span>
+                    <span class="text-[10px] text-stone-400" title="Parámetro de estimación: insumos × este porcentaje = kilos totales estimados. No es el rendimiento real de envasado.">Estimación insumos → kilos totales (no es rendimiento real de envasado)</span>
                   </div>
                   <div class="rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-[11px] leading-snug text-stone-600">
                     @if (hasMultiplePresentations()) {
@@ -965,7 +993,7 @@
                               {{ mt.assignedKg | number:'1.2-2' }} / {{ mt.estimatedKg | number:'1.2-2' }} kg
                             </span>
                             @if (mt.differenceKg < 0) {
-                              <span class="block text-[9px] text-amber-700">faltan {{ mt.missingKg | number:'1.2-2' }} kg</span>
+                              <span class="block text-[9px] text-amber-700" title="Kilos totales − kilos en presentaciones. Pendiente por asignar/envasar, NO es merma.">por asignar {{ mt.missingKg | number:'1.2-2' }} kg</span>
                             } @else if (mt.differenceKg > 0) {
                               <span class="block text-[9px] text-amber-700">sobran {{ mt.excessKg | number:'1.2-2' }} kg</span>
                             } @else if (mt.assignedKg > 0) {
@@ -1083,7 +1111,7 @@
                   }
                   @if (pe.missingUnits > 0) {
                     <p class="text-[10px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-                      Faltan {{ pe.missingUnits | number:'1.2-2' }} kg por asignar. Revise las unidades por presentación o los kilos totales.
+                      Por asignar/envasar {{ pe.missingUnits | number:'1.2-2' }} kg (kilos totales − kilos en presentaciones). No es merma; revise las unidades por presentación o los kilos totales.
                     </p>
                   }
                 } @else {
@@ -1107,7 +1135,7 @@
                   }
                 }
                 <div class="flex items-center justify-between border-t border-amber-200 pt-1.5 mt-1">
-                  <span class="font-semibold text-amber-900">Merma total del lote</span>
+                  <span class="font-semibold text-amber-900" title="Insumos (sin agua/gasoil) − kilos totales">Merma total del lote</span>
                   <span class="font-mono font-bold text-amber-800">{{ sheetTotals().mermaKg | number:'1.2-2' }} kg</span>
                 </div>
               </div>

@@ -3,6 +3,7 @@ import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/
 import {DecimalPipe} from '@angular/common';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, downloadDetailedCostEstimationPdf} from '../../core/utils/export.utils';
 import {
@@ -23,7 +24,7 @@ export type CostingMobileTab =
 @Component({
   selector: 'app-costing',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe],
+  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, ModuleHelpComponent],
   templateUrl: './costing.html',
 })
 export class CostingComponent {

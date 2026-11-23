@@ -4,6 +4,10 @@
       Solo un administrador o maestro puede consultar y modificar estos parámetros.
     </div>
   } @else {
+    <div class="flex justify-end">
+      <app-module-help module="fiscal_reference_values" label="Ver ayuda de IVA/UT e historial" />
+    </div>
+
     <div class="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4">
       <mat-icon class="text-sky-700">info</mat-icon>
       <div class="text-xs sm:text-sm text-sky-900">

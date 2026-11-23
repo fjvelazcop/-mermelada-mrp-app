@@ -2,6 +2,7 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {ReactiveFormsModule, FormGroup, FormControl, FormArray, Validators} from '@angular/forms';
 import {DecimalPipe} from '@angular/common';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   RecipeBOM,
@@ -21,6 +22,7 @@ import {
   calculateSheetMerma,
   calculateSheetMatrixTotals,
   calculateTotalKgFromIngredients,
+  describeTotalKgCalculation,
   reconcileSheet,
   requiresManualPresentationUnits,
   sumPresentationUnits,
@@ -31,7 +33,7 @@ import {AuditLog} from '../../shared/components/audit-log/audit-log';
 @Component({
   selector: 'app-production',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, AuditLog],
+  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, AuditLog, ModuleHelpComponent],
   templateUrl: './production.html',
 })
 export class ProductionComponent {
@@ -367,6 +369,9 @@ export class ProductionComponent {
         );
       }
     }
+    // Rebuilding the FormArray with emitEvent:false would otherwise leave
+    // "Cant. obtenida" with a total from the previous presentation set.
+    this.recalculateAllObtainedUnits();
     this.sheetRevision.update((value) => value + 1);
   }
 
@@ -631,6 +636,10 @@ export class ProductionComponent {
     if (!control) return;
     control.setValue(this.positive(value));
     control.markAsDirty();
+    // La celda es la fuente de verdad: cualquier edición recalcula el total
+    // de la marmita y refresca ambas grillas, no solo el input editado.
+    this.recalculateObtainedUnits(marmitaNumber, true);
+    this.sheetRevision.update((value) => value + 1);
   }
 
   public sheetCosts = computed(() => {
@@ -952,6 +961,27 @@ export class ProductionComponent {
   /** True when the operator corrected "Kilos totales" after the last base change. */
   public isTotalKgManual(number: number): boolean {
     return this.manualTotalKgOverrides.has(number);
+  }
+
+  /** Desglose auditable del peso capturado en una marmita. */
+  public totalKgBreakdown(number: number) {
+    this.sheetRevision();
+    const row = this.sheetMarmitas.controls.find(
+      (control) => control.controls.number.value === number
+    );
+    if (!row) return null;
+    return describeTotalKgCalculation(
+      {
+        guavaKg: this.positive(row.controls.guavaKg.value),
+        sugarKg: this.positive(row.controls.sugarKg.value),
+        starchKg: this.positive(row.controls.starchKg.value),
+        chemicalG: this.positive(row.controls.chemicalG.value),
+        acidG: this.positive(row.controls.acidG.value),
+      },
+      this.manualSheetForm.controls.packaging.controls.rendimiento.value,
+      this.positive(row.controls.totalKg.value),
+      this.manualTotalKgOverrides.has(number)
+    );
   }
 
   private buildMarmitaGroup(number: number) {

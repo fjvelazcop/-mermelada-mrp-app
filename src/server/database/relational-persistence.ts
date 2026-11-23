@@ -113,8 +113,20 @@ export function loadRelationalState(): DatabaseState | null {
       supplierId: o(r['supplier_id']),
       supplierNameSnapshot: o(r['supplier_name_snapshot']),
       supplierTaxIdSnapshot: o(r['supplier_tax_id_snapshot']),
+      notes: o(r['notes']),
       date: r['movement_date'],
       performedBy: r['performed_by'],
+      paymentCondition: o(r['payment_condition']) as InventoryMovement['paymentCondition'],
+      paymentMethod: o(r['payment_method']) as InventoryMovement['paymentMethod'],
+      bankCode: o(r['bank_code']),
+      bankName: o(r['bank_name']),
+      paymentReference: o(r['payment_reference']),
+      creditDays: r['credit_days'] === null || r['credit_days'] === undefined
+        ? undefined
+        : Number(r['credit_days']),
+      dueDate: o(r['due_date']),
+      payableId: o(r['payable_id']),
+      payableNumber: o(r['payable_number']),
     })
   );
 
@@ -1033,8 +1045,10 @@ export function saveRelationalState(state: DatabaseState): void {
         id, material_id, material_name, type, quantity, cost_per_unit,
         total_cost, exchange_rate_used, cost_per_unit_bs, total_cost_bs,
         reference_doc, supplier_id, supplier_name_snapshot, supplier_tax_id_snapshot,
-        movement_date, performed_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        notes, movement_date, performed_by, payment_condition, payment_method,
+        bank_code, bank_name, payment_reference, credit_days, due_date,
+        payable_id, payable_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const m of snapshot.inventoryMovements) {
       insertMovement.run(
@@ -1052,8 +1066,18 @@ export function saveRelationalState(state: DatabaseState): void {
         v(m.supplierId),
         v(m.supplierNameSnapshot),
         v(m.supplierTaxIdSnapshot),
+        v(m.notes),
         m.date,
-        m.performedBy
+        m.performedBy,
+        v(m.paymentCondition),
+        v(m.paymentMethod),
+        v(m.bankCode),
+        v(m.bankName),
+        v(m.paymentReference),
+        v(m.creditDays),
+        v(m.dueDate),
+        v(m.payableId),
+        v(m.payableNumber)
       );
     }
 

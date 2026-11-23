@@ -2,14 +2,25 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {DecimalPipe} from '@angular/common';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
+import {Employee} from '../../core/models/erp.models';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
+import {
+  EmployeeStatusFilter,
+  employeePaymentHistory,
+  employeePaymentTotals,
+  filterEmployees,
+  isActiveForPayroll,
+  knownRoleTitles,
+  roleSuggestions,
+} from './payroll.filters';
 
 @Component({
   selector: 'app-payroll',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe],
+  imports: [DecimalPipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, ModuleHelpComponent],
   templateUrl: './payroll.html',
 })
 export class PayrollComponent {
@@ -38,8 +49,57 @@ export class PayrollComponent {
   /** Bonus per position, keyed by the employee's `roleTitle`. */
   public roleBonusEntries = signal<{roleTitle: string; bonus: number}[]>([]);
 
+  public readonly statusFilters: EmployeeStatusFilter[] = [
+    'todos',
+    'activo',
+    'vacaciones',
+    'inactivo',
+  ];
+
   public employees = computed(() => this.api.employees());
   public payrollWeeks = computed(() => this.api.payrollWeeks());
+
+  public employeeSearch = signal<string>('');
+  public employeeStatusFilter = signal<EmployeeStatusFilter>('todos');
+  public filteredEmployees = computed(() =>
+    filterEmployees(this.employees(), this.employeeSearch(), this.employeeStatusFilter())
+  );
+  /** Pagos reales (neto > 0) usados para decidir si el operario puede eliminarse. */
+  public paidEmployeeIds = computed(
+    () =>
+      new Set(
+        this.payrollWeeks().flatMap((week) =>
+          week.payments.filter((payment) => payment.netPaid > 0).map((payment) => payment.employeeId)
+        )
+      )
+  );
+
+  public selectedEmployeeId = signal<string | null>(null);
+  public selectedEmployee = computed(
+    () => this.employees().find((employee) => employee.id === this.selectedEmployeeId()) || null
+  );
+  public selectedEmployeePayments = computed(() =>
+    employeePaymentHistory(this.payrollWeeks(), this.selectedEmployeeId() || '')
+  );
+  public selectedEmployeeTotals = computed(() =>
+    employeePaymentTotals(this.selectedEmployeePayments())
+  );
+
+  public roleQuery = signal<string>('');
+  public knownRoles = computed(() => knownRoleTitles(this.employees(), this.payrollWeeks()));
+  public roleSuggestions = computed(() =>
+    roleSuggestions(this.employees(), this.payrollWeeks(), this.roleQuery())
+  );
+  public roleExactMatch = computed(() => {
+    const query = this.roleQuery().trim().toLowerCase();
+    return this.knownRoles().some((role) => role.toLowerCase() === query);
+  });
+  public canCreateRole = computed(
+    () => this.roleQuery().trim().length >= 2 && !this.roleExactMatch()
+  );
+
+  /** Solo los operarios activos entran en una nueva semana de nómina. */
+  public activeEmployees = computed(() => this.employees().filter(isActiveForPayroll));
 
   public existingRoles = computed(() =>
     Array.from(new Set(this.employees().map((employee) => employee.roleTitle)))
@@ -95,7 +155,7 @@ export class PayrollComponent {
   public async submitPayrollWeek() {
     if (this.newWeekForm.invalid) return;
     const v = this.newWeekForm.getRawValue();
-    const staff = this.employees();
+    const staff = this.activeEmployees();
 
     const isProd = Boolean(v.isActiveProduction);
     const bonusByRole: Record<string, number> = {};
@@ -146,6 +206,7 @@ export class PayrollComponent {
       roleTitle: 'Operario de Envasado',
       weeklyBaseSalary: 60.0,
     });
+    this.roleQuery.set('');
     this.isNewEmployeeModalOpen.set(true);
   }
 
@@ -165,6 +226,199 @@ export class PayrollComponent {
       status: 'activo',
     });
     this.closeNewEmployeeModal();
+  }
+
+  // --- BÚSQUEDA, BAJA E HISTORIAL DEL PERSONAL ---
+
+  public onEmployeeSearchInput(value: string): void {
+    this.employeeSearch.set(value);
+  }
+
+  public setEmployeeStatusFilter(filter: EmployeeStatusFilter): void {
+    this.employeeStatusFilter.set(filter);
+  }
+
+  public statusFilterLabel(filter: EmployeeStatusFilter): string {
+    if (filter === 'todos') return 'Todos';
+    if (filter === 'activo') return 'Activos';
+    if (filter === 'vacaciones') return 'Vacaciones';
+    return 'Inactivos';
+  }
+
+  /** true cuando el operario tiene pagos y solo puede darse de baja. */
+  public hasPayments(employeeId: string): boolean {
+    return this.paidEmployeeIds().has(employeeId);
+  }
+
+  public paymentCount(employeeId: string): number {
+    return employeePaymentHistory(this.payrollWeeks(), employeeId).length;
+  }
+
+  public onRoleInput(value: string): void {
+    this.roleQuery.set(value);
+  }
+
+  public applyRoleSuggestion(role: string): void {
+    this.roleQuery.set(role);
+    this.newEmployeeForm.controls.roleTitle.setValue(role);
+  }
+
+  /** Acepta un cargo nuevo escrito por el usuario y lo deja listo para guardar. */
+  public useNewRole(): void {
+    const role = this.roleQuery().trim();
+    if (role.length < 2) return;
+    this.applyRoleSuggestion(role);
+  }
+
+  public openEmployeeHistory(employee: Employee): void {
+    this.selectedEmployeeId.set(employee.id);
+  }
+
+  public get historyCurrency(): 'Bs.' | '$' {
+    return this.currencyMode() === 'Bs' ? 'Bs.' : '$';
+  }
+
+  public historyAmount(value: number): number {
+    if (this.currencyMode() !== 'Bs') return value;
+    return Number((value * (this.api.exchangeRates()?.currentUsd || 48.35)).toFixed(2));
+  }
+
+  public closeEmployeeHistory(): void {
+    this.selectedEmployeeId.set(null);
+  }
+
+  /** Exporta el historial del operario abierto en el modal, en la moneda activa. */
+  public exportEmployeeHistory(format: 'csv' | 'excel' | 'pdf'): void {
+    const employee = this.selectedEmployee();
+    if (!employee) return;
+    const currency = this.historyCurrency;
+    const headers = [
+      'Semana',
+      'Año',
+      'Desde',
+      'Hasta',
+      'Cargo pagado',
+      `Base (${currency})`,
+      `Bono (${currency})`,
+      `Deducciones (${currency})`,
+      `Neto (${currency})`,
+    ];
+    const rows = this.selectedEmployeePayments().map((row) => [
+      `#${row.weekNumber}`,
+      row.year,
+      row.startDate,
+      row.endDate,
+      row.roleTitle,
+      this.historyAmount(row.baseAmount),
+      this.historyAmount(row.productionBonus),
+      this.historyAmount(row.deductions),
+      this.historyAmount(row.netPaid),
+    ]);
+    const totals = this.selectedEmployeeTotals();
+    const line = [
+      'Totales',
+      '',
+      '',
+      '',
+      `${totals.count} pago(s)`,
+      this.historyAmount(totals.baseAmount),
+      this.historyAmount(totals.productionBonus),
+      this.historyAmount(totals.deductions),
+      this.historyAmount(totals.netPaid),
+    ];
+    const base = `historial_pagos_${employee.nationalId.replace(/[^a-zA-Z0-9]/g, '-')}`;
+    const date = new Date().toISOString().slice(0, 10);
+
+    if (format === 'csv') {
+      exportToCsv(
+        `${base}_${date}.csv`,
+        headers,
+        [
+          ...rows.map((row) =>
+            row.map((cell) => (typeof cell === 'number' ? formatVeNumber(cell, 2) : cell))
+          ),
+          line.map((cell) => (typeof cell === 'number' ? formatVeNumber(cell, 2) : cell)),
+        ]
+      );
+      return;
+    }
+    if (format === 'excel') {
+      exportToExcel(
+        `${base}_${date}.xls`,
+        'Historial de Pagos',
+        headers,
+        [...rows, line],
+        {
+          empresa: `Historial de pagos · ${employee.fullName}`,
+          rif: employee.nationalId,
+          fecha: date,
+          moneda: currency,
+          consolidado: `${totals.count} pago(s) registrados`,
+        }
+      );
+      return;
+    }
+    void exportToPdf({
+      title: `Historial de pagos · ${employee.fullName}`,
+      subtitle: `${employee.nationalId} · ${employee.roleTitle}`,
+      headers,
+      rows: [...rows, line],
+      totals: [
+        {label: 'Pagos', value: String(totals.count)},
+        {label: `Total neto (${currency})`, value: formatVeNumber(this.historyAmount(totals.netPaid), 2)},
+      ],
+      notes: 'Historial acumulado de las semanas registradas; no altera los totales de la nómina.',
+    });
+  }
+
+  public async deactivateEmployee(employee: Employee): Promise<void> {
+    if (!window.confirm(
+      `¿Dar de baja a ${employee.fullName}?\n\nDejará de incluirse en nuevas semanas de nómina; su historial de pagos se conserva.`
+    )) return;
+    try {
+      await this.api.setEmployeeStatus(employee.id, 'inactivo');
+    } catch {
+      return;
+    }
+  }
+
+  public async reactivateEmployee(employee: Employee): Promise<void> {
+    if (!window.confirm(`¿Reactivar a ${employee.fullName} para nuevas semanas de nómina?`)) return;
+    try {
+      await this.api.setEmployeeStatus(employee.id, 'activo');
+    } catch {
+      return;
+    }
+  }
+
+  public async vacationEmployee(employee: Employee): Promise<void> {
+    if (!window.confirm(
+      `¿Marcar de vacaciones a ${employee.fullName}?\n\nDejará de incluirse en nuevas semanas hasta que se reactive; su historial de pagos se conserva.`
+    )) return;
+    try {
+      await this.api.setEmployeeStatus(employee.id, 'vacaciones');
+    } catch {
+      return;
+    }
+  }
+
+  public async removeEmployee(employee: Employee): Promise<void> {
+    if (this.hasPayments(employee.id)) {
+      this.api.showToast(
+        `${employee.fullName} ya tiene pagos registrados; debe darse de baja para conservar la trazabilidad.`,
+        'error'
+      );
+      return;
+    }
+    if (!window.confirm(
+      `¿Eliminar a ${employee.fullName}?\n\nSolo es posible porque no tiene pagos registrados. Esta acción queda auditada.`
+    )) return;
+    try {
+      await this.api.deleteEmployee(employee.id);
+      if (this.selectedEmployeeId() === employee.id) this.closeEmployeeHistory();
+    } catch {
+      return;
+    }
   }
 
   // --- EXPORT FUNCTIONALITY: PAYROLL & INACTIVE WEEKS ---

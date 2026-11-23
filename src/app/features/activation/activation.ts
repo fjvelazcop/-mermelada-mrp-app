@@ -1,6 +1,7 @@
 import {ChangeDetectionStrategy, Component, computed, inject, OnInit, signal} from '@angular/core';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   ActivationCurrency,
@@ -28,7 +29,7 @@ export interface ActivationPayload {
 @Component({
   selector: 'app-activation',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule],
+  imports: [MatIconModule, ReactiveFormsModule, ModuleHelpComponent],
   templateUrl: './activation.html',
 })
 export class ActivationComponent implements OnInit {

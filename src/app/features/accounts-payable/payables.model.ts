@@ -1,4 +1,6 @@
 export type PayableStatus = 'pendiente' | 'parcial' | 'pagada' | 'anulada';
+export type PayableOrigin = 'compra_inventario' | 'manual';
+export type PayableOriginFilter = 'todos' | PayableOrigin;
 export type PayableAgingBucket = 'corriente' | '1-30' | '31-60' | '61-90' | '>90';
 
 export interface PayablePayment {
@@ -37,6 +39,9 @@ export interface Payable {
   createdAt?: string;
   updatedAt?: string;
   expenseId?: string;
+  origin?: PayableOrigin;
+  movementId?: string;
+  linkedMovementCount?: number;
 }
 
 export interface PayableRow {
@@ -61,6 +66,11 @@ export interface PayableRow {
   partialPayment: boolean;
   paymentCount: number;
   expenseId?: string;
+  origin: PayableOrigin;
+  movementId?: string;
+  linkedMovementCount: number;
+  /** Documentos/materiales de las líneas vinculadas, solo para búsqueda. */
+  searchHints?: string[];
 }
 
 export type PayableStatusFilter =
@@ -75,6 +85,7 @@ export interface PayableFilters {
   status: PayableStatusFilter;
   bucket: PayableAgingBucket | 'todos';
   supplierId?: string;
+  origin?: PayableOriginFilter;
 }
 
 export interface PayableSupplierSummary {
@@ -100,8 +111,19 @@ export interface PayableTotals {
   buckets: Record<PayableAgingBucket, {count: number; usd: number}>;
 }
 
+/** Referencia mínima de un movimiento que originó una CxP. */
+export interface LinkedInventoryMovementRef {
+  id?: string;
+  payableId?: string;
+  paymentCondition?: 'contado' | 'credito';
+  referenceDoc?: string;
+  materialName?: string;
+  date?: string;
+}
+
 export interface BuildPayableRowsInput {
   payables: Payable[];
   payments: PayablePayment[];
+  movements?: LinkedInventoryMovementRef[];
   today?: Date;
 }

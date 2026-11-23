@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { closeDb, getDb, setDbPath } from './database/persistence';
+import { loadRelationalState } from './database/relational-persistence';
 
 /**
  * Integration tests for the HTTP API.
@@ -483,9 +484,14 @@ describe('mutating endpoints', () => {
       date: '2026-10-26',
       performedBy: 'Test de integración',
       referenceDoc: 'FACT-TEST-1',
+      paymentCondition: 'contado',
+      paymentMethod: 'transferencia_bancaria',
       notes: 'Entrada de prueba',
     });
     expect(entry.response.status).toBe(201);
+    expect(entry.body['movement']).toBeTruthy();
+    expect(entry.body['payable']).toBeNull();
+    expect(entry.body['movement']['payableId']).toBeFalsy();
 
     const exit = await jsonRequest('/api/inventory/movements', 'POST', {
       materialId: material.id,
@@ -503,6 +509,29 @@ describe('mutating endpoints', () => {
       await fetch(`${baseUrl}/api/inventory/movements`)
     ).json()) as { id: string }[];
     expect(movements.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps legacy cash entries without payment condition or supplier', async () => {
+    const materials = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; name: string }[];
+    const material = materials[0];
+
+    const legacy = await jsonRequest('/api/inventory/movements', 'POST', {
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 1,
+      costPerUnit: 2,
+      totalCost: 2,
+      date: '2026-10-26',
+      performedBy: 'Test compatibilidad',
+      referenceDoc: 'ENTRADA-RAPIDA-LEGACY',
+      notes: 'Reposición express sin proveedor',
+    });
+    expect(legacy.response.status).toBe(201);
+    expect(legacy.body['movement']['paymentCondition']).toBe('contado');
+    expect(legacy.body['payable']).toBeNull();
   });
 
   it('creates and processes a production order', async () => {
@@ -1181,6 +1210,180 @@ describe('mutating endpoints', () => {
     expect(week.body['weekNumber']).toBe(42);
   });
 
+  it('da de baja a un operario con pagos y bloquea su eliminación', async () => {
+    const employee = await jsonRequest('/api/payroll/employees', 'POST', {
+      fullName: 'Operario Con Pagos',
+      nationalId: 'V-TEST-BAJA-1',
+      roleTitle: 'Cargo Histórico de Prueba',
+      weeklyBaseSalary: 60,
+      hourlyRate: 1.5,
+      status: 'activo',
+    });
+    expect(employee.response.status).toBe(201);
+    const employeeId = employee.body['id'] as string;
+
+    const week = await jsonRequest('/api/payroll/weeks', 'POST', {
+      weekNumber: 52,
+      year: 2026,
+      startDate: '2026-09-21',
+      endDate: '2026-09-27',
+      isActiveProduction: true,
+      payments: [
+        {
+          employeeId,
+          employeeName: 'Operario Con Pagos',
+          roleTitle: 'Cargo Histórico de Prueba',
+          baseAmount: 60,
+          productionBonus: 5,
+          deductions: 1,
+          netPaid: 64,
+        },
+      ],
+      totalPayrollPaid: 64,
+      fixedAbsorptionCost: 0,
+    });
+    expect(week.response.status).toBe(201);
+
+    const blocked = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'DELETE');
+    expect(blocked.response.status).toBe(409);
+    expect(blocked.body['code']).toBe('EMPLOYEE_HAS_PAYMENTS');
+
+    const deactivated = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'PATCH', {
+      status: 'inactivo',
+    });
+    expect(deactivated.response.status).toBe(200);
+    expect(deactivated.body['status']).toBe('inactivo');
+
+    const list = await jsonRequest('/api/payroll/employees', 'GET');
+    expect(list.body).toEqual(
+      expect.arrayContaining([expect.objectContaining({id: employeeId, status: 'inactivo'})])
+    );
+
+    const reactivated = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'PATCH', {
+      status: 'activo',
+    });
+    expect(reactivated.body['status']).toBe('activo');
+  });
+
+  it('elimina un operario sin pagos registrados', async () => {
+    const employee = await jsonRequest('/api/payroll/employees', 'POST', {
+      fullName: 'Operario Sin Pagos',
+      nationalId: 'V-TEST-BAJA-2',
+      roleTitle: 'Cargo Nuevo de Prueba',
+      weeklyBaseSalary: 50,
+      hourlyRate: 1.25,
+      status: 'activo',
+    });
+    expect(employee.response.status).toBe(201);
+    const employeeId = employee.body['id'] as string;
+
+    const deleted = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'DELETE');
+    expect(deleted.response.status).toBe(200);
+
+    const list = await jsonRequest('/api/payroll/employees', 'GET');
+    expect(list.body).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({id: employeeId})])
+    );
+
+    const missing = await jsonRequest('/api/payroll/employees/emp-inexistente', 'PATCH', {
+      status: 'inactivo',
+    });
+    expect(missing.response.status).toBe(404);
+  });
+
+  it('persiste en SQLite el alta, la baja, la reactivación y la eliminación de operarios', async () => {
+    const employee = await jsonRequest('/api/payroll/employees', 'POST', {
+      fullName: 'Operario Persistencia',
+      nationalId: 'V-TEST-PERSIST-1',
+      roleTitle: 'Cargo Persistente',
+      weeklyBaseSalary: 55,
+      hourlyRate: 1.38,
+      status: 'activo',
+    });
+    expect(employee.response.status).toBe(201);
+    const employeeId = employee.body['id'] as string;
+
+    const row = () =>
+      getDb().prepare('SELECT status FROM employees WHERE id = ?').get(employeeId) as
+        | {status: string}
+        | undefined;
+    expect(row()?.status).toBe('activo');
+
+    const deactivated = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'PATCH', {
+      status: 'inactivo',
+    });
+    expect(deactivated.response.status).toBe(200);
+    expect(row()?.status).toBe('inactivo');
+    // Simula el reinicio del servicio: el estado se reconstruye desde SQLite.
+    expect(loadRelationalState()?.employees.find((item) => item.id === employeeId)?.status).toBe(
+      'inactivo'
+    );
+
+    const reactivated = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'PATCH', {
+      status: 'activo',
+    });
+    expect(reactivated.response.status).toBe(200);
+    expect(row()?.status).toBe('activo');
+    expect(loadRelationalState()?.employees.find((item) => item.id === employeeId)?.status).toBe(
+      'activo'
+    );
+
+    const deleted = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'DELETE');
+    expect(deleted.response.status).toBe(200);
+    expect(row()).toBeUndefined();
+    expect(loadRelationalState()?.employees.some((item) => item.id === employeeId)).toBe(false);
+
+    const auditRows = getDb()
+      .prepare(
+        "SELECT action_type AS actionType, details_json AS detailsJson FROM audit_logs WHERE action_type LIKE 'operario_%'"
+      )
+      .all() as {actionType: string; detailsJson: string | null}[];
+    const ownActions = auditRows
+      .filter((entry) => (entry.detailsJson || '').includes(employeeId))
+      .map((entry) => entry.actionType);
+    expect(ownActions).toEqual(
+      expect.arrayContaining([
+        'operario_inactivado',
+        'operario_activado',
+        'operario_eliminado',
+      ])
+    );
+  });
+
+  it('marca vacaciones con auditoría propia y las persiste tras reinicio', async () => {
+    const employee = await jsonRequest('/api/payroll/employees', 'POST', {
+      fullName: 'Operario Vacaciones',
+      nationalId: 'V-TEST-VAC-1',
+      roleTitle: 'Cargo de Prueba',
+      weeklyBaseSalary: 65,
+      hourlyRate: 1.63,
+      status: 'activo',
+    });
+    expect(employee.response.status).toBe(201);
+    const employeeId = employee.body['id'] as string;
+
+    const vacation = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'PATCH', {
+      status: 'vacaciones',
+    });
+    expect(vacation.response.status).toBe(200);
+    expect(vacation.body['status']).toBe('vacaciones');
+    expect(
+      loadRelationalState()?.employees.find((item) => item.id === employeeId)?.status
+    ).toBe('vacaciones');
+
+    const auditRows = getDb()
+      .prepare(
+        'SELECT action_type AS actionType, details_json AS detailsJson FROM audit_logs WHERE action_type = ?'
+      )
+      .all('operario_vacaciones') as {actionType: string; detailsJson: string | null}[];
+    expect(auditRows.some((entry) => (entry.detailsJson || '').includes(employeeId))).toBe(true);
+
+    const invalid = await jsonRequest(`/api/payroll/employees/${employeeId}`, 'PATCH', {
+      status: 'desconocido',
+    });
+    expect(invalid.response.status).toBe(422);
+  });
+
   it('registers and deletes expenses', async () => {
     const expense = await jsonRequest('/api/expenses', 'POST', {
       date: '2026-10-26',
@@ -1198,6 +1401,13 @@ describe('mutating endpoints', () => {
     });
     expect(expense.response.status).toBe(201);
     const expenseId = expense.body['id'] as string;
+    const auditCount = (actionType: string) =>
+      (getDb()
+        .prepare(
+          'SELECT COUNT(*) AS count FROM audit_logs WHERE audit_module = ? AND action_type = ? AND details_json LIKE ?'
+        )
+        .get('gastos', actionType, `%${expenseId}%`) as {count: number}).count;
+    expect(auditCount('gasto_registrado')).toBeGreaterThan(0);
 
     const toggled = await jsonRequest(
       `/api/expenses/${expenseId}/fiscal-eligibility`,
@@ -1215,6 +1425,7 @@ describe('mutating endpoints', () => {
 
     const deleted = await jsonRequest(`/api/expenses/${expenseId}`, 'DELETE');
     expect(deleted.response.status).toBe(200);
+    expect(auditCount('gasto_eliminado')).toBeGreaterThan(0);
 
     const missing = await jsonRequest('/api/expenses/missing', 'DELETE');
     expect(missing.response.status).toBe(404);
@@ -1255,6 +1466,13 @@ describe('mutating endpoints', () => {
     });
     expect(created.response.status).toBe(201);
     const categoryId = created.body['id'] as string;
+    const categoryAuditCount = (actionType: string) =>
+      (getDb()
+        .prepare(
+          'SELECT COUNT(*) AS count FROM audit_logs WHERE audit_module = ? AND action_type = ? AND details_json LIKE ?'
+        )
+        .get('gastos', actionType, `%${categoryId}%`) as {count: number}).count;
+    expect(categoryAuditCount('categoria_gasto_creada')).toBeGreaterThan(0);
 
     const updated = await jsonRequest(
       `/api/expenses/categories/${categoryId}`,
@@ -1263,12 +1481,14 @@ describe('mutating endpoints', () => {
     );
     expect(updated.response.status).toBe(200);
     expect(updated.body['monthlyBudgetUsd']).toBe(250);
+    expect(categoryAuditCount('categoria_gasto_actualizada')).toBeGreaterThan(0);
 
     const deleted = await jsonRequest(
       `/api/expenses/categories/${categoryId}`,
       'DELETE'
     );
     expect(deleted.response.status).toBe(200);
+    expect(categoryAuditCount('categoria_gasto_eliminada')).toBeGreaterThan(0);
 
     const missingUpdate = await jsonRequest(
       '/api/expenses/categories/missing',
@@ -1739,6 +1959,285 @@ describe('mutating endpoints', () => {
     expect(actions).toContain('payable_registrado');
     expect(actions).toContain('payable_pago_registrado');
     expect(actions).toContain('payable_anulado');
+  });
+
+  it('creates a payable for credit inventory purchases and rejects duplicates', async () => {
+    const supplier = await jsonRequest('/api/suppliers', 'POST', {
+      businessName: 'Insumos Integración CxP C.A.',
+      taxId: 'J-77889900-1',
+      primaryContact: 'Prueba CxP',
+      primaryPhone: '+58 414 555 0199',
+      fiscalAddress: 'Zona Industrial, Barquisimeto',
+      supplierType: 'envases',
+      paymentTerms: 'Crédito a 15 días',
+      status: 'activo',
+    });
+    expect(supplier.response.status).toBe(201);
+    const supplierId = supplier.body['id'] as string;
+    const materials = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; name: string; currentStock: number }[];
+    const material = materials[0];
+    const stockBefore = material.currentStock;
+    const referenceDoc = `FACT-CXP-${Date.now()}`;
+
+    const creditPurchase = await jsonRequest('/api/inventory/movements', 'POST', {
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 2,
+      costPerUnit: 5,
+      totalCost: 10,
+      date: '2026-10-26',
+      performedBy: 'Test CxP',
+      paymentCondition: 'credito',
+      supplierId,
+      referenceDoc,
+      dueDate: '2026-11-10',
+      creditDays: 15,
+    });
+    expect(creditPurchase.response.status).toBe(201);
+    const payable = creditPurchase.body['payable'] as {
+      id: string;
+      payableNumber: string;
+      invoiceNumber: string;
+      amountUsd: number;
+    } | null;
+    expect(payable).toBeTruthy();
+    expect(payable!.invoiceNumber).toBe(referenceDoc);
+    expect(payable!.amountUsd).toBe(10);
+    expect(creditPurchase.body['movement']['payableId']).toBe(payable!.id);
+    expect(creditPurchase.body['movement']['payableNumber']).toBe(payable!.payableNumber);
+
+    const materialsAfter = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; currentStock: number }[];
+    expect(materialsAfter.find((item) => item.id === material.id)!.currentStock).toBe(stockBefore + 2);
+
+    const accountingEntries = (await (
+      await fetch(`${baseUrl}/api/accounting/entries`)
+    ).json()) as {sourceType: string; sourceId: string; status: string; lines: {accountCode: string}[]}[];
+    const movementEntry = accountingEntries.find(
+      (entry) =>
+        entry.sourceType === 'inventario' &&
+        entry.sourceId === creditPurchase.body['movement']['id']
+    );
+    expect(movementEntry?.status).toBe('confirmado');
+    expect(movementEntry?.lines.map((line) => line.accountCode)).toEqual(['1.03.01', '2.01.01']);
+
+    const payables = (await (
+      await fetch(`${baseUrl}/api/payables`)
+    ).json()) as { id: string; invoiceNumber: string }[];
+    expect(payables.some((item) => item.id === payable!.id)).toBe(true);
+
+    const repeatedLine = await jsonRequest('/api/inventory/movements', 'POST', {
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 2,
+      costPerUnit: 5,
+      totalCost: 10,
+      date: '2026-10-26',
+      performedBy: 'Test CxP',
+      paymentCondition: 'credito',
+      supplierId,
+      referenceDoc,
+    });
+    expect(repeatedLine.response.status).toBe(201);
+    expect(repeatedLine.body['reused']).toBe(true);
+    expect(repeatedLine.body['payable']['amountUsd']).toBe(10);
+    expect(repeatedLine.body['movement']['id']).toBe(
+      creditPurchase.body['movement']['id']
+    );
+
+    const materialsAfterReuse = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; currentStock: number }[];
+    expect(materialsAfterReuse.find((item) => item.id === material.id)!.currentStock).toBe(
+      stockBefore + 2
+    );
+
+    const missingReference = await jsonRequest('/api/inventory/movements', 'POST', {
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 1,
+      costPerUnit: 5,
+      totalCost: 5,
+      date: '2026-10-26',
+      performedBy: 'Test CxP',
+      paymentCondition: 'credito',
+      supplierId,
+    });
+    expect(missingReference.response.status).toBe(422);
+    expect(missingReference.body['code']).toBe('MISSING_CREDIT_REFERENCE');
+
+    await jsonRequest(`/api/payables/${payable!.id}`, 'PATCH', {status: 'anulada'});
+  });
+
+  it('does not change stock when a credit purchase collides with an existing manual CxP', async () => {
+    const suffix = Date.now().toString(36);
+    const supplier = await jsonRequest('/api/suppliers', 'POST', {
+      businessName: `Proveedor Manual First ${suffix} C.A.`,
+      taxId: `J-${suffix.slice(-7).toUpperCase()}-2`,
+      primaryContact: 'Prueba colisión CxP',
+      primaryPhone: '+58 414 555 0197',
+      fiscalAddress: 'Zona Industrial, Barquisimeto',
+      supplierType: 'envases',
+      paymentTerms: 'Crédito a 15 días',
+      status: 'activo',
+    });
+    expect(supplier.response.status).toBe(201);
+    const supplierId = supplier.body['id'] as string;
+    const materials = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; name: string; currentStock: number }[];
+    const material = materials[0];
+    const stockBefore = material.currentStock;
+    const referenceDoc = `FACT-MANUAL-FIRST-${suffix}`;
+
+    const manual = await jsonRequest('/api/payables', 'POST', {
+      supplierId,
+      supplierName: supplier.body['businessName'],
+      invoiceNumber: referenceDoc,
+      issueDate: '2026-10-28',
+      dueDate: '2026-11-12',
+      amountUsd: 15,
+      exchangeRateUsed: 50,
+      category: 'materia_prima',
+    });
+    expect(manual.response.status).toBe(201);
+
+    const collision = await jsonRequest('/api/inventory/movements', 'POST', {
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 4,
+      costPerUnit: 5,
+      totalCost: 20,
+      date: '2026-10-28',
+      performedBy: 'Test CxP',
+      paymentCondition: 'credito',
+      supplierId,
+      referenceDoc,
+      dueDate: '2026-11-12',
+      creditDays: 15,
+    });
+    expect(collision.response.status).toBe(409);
+    expect(collision.body['code']).toBe('DUPLICATE_PAYABLE');
+    expect(collision.body['origin']).toBe('manual');
+
+    const materialsAfter = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; currentStock: number }[];
+    expect(materialsAfter.find((item) => item.id === material.id)!.currentStock).toBe(stockBefore);
+  });
+
+  it('groups inventory credit lines into one payable and keeps manual CxP separate', async () => {
+    const suffix = Date.now().toString(36);
+    const supplier = await jsonRequest('/api/suppliers', 'POST', {
+      businessName: `Proveedor Unificado ${suffix} C.A.`,
+      taxId: `J-${suffix.slice(-7).toUpperCase()}-1`,
+      primaryContact: 'Prueba CxP unificada',
+      primaryPhone: '+58 414 555 0198',
+      fiscalAddress: 'Zona Industrial, Barquisimeto',
+      supplierType: 'envases',
+      paymentTerms: 'Crédito a 15 días',
+      status: 'activo',
+    });
+    expect(supplier.response.status).toBe(201);
+    const supplierId = supplier.body['id'] as string;
+    const supplierName = supplier.body['businessName'] as string;
+    const materials = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; name: string }[];
+    const [firstMaterial, secondMaterial] = materials;
+    const referenceDoc = `FACT-UNIFICADA-${suffix}`;
+
+    const purchase = async (material: {id: string; name: string}, quantity: number, totalCost: number) =>
+      jsonRequest('/api/inventory/movements', 'POST', {
+        materialId: material.id,
+        materialName: material.name,
+        type: 'entrada',
+        quantity,
+        costPerUnit: totalCost / quantity,
+        totalCost,
+        date: '2026-10-27',
+        performedBy: 'Test CxP unificada',
+        paymentCondition: 'credito',
+        supplierId,
+        referenceDoc,
+        dueDate: '2026-11-11',
+        creditDays: 15,
+      });
+
+    const first = await purchase(firstMaterial, 2, 20);
+    expect(first.response.status).toBe(201);
+    const payable = first.body['payable'] as {id: string; payableNumber: string; amountUsd: number; origin: string};
+    expect(payable.origin).toBe('compra_inventario');
+    expect(payable.amountUsd).toBe(20);
+
+    const second = await purchase(secondMaterial, 3, 30);
+    expect(second.response.status).toBe(201);
+    expect(second.body['reused']).toBe(false);
+    expect(second.body['updated']).toBe(true);
+    expect(second.body['payable']['id']).toBe(payable.id);
+    expect(second.body['payable']['amountUsd']).toBe(50);
+
+    const repeated = await purchase(firstMaterial, 2, 20);
+    expect(repeated.response.status).toBe(201);
+    expect(repeated.body['reused']).toBe(true);
+    expect(repeated.body['payable']['amountUsd']).toBe(50);
+    expect(repeated.body['movement']['id']).toBe(first.body['movement']['id']);
+
+    const payables = (await (
+      await fetch(`${baseUrl}/api/payables`)
+    ).json()) as {id: string; origin?: string; linkedMovementCount?: number}[];
+    const unified = payables.find((item) => item.id === payable.id)!;
+    expect(unified.origin).toBe('compra_inventario');
+    expect(unified.linkedMovementCount).toBe(2);
+
+    const manualDuplicate = await jsonRequest('/api/payables', 'POST', {
+      supplierId,
+      supplierName,
+      invoiceNumber: referenceDoc,
+      issueDate: '2026-10-27',
+      dueDate: '2026-11-11',
+      amountUsd: 50,
+      exchangeRateUsed: 50,
+      category: 'materia_prima',
+    });
+    expect(manualDuplicate.response.status).toBe(409);
+    expect(manualDuplicate.body['code']).toBe('DUPLICATE_PAYABLE');
+    expect(manualDuplicate.body['origin']).toBe('compra_inventario');
+    expect(manualDuplicate.body['payableNumber']).toBe(payable.payableNumber);
+
+    const manual = await jsonRequest('/api/payables', 'POST', {
+      supplierId,
+      supplierName,
+      invoiceNumber: `FACT-MANUAL-${suffix}`,
+      issueDate: '2026-10-27',
+      dueDate: '2026-11-11',
+      amountUsd: 12,
+      exchangeRateUsed: 50,
+      category: 'materia_prima',
+    });
+    expect(manual.response.status).toBe(201);
+    expect(manual.body['origin']).toBe('manual');
+
+    const partial = await jsonRequest(`/api/payables/${payable.id}/payments`, 'POST', {
+      bankCode: '0108',
+      paymentMethod: 'transferencia_bancaria',
+      reference: `PAGO-${suffix}`,
+      amountUsd: 10,
+      paidAt: '2026-11-05',
+    });
+    expect(partial.response.status).toBe(201);
+    expect(partial.body['payable']['status']).toBe('parcial');
+    expect(partial.body['payable']['origin']).toBe('compra_inventario');
+
+    await jsonRequest(`/api/payables/${payable.id}`, 'PATCH', {status: 'anulada'});
+    await jsonRequest(`/api/payables/${manual.body['id'] as string}`, 'PATCH', {status: 'anulada'});
   });
 
   it('issues adjustment notes, reports fiscal books and locks a closed period', async () => {

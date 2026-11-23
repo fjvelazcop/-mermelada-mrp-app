@@ -2,6 +2,7 @@ import {
   AgingBucket,
   BuildReceivableRowsInput,
   ReceivableCustomerSummary,
+  ReceivableDocumentKindFilter,
   ReceivableFilters,
   ReceivableRow,
   ReceivableTotals,
@@ -18,6 +19,28 @@ const EMPTY_BUCKETS = (): Record<AgingBucket, {count: number; usd: number}> => (
 
 function roundMoney(value: number): number {
   return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
+}
+
+const NOTE_REASON_LABELS: Record<string, string> = {
+  devolucion: 'Devolución',
+  descuento: 'Descuento',
+  bonificacion: 'Bonificación',
+  error_precio: 'Error de precio',
+  anulacion_parcial: 'Anulación parcial',
+  otro: 'Otro',
+};
+
+/** Etiqueta corta y trazable de una nota de crédito/débito. */
+function describeNote(note: BuildReceivableRowsInput['notes'][number]): string {
+  const prefix = note.type === 'nota_credito' ? 'NC' : 'ND';
+  const number = [note.serie, note.noteNumber === undefined ? null : String(note.noteNumber)]
+    .filter(Boolean)
+    .join('-');
+  const reason = note.reason
+    ? NOTE_REASON_LABELS[note.reason] || note.reasonDetails || note.reason
+    : note.reasonDetails || '';
+  const amount = roundMoney(note.total).toFixed(2).replace('.', ',');
+  return `${prefix}${number ? ` ${number}` : ''}${reason ? ` · ${reason}` : ''} ($${amount})`;
 }
 
 /** Parsea fechas ISO (yyyy-mm-dd o ISO con hora) usando hora local para evitar desfases UTC. */
@@ -104,6 +127,22 @@ export function buildReceivableRows(input: BuildReceivableRowsInput): Receivable
   return input.orders.map((order) => {
     const customer = customersById.get(order.customerId);
     const invoice = invoicesByOrder.get(order.id);
+    const orderNotes = invoice ? notesByInvoice.get(invoice.id) ?? [] : [];
+    const adjustmentTypes = [...new Set(orderNotes.map((note) => note.type))];
+    const hasDeliveryNote = !!order.hasDeliveryNote || !!order.deliveryNoteNumber;
+    const invoiceLabel = invoice
+      ? [invoice.serie, invoice.invoiceNumber].filter(Boolean).join('-')
+      : null;
+    const documentKind = invoice
+      ? 'factura_fiscal'
+      : hasDeliveryNote
+        ? 'nota_entrega'
+        : 'sin_documento';
+    const documentLabel = invoice
+      ? `Factura Fiscal ${invoiceLabel}`
+      : hasDeliveryNote
+        ? `Nota de entrega ${order.deliveryNoteNumber || order.orderNumber}`
+        : 'Sin documento fiscal';
 
     const outstanding = outstandingForOrder(order, input.invoices, input.notes);
     const {
@@ -159,6 +198,11 @@ export function buildReceivableRows(input: BuildReceivableRowsInput): Receivable
       status,
       partialCollection,
       hasInvoice: !!invoice,
+      documentKind,
+      documentLabel,
+      noteDetails: orderNotes.map(describeNote),
+      adjustmentTypes,
+      hasDeliveryNote,
     };
   });
 }
@@ -171,7 +215,22 @@ function matchesSearch(row: ReceivableRow, search: string): boolean {
     row.customerTaxId,
     row.orderNumber,
     row.invoiceNumber ?? '',
+    row.documentLabel,
+    row.order.deliveryNoteNumber ?? '',
+    ...row.noteDetails,
   ].some((value) => value.toLowerCase().includes(term));
+}
+
+function matchesDocumentKind(
+  row: ReceivableRow,
+  filter: ReceivableDocumentKindFilter | undefined
+): boolean {
+  if (!filter || filter === 'todos') return true;
+  if (row.documentKind === filter) return true;
+  return (
+    (filter === 'nota_credito' || filter === 'nota_debito') &&
+    row.adjustmentTypes.includes(filter)
+  );
 }
 
 /** Aplica búsqueda, estado, bucket y filtro de crédito a las filas calculadas. */
@@ -189,6 +248,7 @@ export function filterReceivables(rows: ReceivableRow[], filters: ReceivableFilt
       return false;
     }
     if (filters.bucket !== 'todos' && row.agingBucket !== filters.bucket) return false;
+    if (!matchesDocumentKind(row, filters.documentKind)) return false;
     if (filters.creditOnly && row.saleCondition !== 'credito') return false;
 
     return true;

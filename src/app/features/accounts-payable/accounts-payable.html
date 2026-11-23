@@ -12,6 +12,7 @@
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
+      <app-module-help module="accounts_payable" label="Ver ayuda de Cuentas por Pagar" />
       @if (canExport()) {
         <button
           type="button"
@@ -47,6 +48,15 @@
     </div>
   </div>
 
+  <div class="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 mb-5 text-xs text-sky-900">
+    <mat-icon class="text-base text-sky-700">info</mat-icon>
+    <p class="flex-1">
+      Las compras a <strong>crédito</strong> registradas en Inventario aparecen aquí automáticamente con el origen
+      <strong>Compra Inventario</strong>; <strong>no las vuelvas a cargar</strong> con «Registrar factura». Usa ese botón
+      solo para facturas o gastos de proveedor registrados directamente en Cuentas por pagar.
+    </p>
+  </div>
+
   <!-- KPIs -->
   <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
     <div class="bg-rose-50 border border-rose-200 rounded-xl p-3">
@@ -54,7 +64,10 @@
       <span class="text-lg font-bold font-mono text-rose-950 block mt-1">
         {{ currencyMode() === 'Bs' ? totals().balanceBs : totals().balanceUsd | veCurrency: currency() }}
       </span>
-      <span class="text-[10px] text-rose-700">{{ totals().documentCount }} facturas</span>
+      <span class="text-[10px] text-rose-700 block">{{ totals().documentCount }} facturas</span>
+      <span class="text-[10px] text-rose-800 block">
+        {{ originCounts().compra_inventario }} inventario · {{ originCounts().manual }} manuales
+      </span>
     </div>
     <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
       <span class="text-[10px] font-bold uppercase tracking-wide text-amber-800 block">Vencido</span>
@@ -106,7 +119,7 @@
   </div>
 
   <!-- Filtros -->
-  <div class="border-t border-stone-200 pt-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+  <div class="border-t border-stone-200 pt-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
     <div>
       <label for="cxp-search" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Buscar</label>
       <input
@@ -157,6 +170,19 @@
       >
         @for (option of bucketOptions; track option) {
           <option [value]="option">{{ filterBucketLabel(option) }}</option>
+        }
+      </select>
+    </div>
+    <div>
+      <label for="cxp-origin" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Origen</label>
+      <select
+        id="cxp-origin"
+        [value]="originFilter()"
+        (change)="originFilter.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        @for (option of originOptions; track option) {
+          <option [value]="option">{{ originLabel(option) }}</option>
         }
       </select>
     </div>
@@ -273,6 +299,19 @@
                 <span class="text-[10px] text-stone-500 block">
                   {{ row.invoiceNumber }} @if (row.controlNumber) { · Ctrl {{ row.controlNumber }} }
                 </span>
+                <span
+                  class="text-[9px] font-bold px-1.5 py-0.5 rounded border mt-1 inline-block"
+                  [class.bg-emerald-50]="row.origin === 'compra_inventario'"
+                  [class.text-emerald-800]="row.origin === 'compra_inventario'"
+                  [class.border-emerald-200]="row.origin === 'compra_inventario'"
+                  [class.bg-sky-50]="row.origin === 'manual'"
+                  [class.text-sky-800]="row.origin === 'manual'"
+                  [class.border-sky-200]="row.origin === 'manual'"
+                  [title]="row.payable.notes || 'Sin notas de origen'"
+                >
+                  {{ row.origin === 'compra_inventario' ? 'COMPRA INVENTARIO' : 'CxP MANUAL' }}
+                  @if (row.linkedMovementCount) { · {{ row.linkedMovementCount }} líneas }
+                </span>
               </td>
               <td class="py-2.5 px-2 font-mono text-stone-600">{{ row.dueDate }}</td>
               <td class="py-2.5 px-2 text-right font-mono" [class.text-rose-700]="row.daysOverdue > 0">
@@ -342,9 +381,10 @@
   }
 
   <p class="text-[10px] text-stone-400 mt-4">
-    Los saldos se calculan con la factura menos la suma de pagos. Al liquidar el saldo se genera automáticamente un
-    comprobante de egreso (<span class="font-mono">payableId</span>) que alimenta el Libro de Compras; un pago parcial
-    no genera gasto.
+    El origen se deriva de los movimientos de inventario vinculados: las compras a crédito se generan solas y no deben
+    registrarse dos veces. Los saldos se calculan con la factura menos la suma de pagos. Al liquidar el saldo se genera
+    automáticamente un comprobante de egreso (<span class="font-mono">payableId</span>) que alimenta el Libro de
+    Compras; un pago parcial no genera gasto.
   </p>
 </section>
 

@@ -125,4 +125,74 @@ describe('payables calculations', () => {
     expect(paymentTermsToDays('Pago a 15 días')).toBe(15);
     expect(paymentTermsToDays('Contado')).toBe(0);
   });
+
+  it('deriva el origen desde los movimientos vinculados y cuenta las líneas', () => {
+    const rows = buildPayableRows({
+      payables: [
+        makePayable({id: 'from-inventory', origin: undefined}),
+        makePayable({id: 'manual', invoiceNumber: 'F-002', origin: undefined}),
+      ],
+      payments: [],
+      movements: [
+        {
+          id: 'mov-1',
+          payableId: 'from-inventory',
+          paymentCondition: 'credito',
+          referenceDoc: 'F-001',
+          materialName: 'Guayaba',
+        },
+        {
+          id: 'mov-2',
+          payableId: 'from-inventory',
+          paymentCondition: 'credito',
+          referenceDoc: 'F-001',
+          materialName: 'Azúcar',
+        },
+        {
+          id: 'mov-3',
+          payableId: 'from-inventory',
+          paymentCondition: 'contado',
+          referenceDoc: 'F-001',
+        },
+      ],
+      today: TODAY,
+    });
+    const inventory = rows.find((row) => row.id === 'from-inventory')!;
+    expect(inventory.origin).toBe('compra_inventario');
+    expect(inventory.movementId).toBe('mov-1');
+    expect(inventory.linkedMovementCount).toBe(2);
+    expect(rows.find((row) => row.id === 'manual')?.origin).toBe('manual');
+  });
+
+  it('filtra por origen y busca por el documento del movimiento vinculado', () => {
+    const rows = buildPayableRows({
+      payables: [
+        makePayable({id: 'from-inventory'}),
+        makePayable({id: 'manual', invoiceNumber: 'F-002'}),
+      ],
+      payments: [],
+      movements: [
+        {
+          id: 'mov-1',
+          payableId: 'from-inventory',
+          paymentCondition: 'credito',
+          referenceDoc: 'F-INV-777',
+        },
+      ],
+      today: TODAY,
+    });
+    expect(
+      filterPayables(rows, {search: '', status: 'todos', bucket: 'todos', origin: 'compra_inventario'}).map(
+        (row) => row.id
+      )
+    ).toEqual(['from-inventory']);
+    expect(
+      filterPayables(rows, {search: '', status: 'todos', bucket: 'todos', origin: 'manual'}).map(
+        (row) => row.id
+      )
+    ).toEqual(['manual']);
+    expect(
+      filterPayables(rows, {search: 'F-INV-777', status: 'todos', bucket: 'todos'}).map((row) => row.id)
+    ).toEqual(['from-inventory']);
+  });
 });

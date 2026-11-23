@@ -2,6 +2,7 @@ import {ChangeDetectionStrategy, Component, computed, inject, signal} from '@ang
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   Supplier,
@@ -14,7 +15,7 @@ import {VeCurrencyPipe} from '../../core/pipes/ve-currency.pipe';
 @Component({
   selector: 'app-suppliers',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe],
+  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, ModuleHelpComponent],
   templateUrl: './suppliers.html',
 })
 export class SuppliersComponent {

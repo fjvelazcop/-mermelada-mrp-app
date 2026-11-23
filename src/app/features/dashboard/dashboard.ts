@@ -14,6 +14,7 @@ import {
 import {isPlatformBrowser} from '@angular/common';
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
@@ -32,6 +33,7 @@ import type {DashboardRechartsManager} from './dashboard-charts.renderer';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatIconModule,
+    ModuleHelpComponent,
     ReactiveFormsModule,
     VeCurrencyPipe,
     VeNumberPipe,

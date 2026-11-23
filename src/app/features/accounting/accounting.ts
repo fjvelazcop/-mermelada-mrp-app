@@ -1,7 +1,9 @@
-import {ChangeDetectionStrategy, Component, computed, inject, signal} from '@angular/core';
+import {ChangeDetectionStrategy, Component, computed, effect, inject, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
+import {LEGAL_ENTITY_DRAFT} from '../../core/config/legal-entity-draft';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   Account,
@@ -17,11 +19,14 @@ type AccountingTab = 'accounts' | 'entries' | 'books' | 'periods' | 'withholding
 @Component({
   selector: 'app-accounting',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, MatIconModule],
+  imports: [CommonModule, ReactiveFormsModule, MatIconModule, ModuleHelpComponent],
   templateUrl: './accounting.html',
 })
 export class AccountingComponent {
   public api = inject(ErpApiService);
+
+  /** Ficha jurídica y capital del acta: referencia de solo lectura para #13. */
+  public readonly legalEntityDraft = LEGAL_ENTITY_DRAFT;
 
   public activeTab = signal<AccountingTab>('accounts');
   public accountSearch = signal<string>('');
@@ -37,6 +42,17 @@ export class AccountingComponent {
   public bookYear = signal<number>(new Date().getFullYear());
   public bookMonth = signal<number>(new Date().getMonth() + 1);
   public bookLoading = signal<boolean>(false);
+
+  constructor() {
+    effect(() => {
+      const requested = this.api.requestedAccountingBookType();
+      if (!requested) return;
+      this.activeTab.set('books');
+      this.bookType.set(requested);
+      this.api.requestedAccountingBookType.set(null);
+      void this.loadAccountingBook();
+    });
+  }
 
   public bookTypes: {id: AccountingBookType; label: string}[] = [
     {id: 'diario', label: 'Diario'},

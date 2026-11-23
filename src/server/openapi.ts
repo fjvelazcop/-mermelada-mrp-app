@@ -363,9 +363,19 @@ const paths: Record<string, JsonObject> = {
       summary: 'Registrar entrada, salida o merma',
       requestBody: requestBody(ref('InventoryMovementInput')),
       responses: {
-        201: jsonResponse('Movimiento registrado', ref('InventoryMovement')),
+        201: jsonResponse('Movimiento registrado y CxP generada cuando aplica', {
+          type: 'object',
+          required: ['movement', 'payable', 'reused', 'updated'],
+          properties: {
+            movement: ref('InventoryMovement'),
+            payable: {allOf: [ref('Payable')], nullable: true},
+            reused: {type: 'boolean', description: 'La línea ya estaba vinculada; no se duplicó.'},
+            updated: {type: 'boolean', description: 'Se agregó una línea a una CxP existente.'},
+          },
+        }),
         401: errorResponses[401],
         403: errorResponses[403],
+        409: jsonResponse('CxP duplicada, cerrada o registrada manualmente', ref('Error')),
         422: errorResponses[422],
       },
     },
@@ -972,6 +982,43 @@ const paths: Record<string, JsonObject> = {
       },
     },
   },
+  '/api/payroll/employees/{id}': {
+    patch: {
+      tags: ['Nómina'],
+      summary: 'Cambiar el estado de un operario (activo, vacaciones o inactivo)',
+      description:
+        'Vacaciones e inactivo excluyen al operario de nuevas semanas de nómina y conservan su historial de pagos.',
+      parameters: [idParameter],
+      requestBody: requestBody({
+        type: 'object',
+        required: ['status'],
+        properties: {
+          status: {type: 'string', enum: ['activo', 'vacaciones', 'inactivo']},
+        },
+      }),
+      responses: {
+        200: jsonResponse('Operario actualizado', ref('Employee')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+    delete: {
+      tags: ['Nómina'],
+      summary: 'Eliminar operario (bloqueado si ya tiene pagos registrados)',
+      description:
+        'Si el operario tiene pagos con neto mayor que cero, use PATCH para darlo de baja y conservar la trazabilidad.',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Operario eliminado'),
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        409: jsonResponse('Operario con pagos: debe inactivarse', ref('Error')),
+      },
+    },
+  },
   '/api/costing/summary': {
     get: {
       tags: ['Costos'],
@@ -1285,6 +1332,7 @@ const paths: Record<string, JsonObject> = {
         201: jsonResponse('Factura registrada', ref('Payable')),
         401: errorResponses[401],
         403: errorResponses[403],
+        409: jsonResponse('Ya existe una CxP para este proveedor y documento', ref('Error')),
         422: errorResponses[422],
       },
     },
@@ -2088,6 +2136,19 @@ const schemas: Record<string, JsonObject> = {
       supplierId: string,
       supplierNameSnapshot: string,
       supplierTaxIdSnapshot: string,
+      paymentCondition: {
+        type: 'string',
+        enum: ['contado', 'credito'],
+        default: 'contado',
+      },
+      paymentMethod: {
+        type: 'string',
+        enum: ['transferencia_bancaria', 'pago_movil', 'efectivo_usd', 'efectivo_bs', 'zelle', 'tarjeta'],
+      },
+      bankCode: string,
+      paymentReference: string,
+      creditDays: number,
+      dueDate: date,
       date: date,
       performedBy: string,
       notes: string,
@@ -3284,6 +3345,13 @@ const schemas: Record<string, JsonObject> = {
           createdAt: dateTime,
           updatedAt: dateTime,
           expenseId: string,
+          origin: {
+            type: 'string',
+            enum: ['compra_inventario', 'manual'],
+            description: 'Origen derivado de los movimientos vinculados (solo lectura).',
+          },
+          movementId: string,
+          linkedMovementCount: number,
         },
       },
     ],

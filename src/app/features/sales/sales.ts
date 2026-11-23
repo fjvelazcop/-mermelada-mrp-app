@@ -2,6 +2,7 @@ import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@ang
 import {DatePipe} from '@angular/common';
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {DeliveryNote, FiscalPaymentMethod, FiscalSaleCondition, FinishedGood, PresentationType, PriceTierType, SalesCollection, SalesOrder, SalesTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
@@ -42,6 +43,7 @@ export interface DraftOrderItem {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     MatIconModule,
+    ModuleHelpComponent,
     ReactiveFormsModule,
     DatePipe,
     VeCurrencyPipe,

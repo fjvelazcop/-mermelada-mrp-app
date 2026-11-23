@@ -84,6 +84,68 @@ export function calculateTotalKgFromIngredients(
   return roundSheetValue(massKg * (normalizeYieldPercent(yieldPercent) / 100));
 }
 
+/** One line of the auditable "Kilos totales" breakdown shown in the sheet. */
+export interface TotalKgBreakdownLine {
+  label: string;
+  detail: string;
+  kg: number;
+}
+
+/** Complete, auditable explanation of the kilos captured for one marmita. */
+export interface TotalKgBreakdown {
+  lines: TotalKgBreakdownLine[];
+  ingredientKg: number;
+  yieldPercent: number;
+  estimatedKg: number;
+  capturedKg: number;
+  isManual: boolean;
+  mermaKg: number;
+}
+
+/**
+ * Desglose exacto de "Kilos totales": suma de insumos (gramos convertidos a
+ * kilos), estimación por rendimiento y, si el operador capturó el peso,
+ * cuándo y por qué difiere de la estimación. El agua/gasoil nunca entra.
+ * `manuallyOverridden` toma la señal real del formulario para que el texto
+ * concuerde con el badge «manual» aunque el peso capturado iguale al estimado.
+ */
+export function describeTotalKgCalculation(
+  input: IngredientMassInput,
+  yieldPercent: number,
+  capturedTotalKg: number,
+  manuallyOverridden?: boolean
+): TotalKgBreakdown {
+  const lines: TotalKgBreakdownLine[] = [
+    {label: 'Guayaba', detail: `${roundSheetValue(input.guavaKg)} kg`, kg: roundSheetValue(nonNegative(input.guavaKg))},
+    {label: 'Azúcar', detail: `${roundSheetValue(input.sugarKg)} kg`, kg: roundSheetValue(nonNegative(input.sugarKg))},
+    {label: 'Almidón', detail: `${roundSheetValue(input.starchKg)} kg`, kg: roundSheetValue(nonNegative(input.starchKg))},
+    {
+      label: 'Químico',
+      detail: `${roundSheetValue(input.chemicalG)} g ÷ 1000`,
+      kg: roundSheetValue(nonNegative(input.chemicalG) / 1000),
+    },
+    {
+      label: 'Ácido',
+      detail: `${roundSheetValue(input.acidG)} g ÷ 1000`,
+      kg: roundSheetValue(nonNegative(input.acidG) / 1000),
+    },
+  ];
+  const ingredientKg = calculateIngredientMassKg(input);
+  const normalizedYield = normalizeYieldPercent(yieldPercent);
+  const estimatedKg = calculateTotalKgFromIngredients(input, normalizedYield);
+  const capturedKg = roundSheetValue(nonNegative(capturedTotalKg));
+
+  return {
+    lines,
+    ingredientKg,
+    yieldPercent: normalizedYield,
+    estimatedKg,
+    capturedKg,
+    isManual: manuallyOverridden ?? (capturedKg !== estimatedKg),
+    mermaKg: calculateMermaKg(ingredientKg, capturedKg),
+  };
+}
+
 /**
  * Units obtained from a marmita: kilos totales ÷ peso por envase.
  * Returns 0 when either input is missing or the presentation is invalid.

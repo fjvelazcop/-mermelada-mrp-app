@@ -1,0 +1,65 @@
+<button
+  type="button"
+  class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-stone-200 bg-white text-stone-500 hover:text-amber-700 hover:bg-amber-50 hover:border-amber-200 transition-colors min-h-[36px]"
+  [attr.aria-label]="label()"
+  [attr.title]="label()"
+  aria-haspopup="dialog"
+  [attr.aria-expanded]="isOpen()"
+  (click)="toggle()"
+>
+  <mat-icon class="text-base">help_outline</mat-icon>
+</button>
+
+@if (isOpen()) {
+  <div class="fixed inset-0 z-40 bg-stone-900/40" (click)="close()" aria-hidden="true"></div>
+
+  <aside
+    class="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-white shadow-2xl overflow-y-auto"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="content().title"
+  >
+    <div class="sticky top-0 bg-white border-b border-stone-200 px-5 py-4 flex items-start justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+            <mat-icon class="text-base">help_outline</mat-icon>
+          </span>
+          <h3 class="text-base font-bold text-stone-900">{{ content().title }}</h3>
+        </div>
+        <p class="text-xs text-stone-500 mt-2">{{ content().summary }}</p>
+      </div>
+      <button
+        #closeButton
+        type="button"
+        class="shrink-0 text-stone-400 hover:text-stone-700 rounded p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+        aria-label="Cerrar ayuda"
+        (click)="close()"
+      >
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="p-5 space-y-5">
+      @for (section of content().sections; track section.title) {
+        <section>
+          <h4 class="text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-2">
+            {{ section.title }}
+          </h4>
+          <ul class="space-y-2">
+            @for (bullet of section.bullets; track bullet) {
+              <li class="flex gap-2 text-xs text-stone-600 leading-relaxed">
+                <mat-icon class="text-sm text-amber-600 shrink-0">check_circle_outline</mat-icon>
+                <span>{{ bullet }}</span>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      <p class="text-[11px] text-stone-400 border-t border-stone-100 pt-4">
+        Esta guía es informativa. Las acciones disponibles dependen de los permisos de tu rol.
+      </p>
+    </div>
+  </aside>
+}

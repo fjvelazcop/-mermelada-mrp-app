@@ -406,6 +406,74 @@ describe('accounts receivable calculations', () => {
     ]);
   });
 
+  it('clasifica facturas fiscales, notas de entrega y notas de crédito/débito', () => {
+    const rows = buildReceivableRows({
+      orders: [
+        makeOrder({id: 'invoice', orderNumber: 'PED-FACT'}),
+        makeOrder({
+          id: 'delivery',
+          orderNumber: 'PED-NE',
+          hasDeliveryNote: true,
+          deliveryNoteNumber: 'NE-000124',
+        }),
+        makeOrder({id: 'plain', orderNumber: 'PED-SIN'}),
+      ],
+      customers,
+      invoices: [makeInvoice({id: 'inv-a', salesOrderId: 'invoice'})],
+      notes: [
+        makeNote({
+          id: 'nc-a',
+          fiscalInvoiceId: 'inv-a',
+          serie: 'A',
+          noteNumber: 7,
+          reason: 'devolucion',
+          type: 'nota_credito',
+          total: 10,
+        }),
+      ],
+      today: TODAY,
+    });
+
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get('invoice')?.documentKind).toBe('factura_fiscal');
+    expect(byId.get('invoice')?.documentLabel).toBe('Factura Fiscal A-42');
+    expect(byId.get('invoice')?.noteDetails[0]).toContain('NC A-7');
+    expect(byId.get('invoice')?.noteDetails[0]).toContain('Devolución');
+    expect(byId.get('delivery')?.documentKind).toBe('nota_entrega');
+    expect(byId.get('delivery')?.documentLabel).toContain('NE-000124');
+    expect(byId.get('delivery')?.hasDeliveryNote).toBe(true);
+    expect(byId.get('plain')?.documentKind).toBe('sin_documento');
+  });
+
+  it('filtra por tipo de documento incluyendo notas vinculadas a facturas', () => {
+    const rows = buildReceivableRows({
+      orders: [
+        makeOrder({id: 'invoice', orderNumber: 'PED-FACT'}),
+        makeOrder({id: 'delivery', hasDeliveryNote: true, deliveryNoteNumber: 'NE-1'}),
+        makeOrder({id: 'plain'}),
+      ],
+      customers,
+      invoices: [makeInvoice({id: 'inv-a', salesOrderId: 'invoice'})],
+      notes: [makeNote({id: 'nc-a', fiscalInvoiceId: 'inv-a', type: 'nota_credito'})],
+      today: TODAY,
+    });
+
+    const filterBy = (documentKind: 'factura_fiscal' | 'nota_entrega' | 'nota_credito' | 'nota_debito' | 'sin_documento') =>
+      filterReceivables(rows, {
+        search: '',
+        status: 'todos',
+        bucket: 'todos',
+        creditOnly: false,
+        documentKind,
+      }).map((row) => row.id);
+
+    expect(filterBy('factura_fiscal')).toEqual(['invoice']);
+    expect(filterBy('nota_credito')).toEqual(['invoice']);
+    expect(filterBy('nota_entrega')).toEqual(['delivery']);
+    expect(filterBy('sin_documento')).toEqual(['plain']);
+    expect(filterBy('nota_debito')).toEqual([]);
+  });
+
   it('computes bucket totals and overdue percentage only from outstanding balances', () => {
     const rows = buildReceivableRows({
       orders: [

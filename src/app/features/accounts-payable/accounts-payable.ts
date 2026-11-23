@@ -2,6 +2,7 @@ import {ChangeDetectionStrategy, Component, computed, inject, signal} from '@ang
 import {DatePipe} from '@angular/common';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {Expense, Payable, PayablePayment} from '../../core/models/erp.models';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {formatVeNumber, VeCurrencyPipe, VeNumberPipe} from '../../core/pipes/ve-currency.pipe';
@@ -24,6 +25,8 @@ import {
 import {
   PayableAgingBucket,
   PayableFilters,
+  PayableOrigin,
+  PayableOriginFilter,
   PayableRow,
   PayableStatusFilter,
 } from './payables.model';
@@ -44,10 +47,15 @@ const STATUS_LABELS: Record<PayableRow['status'], string> = {
   anulada: 'Anulada',
 };
 
+const ORIGIN_LABELS: Record<PayableOrigin, string> = {
+  compra_inventario: 'Compra Inventario',
+  manual: 'Gasto / CxP Manual',
+};
+
 @Component({
   selector: 'app-accounts-payable',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe],
+  imports: [DatePipe, MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, ModuleHelpComponent],
   templateUrl: './accounts-payable.html',
 })
 export class AccountsPayableComponent {
@@ -71,6 +79,11 @@ export class AccountsPayableComponent {
     {value: 'balance', label: 'Saldo'},
     {value: 'supplier', label: 'Proveedor'},
   ];
+  public readonly originOptions: PayableOriginFilter[] = [
+    'todos',
+    'compra_inventario',
+    'manual',
+  ];
   public readonly banks = VENEZUELAN_BANKS;
   public readonly bankLabel = bankLabel;
   public readonly findBank = findBank;
@@ -84,6 +97,7 @@ export class AccountsPayableComponent {
   public searchTerm = signal<string>('');
   public statusFilter = signal<PayableStatusFilter>('todos');
   public bucketFilter = signal<PayableAgingBucket | 'todos'>('todos');
+  public originFilter = signal<PayableOriginFilter>('todos');
   public supplierFilter = signal<string>('');
   public groupBySupplier = signal<boolean>(false);
   public currencyMode = signal<'USD' | 'Bs'>('USD');
@@ -109,6 +123,7 @@ export class AccountsPayableComponent {
     buildPayableRows({
       payables: this.api.payables(),
       payments: this.api.payablePayments(),
+      movements: this.api.inventoryMovements(),
       today: this.today,
     })
   );
@@ -119,8 +134,17 @@ export class AccountsPayableComponent {
       status: this.statusFilter(),
       bucket: this.bucketFilter(),
       supplierId: this.supplierFilter() || undefined,
+      origin: this.originFilter(),
     } as PayableFilters)
   );
+
+  public originCounts = computed(() => {
+    const rows = this.rows();
+    return {
+      compra_inventario: rows.filter((row) => row.origin === 'compra_inventario').length,
+      manual: rows.filter((row) => row.origin === 'manual').length,
+    };
+  });
 
   public sortedRows = computed(() => sortPayables(this.filteredRows(), this.sortBy()));
   public totals = computed(() => computePayableTotals(this.filteredRows(), this.today));
@@ -167,6 +191,10 @@ export class AccountsPayableComponent {
     return option === 'todos' ? 'Todas' : BUCKET_LABELS[option];
   }
 
+  public originLabel(option: PayableOriginFilter): string {
+    return option === 'todos' ? 'Todos los orígenes' : ORIGIN_LABELS[option];
+  }
+
   public bucketTotals(bucket: PayableAgingBucket): {count: number; usd: number} {
     return computePayableTotals(this.rows(), this.today).buckets[bucket];
   }
@@ -185,6 +213,7 @@ export class AccountsPayableComponent {
     this.searchTerm.set('');
     this.statusFilter.set('todos');
     this.bucketFilter.set('todos');
+    this.originFilter.set('todos');
     this.supplierFilter.set('');
     this.groupBySupplier.set(false);
     this.sortBy.set('dueDate');
@@ -372,6 +401,7 @@ export class AccountsPayableComponent {
       'RIF',
       'Nro. factura',
       'Nro. control',
+      'Origen',
       'Emisión',
       'Vencimiento',
       'Días vencido',
@@ -388,6 +418,7 @@ export class AccountsPayableComponent {
       row.taxId,
       row.invoiceNumber,
       row.controlNumber ?? '',
+      `${this.originLabel(row.origin)}${row.linkedMovementCount ? ` (${row.linkedMovementCount} líneas)` : ''}`,
       row.issueDate,
       row.dueDate,
       row.daysOverdue,
@@ -431,7 +462,7 @@ export class AccountsPayableComponent {
         {label: 'Proveedores con saldo', value: formatVeNumber(totals.supplierCount, 0)},
       ],
       notes:
-        'Reporte generado desde el ERP. Los saldos se calculan con pagos registrados; al saldar se genera el gasto correspondiente para el Libro de Compras.',
+        'Reporte generado desde el ERP. El origen se deriva de los movimientos de inventario vinculados; las compras a crédito se generan solas y no deben registrarse dos veces. Al saldar se genera el gasto para el Libro de Compras.',
     });
   }
 }

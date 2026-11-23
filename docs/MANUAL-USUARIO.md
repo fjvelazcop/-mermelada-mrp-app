@@ -178,6 +178,10 @@ Las órdenes manuales cargadas por fórmulas BOM siguen disponibles con el botó
   el `supplierId` y una copia de la razón social y el RIF/Cédula vigentes, que
   aparecen en el listado, detalle y exportaciones. Si el proveedor no existe,
   puede crearlo desde **+ Registrar nuevo proveedor** sin salir del modal.
+- **Condición / CxP:** el historial muestra `Contado` (con banco y referencia de
+  pago cuando se capturaron) o `Crédito` (con número de CxP y vencimiento).
+  Las entradas antiguas sin dato se muestran como `Contado (legacy)`. El
+  buscador también encuentra movimientos por número de CxP, referencia o banco.
 - **Alertas:** los insumos por debajo del mínimo se resaltan para reposición.
 
 Buenas prácticas:
@@ -216,7 +220,25 @@ Importante:
 
 ### 4.6. Nómina semanal
 
-- Registre empleados y sus datos.
+- Registre empleados y sus datos. El campo **Cargo / Puesto Operativo** busca
+  entre los cargos existentes (incluidos los usados en pagos históricos); si el
+  puesto no existe, escríbalo y use **Usar «…» como cargo nuevo**. El cargo
+  quedará disponible para futuros operarios y para el bono por cargo.
+- Use el buscador de **Personal de Planta & Sueldos Base** para filtrar en vivo
+  por nombre, cédula o cargo, y el filtro **Todos / Activos / Vacaciones /
+  Inactivos**.
+- El icono de historial de cada tarjeta muestra todos los pagos de ese
+  operario, con semana, fechas, base, bono, deducciones y neto, en USD o Bs.
+  El modal permite exportar ese historial a **CSV, Excel o PDF** en la moneda
+  seleccionada.
+- Para dar de baja a un operario use **Dar de baja** (`person_off`): pasa a
+  **Inactivo**, conserva su historial y deja de incluirse en nuevas semanas.
+- Para ausencias temporales use **Marcar de vacaciones** (`beach_access`): pasa
+  a **Vacaciones**, también queda excluido de nuevas semanas y conserva su
+  historial. Vuelve a incluirse con **Reactivar** (`person`).
+- **Eliminar** (`delete`) solo aparece cuando el operario **no tiene pagos
+  registrados**. Si ya se le pagó algo, el sistema bloquea la eliminación e
+  indica que debe darse de baja para conservar la trazabilidad.
 - Cargue la semana con días trabajados, bonos y deducciones.
 - Cierre la semana para calcular el total a pagar.
 - Los pagos quedan en el historial para auditoría.

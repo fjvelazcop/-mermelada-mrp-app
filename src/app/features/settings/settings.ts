@@ -11,6 +11,8 @@ import {
 } from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
 import {ErpApiService} from '../../core/services/erp-api.service';
+import {ModuleHelpKey} from '../../core/config/module-help.content';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {FiscalReferenceValuesComponent} from '../fiscal-reference-values/fiscal-reference-values';
 import {
   AppModuleId,
@@ -56,13 +58,70 @@ function digitalInvoicingReadyValidator(
 @Component({
   selector: 'app-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatIconModule, FiscalReferenceValuesComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, MatIconModule, FiscalReferenceValuesComponent, ModuleHelpComponent],
   templateUrl: './settings.html',
 })
 export class Settings {
   public api = inject(ErpApiService);
 
   public activeSection = signal<SettingsSection>('users');
+
+  /** Contextual help follows the selected configuration tab. */
+  public readonly settingsHelpModule = computed<ModuleHelpKey>(() => {
+    switch (this.activeSection()) {
+      case 'fiscalReferences':
+        return 'fiscal_reference_values';
+      case 'supplierTypes':
+        return 'supplier_types';
+      case 'materialCategories':
+        return 'material_categories';
+      default:
+        return 'settings';
+    }
+  });
+
+  public readonly settingsHelpLabel = computed(() => {
+    switch (this.settingsHelpModule()) {
+      case 'supplier_types':
+        return 'Ver ayuda de Tipos de Proveedor';
+      case 'material_categories':
+        return 'Ver ayuda de Categorías de Materia Prima';
+      default:
+        return 'Ver ayuda de Configuración';
+    }
+  });
+
+  /** Unified styles for the compact configuration tabs. */
+  public navTabClass(
+    section: SettingsSection,
+    tone: 'stone' | 'rose' = 'stone'
+  ): string {
+    const base =
+      'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap min-h-[40px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400';
+    if (this.activeSection() === section) {
+      return `${base} ${
+        tone === 'rose'
+          ? 'bg-rose-600 text-white shadow-xs'
+          : 'bg-stone-900 text-white shadow-xs'
+      }`;
+    }
+    return `${base} ${
+      tone === 'rose'
+        ? 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+        : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+    }`;
+  }
+
+  public navBadgeClass(
+    section: SettingsSection,
+    tone: 'stone' | 'rose' = 'stone'
+  ): string {
+    const base = 'px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none';
+    if (this.activeSection() === section) return `${base} bg-white/20 text-white`;
+    return `${base} ${
+      tone === 'rose' ? 'bg-rose-100 text-rose-700' : 'bg-white text-stone-600'
+    }`;
+  }
 
   /** Only administrators can see and edit the fiscal configuration. */
   public isAdmin = computed(() => {

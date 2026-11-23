@@ -60,6 +60,7 @@ import {
   updateUserHandler,
 } from './auth.js';
 import { ApiError, apiNotFoundHandler, errorHandler } from './errors.js';
+import type { Payable } from '../app/core/models/erp.models.js';
 import {
   createRateLimiter,
   isRateLimitExempt,
@@ -98,6 +99,7 @@ import {
   customerSchema,
   deliveryNoteSchema,
   employeeSchema,
+  employeeStatusUpdateSchema,
   exchangeRateUpdateSchema,
   expenseCategorySchema,
   expenseCategoryUpdateSchema,
@@ -649,8 +651,96 @@ export function createApiApp(): express.Express {
         res.status(400).json({error: 'Proveedor no encontrado', code: 'INVALID_SUPPLIER'});
         return;
       }
-      const mov = dbInstance.addInventoryMovement(req.body);
-      res.status(201).json(mov);
+      const isPurchase = req.body.type === 'entrada';
+      // Compatibilidad: las entradas antiguas sin condición explícita se
+      // registran de contado y no generan CxP; el crédito siempre es explícito.
+      const paymentCondition =
+        isPurchase ? (req.body.paymentCondition || 'contado') : undefined;
+      const movementInput = {
+        ...req.body,
+        paymentCondition,
+      };
+      const referenceDoc = String(req.body.referenceDoc || '').trim();
+
+      // Las compras a crédito necesitan proveedor maestro y documento de
+      // referencia para poder generar el CxP con trazabilidad.
+      if (
+        paymentCondition === 'credito' &&
+        (!req.body.supplierId || !referenceDoc)
+      ) {
+        res.status(422).json({
+          error: 'Las compras a crédito requieren proveedor y documento de referencia',
+          code: 'MISSING_CREDIT_REFERENCE',
+        });
+        return;
+      }
+
+      if (paymentCondition === 'credito') {
+        const existing = dbInstance.findPayableByDocument({
+          supplierId: req.body.supplierId,
+          supplierName: req.body.supplierNameSnapshot,
+          invoiceNumber: referenceDoc,
+        });
+        if (existing) {
+          const info = dbInstance.describePayableOrigin(existing);
+          if (info.origin === 'manual') {
+            res.status(409).json({
+              error: `Ya existe la CxP ${existing.payableNumber} registrada manualmente para este proveedor y el documento ${referenceDoc}. No la vuelvas a cargar; usa esa factura para el pago.`,
+              code: 'DUPLICATE_PAYABLE',
+              payableNumber: existing.payableNumber,
+              origin: 'manual',
+            });
+            return;
+          }
+          if (existing.status === 'pagada' || existing.status === 'anulada') {
+            res.status(409).json({
+              error: `La CxP ${existing.payableNumber} ya está ${existing.status} y no admite nuevas líneas de inventario.`,
+              code: 'PAYABLE_CLOSED',
+              payableNumber: existing.payableNumber,
+              origin: 'compra_inventario',
+            });
+            return;
+          }
+          const repeatedLine = dbInstance.findInventoryPurchaseLine(
+            existing,
+            movementInput
+          );
+          if (repeatedLine) {
+            res.status(201).json({
+              movement: repeatedLine,
+              payable: dbInstance.decoratePayable(existing),
+              reused: true,
+              updated: false,
+            });
+            return;
+          }
+        }
+      }
+
+      const mov = dbInstance.addInventoryMovement(movementInput);
+      let payable: Payable | null = null;
+      let reused = false;
+      let updated = false;
+      if (paymentCondition === 'credito') {
+        const result = dbInstance.upsertPayableForInventoryPurchase(
+          mov,
+          auditActor(req)
+        );
+        if (!result.ok) {
+          res.status(409).json({
+            error: result.error,
+            code: result.code,
+            payableNumber: result.payable.payableNumber,
+            origin: result.origin,
+            movementId: result.movementId,
+          });
+          return;
+        }
+        payable = result.payable;
+        reused = result.reused;
+        updated = result.updated;
+      }
+      res.status(201).json({movement: mov, payable, reused, updated});
     })
   );
 
@@ -1220,6 +1310,42 @@ export function createApiApp(): express.Express {
     })
   );
 
+  app.patch(
+    '/api/payroll/employees/:id',
+    validateParams(idParamsSchema),
+    validateBody(employeeStatusUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updateEmployeeStatus(
+        routeId(req),
+        req.body.status,
+        auditActor(req)
+      );
+      if (!updated) throw new ApiError(404, 'Operario no encontrado');
+      res.json(updated);
+    })
+  );
+
+  app.delete(
+    '/api/payroll/employees/:id',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      const id = routeId(req);
+      if (!dbInstance.getEmployees().some((employee) => employee.id === id)) {
+        throw new ApiError(404, 'Operario no encontrado');
+      }
+      if (dbInstance.hasEmployeePayments(id)) {
+        throw new ApiError(
+          409,
+          'El operario ya tiene pagos registrados. Desactívelo para conservar la trazabilidad.',
+          'EMPLOYEE_HAS_PAYMENTS'
+        );
+      }
+      const deleted = dbInstance.deleteEmployee(id, auditActor(req));
+      if (!deleted) throw new ApiError(404, 'Operario no encontrado');
+      res.json({success: true, message: 'Operario eliminado'});
+    })
+  );
+
   // --- COSTING & MARGINS ---
   app.get(
     '/api/costing/summary',
@@ -1294,11 +1420,14 @@ export function createApiApp(): express.Express {
       const bank = req.body.issuingBankCode
         ? findBank(req.body.issuingBankCode)
         : undefined;
-      const created = dbInstance.addExpense({
-        ...req.body,
-        issuingBankCode: bank?.code,
-        issuingBankName: bank?.name,
-      });
+      const created = dbInstance.addExpense(
+        {
+          ...req.body,
+          issuingBankCode: bank?.code,
+          issuingBankName: bank?.name,
+        },
+        auditActor(req)
+      );
       res.status(201).json(created);
     })
   );
@@ -1325,7 +1454,7 @@ export function createApiApp(): express.Express {
     '/api/expenses/:id',
     validateParams(idParamsSchema),
     mutation((req, res) => {
-      const success = dbInstance.deleteExpense(routeId(req));
+      const success = dbInstance.deleteExpense(routeId(req), auditActor(req));
       if (!success) {
         res.status(404).json({ error: 'Gasto no encontrado', code: 'NOT_FOUND' });
         return;
@@ -1430,7 +1559,7 @@ export function createApiApp(): express.Express {
   );
 
   // --- CUENTAS POR PAGAR (pestaña de Gastos) ---
-  app.get('/api/payables', query((req, res) => res.json(dbInstance.getPayables())));
+  app.get('/api/payables', query((req, res) => res.json(dbInstance.listPayables())));
 
   // Static path goes before `/api/payables/:id` so it is not captured as an id.
   app.get(
@@ -1442,11 +1571,29 @@ export function createApiApp(): express.Express {
     '/api/payables',
     validateBody(payableSchema),
     mutation((req, res) => {
+      const duplicate = dbInstance.findPayableByDocument({
+        supplierId: req.body.supplierId,
+        supplierName: req.body.supplierName,
+        invoiceNumber: req.body.invoiceNumber,
+      });
+      if (duplicate) {
+        const info = dbInstance.describePayableOrigin(duplicate);
+        const originLabel =
+          info.origin === 'compra_inventario' ? 'Compra de Inventario' : 'CxP Manual';
+        res.status(409).json({
+          error: `Ya existe la CxP ${duplicate.payableNumber} (${originLabel}) para este proveedor y el documento ${req.body.invoiceNumber}. No la registres de nuevo.`,
+          code: 'DUPLICATE_PAYABLE',
+          payableNumber: duplicate.payableNumber,
+          origin: info.origin,
+          movementId: info.movementId,
+        });
+        return;
+      }
       const created = dbInstance.addPayable(
         {...req.body, status: req.body.status || 'pendiente'},
         auditActor(req)
       );
-      res.status(201).json(created);
+      res.status(201).json(dbInstance.decoratePayable(created));
     })
   );
 
@@ -1459,7 +1606,7 @@ export function createApiApp(): express.Express {
         res.status(404).json({error: 'Factura por pagar no encontrada', code: 'NOT_FOUND'});
         return;
       }
-      res.json(payable);
+      res.json(dbInstance.decoratePayable(payable));
     })
   );
 
@@ -1473,7 +1620,7 @@ export function createApiApp(): express.Express {
         res.status(404).json({error: 'Factura por pagar no encontrada', code: 'NOT_FOUND'});
         return;
       }
-      res.json(updated);
+      res.json(dbInstance.decoratePayable(updated));
     })
   );
 
@@ -1508,7 +1655,7 @@ export function createApiApp(): express.Express {
         {...req.body, bankCode: bank.code, bankName: req.body.bankName || bank.name},
         auditActor(req)
       );
-      res.status(201).json(result);
+      res.status(201).json({...result, payable: dbInstance.decoratePayable(result.payable)});
     })
   );
 
@@ -1524,7 +1671,7 @@ export function createApiApp(): express.Express {
     '/api/expenses/categories',
     validateBody(expenseCategorySchema),
     mutation((req, res) => {
-      const created = dbInstance.addExpenseCategory(req.body);
+      const created = dbInstance.addExpenseCategory(req.body, auditActor(req));
       res.status(201).json(created);
     })
   );
@@ -1536,7 +1683,8 @@ export function createApiApp(): express.Express {
     mutation((req, res) => {
       const updated = dbInstance.updateExpenseCategory(
         routeId(req),
-        req.body
+        req.body,
+        auditActor(req)
       );
       if (!updated) {
         res.status(404).json({ error: 'Categoría no encontrada', code: 'NOT_FOUND' });
@@ -1550,7 +1698,7 @@ export function createApiApp(): express.Express {
     '/api/expenses/categories/:id',
     validateParams(idParamsSchema),
     mutation((req, res) => {
-      const success = dbInstance.deleteExpenseCategory(routeId(req));
+      const success = dbInstance.deleteExpenseCategory(routeId(req), auditActor(req));
       if (!success) {
         res.status(404).json({ error: 'Categoría no encontrada', code: 'NOT_FOUND' });
         return;

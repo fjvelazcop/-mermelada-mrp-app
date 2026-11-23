@@ -79,6 +79,9 @@ const auditActionSchema = z.enum([
   'gasto_registrado',
   'gasto_eliminado',
   'gasto_elegibilidad_actualizada',
+  'categoria_gasto_creada',
+  'categoria_gasto_actualizada',
+  'categoria_gasto_eliminada',
   'payable_registrado',
   'payable_actualizado',
   'payable_anulado',
@@ -170,6 +173,12 @@ export const inventoryMovementSchema = z.object({
   supplierId: z.string().trim().max(200).optional(),
   supplierNameSnapshot: z.string().trim().max(200).optional(),
   supplierTaxIdSnapshot: z.string().trim().max(60).optional(),
+  paymentCondition: z.enum(['contado', 'credito']).optional(),
+  paymentMethod: paymentMethodSchema.optional(),
+  bankCode: z.string().trim().max(10).optional(),
+  paymentReference: z.string().trim().max(200).optional(),
+  creditDays: z.number().int().min(0).max(365).optional(),
+  dueDate: dateLike.optional(),
   date: dateLike,
   performedBy: z.string().trim().min(1).max(200),
   notes: z.string().max(1000).optional(),
@@ -531,6 +540,11 @@ export const employeeSchema = z.object({
   roleTitle: z.string().trim().min(1).max(200),
   weeklyBaseSalary: money,
   hourlyRate: money,
+  status: employeeStatusSchema,
+});
+
+/** Alta, baja y vacaciones: los tres estados soportados por el personal de planta. */
+export const employeeStatusUpdateSchema = z.object({
   status: employeeStatusSchema,
 });
 

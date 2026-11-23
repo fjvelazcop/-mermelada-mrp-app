@@ -9,6 +9,7 @@ import {
 import {CommonModule} from '@angular/common';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   FiscalAdjustmentNote,
@@ -40,7 +41,7 @@ const MONTH_LABELS = [
 @Component({
   selector: 'app-fiscal-invoices',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe],
+  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, ModuleHelpComponent],
   templateUrl: './fiscal-invoices.html',
 })
 export class FiscalInvoicesComponent implements OnInit {

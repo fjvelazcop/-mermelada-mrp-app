@@ -1,5 +1,6 @@
 import {ChangeDetectionStrategy, Component, computed, inject, output, signal} from '@angular/core';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {SalesOrder} from '../../core/models/erp.models';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {formatVeNumber, VeCurrencyPipe, VeNumberPipe} from '../../core/pipes/ve-currency.pipe';
@@ -15,6 +16,7 @@ import {
 import {
   AgingBucket,
   ReceivableBucketFilter,
+  ReceivableDocumentKindFilter,
   ReceivableRow,
   ReceivableStatusFilter,
 } from './accounts-receivable.model';
@@ -33,10 +35,19 @@ const STATUS_LABELS = {
   vencido: 'Vencido',
 } as const;
 
+const DOCUMENT_KIND_LABELS: Record<ReceivableDocumentKindFilter, string> = {
+  todos: 'Todos los documentos',
+  factura_fiscal: 'Factura Fiscal',
+  nota_entrega: 'Nota de entrega',
+  nota_credito: 'Nota de crédito',
+  nota_debito: 'Nota de débito',
+  sin_documento: 'Sin documento',
+};
+
 @Component({
   selector: 'app-accounts-receivable',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, VeCurrencyPipe, VeNumberPipe],
+  imports: [MatIconModule, VeCurrencyPipe, VeNumberPipe, ModuleHelpComponent],
   templateUrl: './accounts-receivable.html',
 })
 export class AccountsReceivableComponent {
@@ -58,6 +69,14 @@ export class AccountsReceivableComponent {
     '>90',
   ];
   public readonly bucketOptions: ReceivableBucketFilter[] = ['todos', ...this.agingBuckets];
+  public readonly documentKindOptions: ReceivableDocumentKindFilter[] = [
+    'todos',
+    'factura_fiscal',
+    'nota_entrega',
+    'nota_credito',
+    'nota_debito',
+    'sin_documento',
+  ];
   public readonly sortOptions: {value: ReceivableSort; label: string}[] = [
     {value: 'dueDate', label: 'Vencimiento'},
     {value: 'balance', label: 'Saldo'},
@@ -68,6 +87,7 @@ export class AccountsReceivableComponent {
   public statusFilter = signal<ReceivableStatusFilter>('todos');
   public bucketFilter = signal<ReceivableBucketFilter>('todos');
   public creditOnly = signal<boolean>(false);
+  public documentKindFilter = signal<ReceivableDocumentKindFilter>('todos');
   public currencyMode = signal<'USD' | 'Bs'>('USD');
   public groupByCustomer = signal<boolean>(false);
   public sortBy = signal<ReceivableSort>('dueDate');
@@ -95,6 +115,7 @@ export class AccountsReceivableComponent {
       status: this.statusFilter(),
       bucket: this.bucketFilter(),
       creditOnly: this.creditOnly(),
+      documentKind: this.documentKindFilter(),
     })
   );
 
@@ -125,6 +146,10 @@ export class AccountsReceivableComponent {
     return option === 'todos' ? 'Todas' : BUCKET_LABELS[option];
   }
 
+  public documentKindLabel(option: ReceivableDocumentKindFilter): string {
+    return DOCUMENT_KIND_LABELS[option];
+  }
+
   public bucketTotals(bucket: AgingBucket): {count: number; usd: number} {
     return this.agingTotals().buckets[bucket];
   }
@@ -149,6 +174,7 @@ export class AccountsReceivableComponent {
     this.statusFilter.set('todos');
     this.bucketFilter.set('todos');
     this.creditOnly.set(false);
+    this.documentKindFilter.set('todos');
     this.groupByCustomer.set(false);
     this.sortBy.set('dueDate');
   }
@@ -176,6 +202,8 @@ export class AccountsReceivableComponent {
       'RIF',
       'Pedido',
       'Factura',
+      'Tipo de documento',
+      'Notas',
       'Condición',
       'Días crédito',
       'Vencimiento',
@@ -194,6 +222,8 @@ export class AccountsReceivableComponent {
       row.customerTaxId,
       row.orderNumber,
       row.invoiceNumber ?? 'SIN FACTURA',
+      row.documentLabel,
+      row.noteDetails.join(' | ') || 'Sin notas',
       row.saleCondition === 'credito' ? 'Crédito' : 'Contado',
       row.creditDays,
       row.dueDate ?? 'N/D',
@@ -212,6 +242,7 @@ export class AccountsReceivableComponent {
     if (this.statusFilter() !== 'todos') suffixes.push(this.statusFilter());
     if (this.bucketFilter() !== 'todos') suffixes.push(this.bucketFilter());
     if (this.creditOnly()) suffixes.push('credito');
+    if (this.documentKindFilter() !== 'todos') suffixes.push(this.documentKindFilter());
     const filename = `cuentas-por-cobrar-${this.today.toISOString().slice(0, 10)}${
       suffixes.length ? `-${suffixes.join('-')}` : ''
     }`;

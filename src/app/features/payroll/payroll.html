@@ -8,6 +8,7 @@
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
+      <app-module-help module="payroll" label="Ver ayuda de Nómina" />
       <!-- Currency Switcher Toggle -->
       <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
         <button
@@ -270,24 +271,116 @@
       }
     </div>
 
+    <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+      <div class="relative flex-1">
+        <mat-icon class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 text-base">search</mat-icon>
+        <input
+          type="search"
+          [value]="employeeSearch()"
+          (input)="onEmployeeSearchInput($any($event.target).value)"
+          placeholder="Buscar por nombre, cédula o cargo…"
+          class="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm text-stone-900"
+        />
+      </div>
+      <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
+        @for (filter of statusFilters; track filter) {
+          <button
+            type="button"
+            (click)="setEmployeeStatusFilter(filter)"
+            class="px-2.5 py-1.5 rounded-md transition-colors"
+            [class.bg-white]="employeeStatusFilter() === filter"
+            [class.text-stone-900]="employeeStatusFilter() === filter"
+            [class.shadow-xs]="employeeStatusFilter() === filter"
+            [class.text-stone-500]="employeeStatusFilter() !== filter"
+          >
+            {{ statusFilterLabel(filter) }}
+          </button>
+        }
+      </div>
+      <span class="text-[11px] text-stone-500 shrink-0">
+        {{ filteredEmployees().length }} de {{ employees().length }} operarios
+      </span>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      @for (emp of employees(); track emp.id) {
+      @for (emp of filteredEmployees(); track emp.id) {
         <div class="border border-stone-200 rounded-xl p-4 bg-stone-50/40">
-          <div class="flex items-start justify-between">
-            <div>
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
               <span class="text-xs font-mono text-stone-400 block">{{ emp.nationalId }}</span>
-              <h3 class="font-bold text-stone-900 text-sm mt-0.5">{{ emp.fullName }}</h3>
+              <h3 class="font-bold text-stone-900 text-sm mt-0.5 truncate">{{ emp.fullName }}</h3>
               <span class="text-xs text-stone-600 font-medium block mt-1">{{ emp.roleTitle }}</span>
             </div>
-            <span class="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
-              Activo
-            </span>
+            @if (emp.status === 'activo') {
+              <span class="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded shrink-0">Activo</span>
+            } @else if (emp.status === 'inactivo') {
+              <span class="text-[11px] font-semibold text-rose-800 bg-rose-50 px-2 py-0.5 rounded shrink-0">Inactivo</span>
+            } @else {
+              <span class="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded shrink-0">Vacaciones</span>
+            }
           </div>
 
           <div class="mt-4 pt-3 border-t border-stone-200/60 flex items-center justify-between text-xs">
             <span class="text-stone-500">Salario Semanal Fijo:</span>
             <span class="font-mono font-bold text-stone-900 text-sm">${{ emp.weeklyBaseSalary | number:'1.2-2' }}</span>
           </div>
+
+          <div class="mt-3 pt-2 border-t border-stone-200/60 flex items-center justify-between gap-2">
+            <span class="text-[11px] text-stone-500">{{ paymentCount(emp.id) }} pago(s) registrado(s)</span>
+            <div class="flex items-center gap-0.5">
+              <button
+                type="button"
+                (click)="openEmployeeHistory(emp)"
+                title="Ver historial de pagos"
+                class="p-1 text-sky-700 hover:bg-sky-50 rounded"
+              >
+                <mat-icon class="text-base">receipt_long</mat-icon>
+              </button>
+              @if (api.currentRole() === 'admin') {
+                @if (emp.status === 'activo') {
+                  <button
+                    type="button"
+                    (click)="vacationEmployee(emp)"
+                    title="Marcar de vacaciones (excluido de nuevas semanas)"
+                    class="p-1 text-sky-800 hover:bg-sky-50 rounded"
+                  >
+                    <mat-icon class="text-base">beach_access</mat-icon>
+                  </button>
+                  <button
+                    type="button"
+                    (click)="deactivateEmployee(emp)"
+                    title="Dar de baja (con pagos o por decisión)"
+                    class="p-1 text-amber-800 hover:bg-amber-50 rounded"
+                  >
+                    <mat-icon class="text-base">person_off</mat-icon>
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    (click)="reactivateEmployee(emp)"
+                    title="Reactivar operario"
+                    class="p-1 text-emerald-800 hover:bg-emerald-50 rounded"
+                  >
+                    <mat-icon class="text-base">person</mat-icon>
+                  </button>
+                }
+                @if (!hasPayments(emp.id)) {
+                  <button
+                    type="button"
+                    (click)="removeEmployee(emp)"
+                    title="Eliminar (solo sin pagos)"
+                    class="p-1 text-rose-700 hover:bg-rose-50 rounded"
+                  >
+                    <mat-icon class="text-base">delete</mat-icon>
+                  </button>
+                }
+              }
+            </div>
+          </div>
+        </div>
+      } @empty {
+        <div class="md:col-span-3 rounded-lg border border-dashed border-stone-300 p-6 text-center text-xs text-stone-500">
+          No hay operarios que coincidan con la búsqueda o el filtro seleccionado.
         </div>
       }
     </div>
@@ -432,20 +525,42 @@
 
           <div>
             <label class="block text-xs font-semibold text-stone-700 mb-1">Cargo / Puesto Operativo</label>
-            <input
-              type="text"
-              formControlName="roleTitle"
-              list="payroll-role-titles"
-              placeholder="ej: Operario de Marmitas"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
-            />
-            <datalist id="payroll-role-titles">
-              @for (role of existingRoles(); track role) {
-                <option [value]="role"></option>
-              }
-            </datalist>
+            <div class="relative">
+              <mat-icon class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 text-base">search</mat-icon>
+              <input
+                type="text"
+                formControlName="roleTitle"
+                (input)="onRoleInput($any($event.target).value)"
+                placeholder="Buscar cargo o escribir uno nuevo"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg pl-9 pr-3 py-2 text-sm text-stone-900"
+              />
+            </div>
+            @if (roleSuggestions().length) {
+              <div class="mt-2 flex flex-wrap gap-1">
+                @for (role of roleSuggestions(); track role) {
+                  <button
+                    type="button"
+                    (click)="applyRoleSuggestion(role)"
+                    class="text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full hover:bg-amber-100"
+                    [title]="'Usar cargo: ' + role"
+                  >
+                    {{ role }}
+                  </button>
+                }
+              </div>
+            }
+            @if (canCreateRole()) {
+              <button
+                type="button"
+                (click)="useNewRole()"
+                class="mt-2 text-[11px] font-semibold text-emerald-800 hover:text-emerald-900 flex items-center gap-1"
+              >
+                <mat-icon class="text-sm">add_circle</mat-icon>
+                Usar «{{ roleQuery().trim() }}» como cargo nuevo
+              </button>
+            }
             <p class="text-[11px] text-stone-400 mt-1">
-              El bono se configura por este cargo al registrar una semana de producción.
+              Busca entre los cargos existentes o escribe uno nuevo; el bono se configura por cargo al registrar una semana de producción.
             </p>
           </div>
 
@@ -458,6 +573,125 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: HISTORIAL DE PAGOS POR EMPLEADO -->
+  @if (selectedEmployee(); as emp) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-stone-800">receipt_long</mat-icon>
+            <div>
+              <h3 class="text-lg font-bold text-stone-900">Historial de pagos · {{ emp.fullName }}</h3>
+              <p class="text-[11px] text-stone-500">{{ emp.nationalId }} · {{ emp.roleTitle }}</p>
+            </div>
+          </div>
+          <button (click)="closeEmployeeHistory()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar historial">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
+          <div class="rounded-lg border border-stone-200 bg-stone-50 p-3">
+            <p class="text-[10px] uppercase tracking-wide text-stone-500">Pagos registrados</p>
+            <p class="text-base font-bold text-stone-900">{{ selectedEmployeeTotals().count }}</p>
+          </div>
+          <div class="rounded-lg border border-stone-200 bg-stone-50 p-3">
+            <p class="text-[10px] uppercase tracking-wide text-stone-500">Total pagado ({{ currencyMode() }})</p>
+            <p class="text-base font-bold text-emerald-800">
+              {{ historyAmount(selectedEmployeeTotals().netPaid) | veCurrency:historyCurrency:2 }}
+            </p>
+          </div>
+          <div class="rounded-lg border border-stone-200 bg-stone-50 p-3">
+            <p class="text-[10px] uppercase tracking-wide text-stone-500">Estado del operario</p>
+            <p class="text-base font-bold" [class.text-rose-700]="emp.status === 'inactivo'" [class.text-stone-900]="emp.status !== 'inactivo'">
+              {{ emp.status === 'inactivo' ? 'Inactivo' : emp.status === 'activo' ? 'Activo' : 'Vacaciones' }}
+            </p>
+          </div>
+        </div>
+
+        @if (selectedEmployeePayments().length) {
+          <div class="overflow-x-auto border border-stone-200 rounded-lg">
+            <table class="w-full text-xs">
+              <thead class="bg-stone-50 text-stone-600">
+                <tr>
+                  <th class="py-2 px-3 text-left font-semibold">Semana</th>
+                  <th class="py-2 px-3 text-left font-semibold">Período</th>
+                  <th class="py-2 px-3 text-left font-semibold">Cargo pagado</th>
+                  <th class="py-2 px-3 text-right font-semibold">Base</th>
+                  <th class="py-2 px-3 text-right font-semibold">Bono</th>
+                  <th class="py-2 px-3 text-right font-semibold">Deducc.</th>
+                  <th class="py-2 px-3 text-right font-semibold">Neto</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of selectedEmployeePayments(); track row.weekId + '-' + row.startDate) {
+                  <tr class="border-t border-stone-100">
+                    <td class="py-2 px-3 font-medium text-stone-900">#{{ row.weekNumber }} / {{ row.year }}</td>
+                    <td class="py-2 px-3 text-stone-600">{{ row.startDate }} al {{ row.endDate }}</td>
+                    <td class="py-2 px-3 text-stone-600">{{ row.roleTitle }}</td>
+                    <td class="py-2 px-3 text-right font-mono">{{ historyAmount(row.baseAmount) | veCurrency:historyCurrency:2 }}</td>
+                    <td class="py-2 px-3 text-right font-mono text-emerald-700">{{ historyAmount(row.productionBonus) | veCurrency:historyCurrency:2 }}</td>
+                    <td class="py-2 px-3 text-right font-mono text-rose-700">-{{ historyAmount(row.deductions) | veCurrency:historyCurrency:2 }}</td>
+                    <td class="py-2 px-3 text-right font-mono font-bold text-stone-900">{{ historyAmount(row.netPaid) | veCurrency:historyCurrency:2 }}</td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot class="bg-stone-50 font-semibold text-stone-900">
+                <tr>
+                  <td class="py-2 px-3" colspan="3">Totales</td>
+                  <td class="py-2 px-3 text-right font-mono">{{ historyAmount(selectedEmployeeTotals().baseAmount) | veCurrency:historyCurrency:2 }}</td>
+                  <td class="py-2 px-3 text-right font-mono">{{ historyAmount(selectedEmployeeTotals().productionBonus) | veCurrency:historyCurrency:2 }}</td>
+                  <td class="py-2 px-3 text-right font-mono">-{{ historyAmount(selectedEmployeeTotals().deductions) | veCurrency:historyCurrency:2 }}</td>
+                  <td class="py-2 px-3 text-right font-mono">{{ historyAmount(selectedEmployeeTotals().netPaid) | veCurrency:historyCurrency:2 }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        } @else {
+          <p class="rounded-lg border border-dashed border-stone-300 p-6 text-center text-xs text-stone-500">
+            Este operario aún no tiene pagos registrados; puede eliminarse desde la tarjeta correspondiente.
+          </p>
+        }
+
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-stone-100 mt-4">
+          <p class="text-[11px] text-stone-500">
+            Historial acumulado de las semanas registradas; no altera los totales de la nómina.
+          </p>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-semibold text-stone-500">Exportar:</span>
+            <button
+              type="button"
+              (click)="exportEmployeeHistory('csv')"
+              [disabled]="!selectedEmployeePayments().length"
+              class="px-2.5 py-1.5 text-[11px] font-semibold text-stone-700 border border-stone-200 rounded-lg hover:bg-stone-50 disabled:opacity-40"
+            >
+              CSV
+            </button>
+            <button
+              type="button"
+              (click)="exportEmployeeHistory('excel')"
+              [disabled]="!selectedEmployeePayments().length"
+              class="px-2.5 py-1.5 text-[11px] font-semibold text-stone-700 border border-stone-200 rounded-lg hover:bg-stone-50 disabled:opacity-40"
+            >
+              Excel
+            </button>
+            <button
+              type="button"
+              (click)="exportEmployeeHistory('pdf')"
+              [disabled]="!selectedEmployeePayments().length"
+              class="px-2.5 py-1.5 text-[11px] font-semibold text-stone-700 border border-stone-200 rounded-lg hover:bg-stone-50 disabled:opacity-40"
+            >
+              PDF
+            </button>
+            <button type="button" (click)="closeEmployeeHistory()" class="px-4 py-1.5 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800">
+              Cerrar
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   }

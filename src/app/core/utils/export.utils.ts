@@ -91,6 +91,7 @@ export function exportToExcel(
     fecha?: string;
     tasaCambio?: string;
     moneda?: string;
+    consolidado?: string;
   }
 ) {
   const metaHtml = metadata
@@ -107,6 +108,11 @@ export function exportToExcel(
         ${metadata.moneda ? ` · Moneda del Reporte: ${metadata.moneda}` : ''}
       </td>
     </tr>
+    ${metadata.consolidado ? `<tr>
+      <td colspan="${headers.length}" style="font-size: 10pt; color: #78350f; background-color: #fffbeb; text-align: left; padding: 4px;">
+        Consolidado: ${metadata.consolidado}
+      </td>
+    </tr>` : ''}
     <tr><td colspan="${headers.length}" style="height: 15px;"></td></tr>
     `
     : '';

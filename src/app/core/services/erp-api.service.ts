@@ -1,5 +1,5 @@
 import {inject, Injectable, signal} from '@angular/core';
-import {HttpClient} from '@angular/common/http';
+import {HttpClient, HttpErrorResponse} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 import {
   RawMaterial,
@@ -347,6 +347,9 @@ export class ErpApiService {
   // Cross-component request to open a specific section inside Configuración.
   public requestedSettingsSection = signal<SettingsSection | null>(null);
 
+  // Cross-component request to open a specific book inside Contabilidad.
+  public requestedAccountingBookType = signal<AccountingBookType | null>(null);
+
   public navigateToTab(tab: AppModuleId) {
     this.requestedTab.set(tab);
   }
@@ -354,6 +357,11 @@ export class ErpApiService {
   public navigateToSettings(section: SettingsSection) {
     this.requestedSettingsSection.set(section);
     this.navigateToTab('settings');
+  }
+
+  public navigateToAccountingBook(type: AccountingBookType) {
+    this.requestedAccountingBookType.set(type);
+    this.navigateToTab('accounting');
   }
 
   public toggleRole() {
@@ -1128,6 +1136,7 @@ export class ErpApiService {
       type: 'entrada',
       quantity: quantityToAdd,
       costPerUnit: mat.costPerUnit,
+      paymentCondition: 'contado',
       referenceDoc: 'Entrada Rápida por Alerta de Producción',
       notes: `Reabastecimiento express desde Centro de Alertas del Dashboard`,
     });
@@ -1352,7 +1361,13 @@ export class ErpApiService {
     supplierNameSnapshot?: string;
     supplierTaxIdSnapshot?: string;
     notes?: string;
-  }) {
+    paymentCondition?: 'contado' | 'credito';
+    paymentMethod?: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+    bankCode?: string;
+    paymentReference?: string;
+    creditDays?: number;
+    dueDate?: string;
+  }): Promise<{movement: InventoryMovement; payable: Payable | null}> {
     try {
       const mat = this.rawMaterials().find(m => m.id === data.materialId);
       const rate = data.exchangeRateUsed || this.exchangeRates()?.currentUsd || 48.35;
@@ -1367,7 +1382,12 @@ export class ErpApiService {
         date: new Date().toISOString().slice(0, 10),
         performedBy: this.currentRole() === 'admin' ? 'Administrador' : 'Operador de Planta',
       };
-      await firstValueFrom(this.http.post('/api/inventory/movements', payload));
+      const created = await firstValueFrom(
+        this.http.post<{movement: InventoryMovement; payable: Payable | null}>(
+          '/api/inventory/movements',
+          payload
+        )
+      );
 
       // Record Audit Log for Inventory Movement
       const actionTitle = data.type === 'entrada'
@@ -1398,8 +1418,14 @@ export class ErpApiService {
         },
       });
 
-      this.showToast(`Movimiento de ${data.quantity} ${mat?.unit || 'uds'} registrado (Tasa: Bs. ${rate.toFixed(2).replace('.', ',')}).`);
+      const detail = created.payable
+        ? ` · CxP ${created.payable.payableNumber} generada por ${created.payable.amountUsd.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})} USD`
+        : data.paymentCondition === 'contado'
+          ? ' · Pagado al contado (sin deuda en CxP)'
+          : '';
+      this.showToast(`Movimiento de ${data.quantity} ${mat?.unit || 'uds'} registrado (Tasa: Bs. ${rate.toFixed(2).replace('.', ',')}).${detail}`);
       await this.refreshAllData();
+      return created;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al registrar movimiento';
       this.showToast(msg, 'error');
@@ -1942,6 +1968,39 @@ export class ErpApiService {
     }
   }
 
+  public async setEmployeeStatus(id: string, status: 'activo' | 'inactivo' | 'vacaciones') {
+    try {
+      const res = await firstValueFrom<Employee>(
+        this.http.patch<Employee>(`/api/payroll/employees/${encodeURIComponent(id)}`, {status})
+      );
+      this.showToast(
+        status === 'inactivo'
+          ? `Operario "${res.fullName}" dado de baja.`
+          : status === 'vacaciones'
+            ? `Operario "${res.fullName}" marcado de vacaciones.`
+            : `Operario "${res.fullName}" reactivado.`
+      );
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar el operario';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deleteEmployee(id: string) {
+    try {
+      await firstValueFrom(this.http.delete(`/api/payroll/employees/${encodeURIComponent(id)}`));
+      this.showToast('Operario eliminado al no tener pagos registrados.');
+      await this.refreshAllData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar el operario';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
   // --- EXPENSES & OPERATING OUTFLOWS ---
   public async addExpense(data: Omit<Expense, 'id' | 'expenseNumber'>) {
     try {
@@ -2118,6 +2177,25 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
+      if (err instanceof HttpErrorResponse && err.status === 409) {
+        const detail = err.error as {
+          error?: string;
+          origin?: string;
+          payableNumber?: string;
+        };
+        const originLabel =
+          detail.origin === 'compra_inventario'
+            ? 'Compra de Inventario'
+            : detail.origin === 'manual'
+              ? 'CxP Manual'
+              : '';
+        this.showToast(
+          detail.error ||
+            `Ya existe una CxP para este proveedor y documento${originLabel ? ` (${originLabel})` : ''}.`,
+          'error'
+        );
+        throw err;
+      }
       const msg = err instanceof Error ? err.message : 'Error al registrar la factura por pagar';
       this.showToast(msg, 'error');
       throw err;

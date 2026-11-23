@@ -107,8 +107,9 @@ describe('Fase 1 — plan de cuentas y asientos', () => {
     expect(entry.periodKey).toBe('2026-09');
   });
 
-  it('genera un asiento automático balanceado por gasto y no lo duplica', () => {
+  it('genera un asiento automático balanceado por entrada de inventario y no lo duplica', () => {
     const material = dbInstance.getRawMaterials()[0];
+    const stockBefore = material.currentStock;
     const movement = dbInstance.addInventoryMovement({
       materialId: material.id,
       materialName: material.name,
@@ -129,7 +130,56 @@ describe('Fase 1 — plan de cuentas y asientos', () => {
     expect(entries[0].status).toBe('confirmado');
     expect(entries[0].totalDebit).toBe(70);
     expect(entries[0].totalCredit).toBe(70);
-    expect(entries[0].lines[0].accountCode).toBe('1.03.01');
+    expect(entries[0].lines.map((line) => line.accountCode)).toEqual(['1.03.01', '1.01.02']);
+    expect(dbInstance.getRawMaterials().find((item) => item.id === material.id)!.currentStock).toBe(
+      stockBefore + 1
+    );
+    expect(
+      dbInstance.getAccountingEntries().filter((entry) =>
+        entry.sourceType === 'inventario' && entry.sourceId === movement.id
+      )
+    ).toHaveLength(1);
+  });
+
+  it('asienta las entradas a crédito contra acreencias y las de contado contra caja', () => {
+    const material = dbInstance.getRawMaterials()[0];
+    const base = {
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada' as const,
+      quantity: 1,
+      costPerUnit: 10,
+      totalCost: 10,
+      exchangeRateUsed: 50,
+      date: '2026-08-12',
+      performedBy: 'Prueba',
+    };
+    const suffix = Date.now().toString(36);
+
+    const cash = dbInstance.addInventoryMovement({
+      ...base,
+      referenceDoc: `F-CONT-CASH-${suffix}`,
+      paymentCondition: 'contado',
+      paymentMethod: 'efectivo_usd',
+      bankCode: 'BNC',
+      bankName: 'Banco de Venezuela',
+      paymentReference: `TRANSF-${suffix}`,
+    } as Parameters<typeof dbInstance.addInventoryMovement>[0]);
+    const credit = dbInstance.addInventoryMovement({
+      ...base,
+      referenceDoc: `F-CONT-CRED-${suffix}`,
+      paymentCondition: 'credito',
+    } as Parameters<typeof dbInstance.addInventoryMovement>[0]);
+
+    const entryFor = (sourceId: string) =>
+      dbInstance
+        .getAccountingEntries()
+        .find((entry) => entry.sourceType === 'inventario' && entry.sourceId === sourceId)!;
+    expect(entryFor(cash.id).lines.map((line) => line.accountCode)).toEqual(['1.03.01', '1.01.01']);
+    expect(entryFor(cash.id).description).toContain(`Banco BNC · Ref. TRANSF-${suffix}`);
+    expect(entryFor(credit.id).lines.map((line) => line.accountCode)).toEqual(['1.03.01', '2.01.01']);
+    expect(entryFor(credit.id).description).not.toContain('Banco BNC');
+    expect(entryFor(credit.id).status).toBe('confirmado');
   });
 
   it('respeta el flag accountingEnabled deshabilitado', () => {

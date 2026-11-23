@@ -11,6 +11,7 @@
       </p>
     </div>
 
+    <app-module-help module="accounts_receivable" label="Ver ayuda de Cuentas por Cobrar" />
     @if (canExport()) {
       <div class="flex flex-wrap items-center gap-2">
         <button
@@ -100,7 +101,7 @@
   </div>
 
   <!-- Filtros -->
-  <div class="border-t border-stone-200 pt-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+  <div class="border-t border-stone-200 pt-4 mb-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
     <div>
       <label for="cxc-search" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Buscar</label>
       <input
@@ -136,6 +137,19 @@
       >
         @for (option of bucketOptions; track option) {
           <option [value]="option">{{ filterBucketLabel(option) }}</option>
+        }
+      </select>
+    </div>
+    <div>
+      <label for="cxc-document-kind" class="block text-[10px] font-bold uppercase text-stone-500 mb-1">Tipo de documento</label>
+      <select
+        id="cxc-document-kind"
+        [value]="documentKindFilter()"
+        (change)="documentKindFilter.set($any($event.target).value)"
+        class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-xs text-stone-900"
+      >
+        @for (option of documentKindOptions; track option) {
+          <option [value]="option">{{ documentKindLabel(option) }}</option>
         }
       </select>
     </div>
@@ -271,8 +285,24 @@
                 <span class="font-mono text-[10px] text-stone-500">{{ row.customerTaxId }}</span>
               </td>
               <td class="py-2.5 px-2">
-                <span class="font-mono font-semibold text-stone-800 block">{{ row.orderNumber }}</span>
-                <span class="font-mono text-[10px] text-stone-500">{{ row.invoiceNumber || 'Sin factura' }}</span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border"
+                  [class.bg-emerald-50]="row.documentKind === 'factura_fiscal'"
+                  [class.text-emerald-800]="row.documentKind === 'factura_fiscal'"
+                  [class.border-emerald-200]="row.documentKind === 'factura_fiscal'"
+                  [class.bg-amber-50]="row.documentKind === 'nota_entrega'"
+                  [class.text-amber-900]="row.documentKind === 'nota_entrega'"
+                  [class.border-amber-200]="row.documentKind === 'nota_entrega'"
+                  [class.bg-sky-50]="row.documentKind === 'sin_documento'"
+                  [class.text-sky-800]="row.documentKind === 'sin_documento'"
+                  [class.border-sky-200]="row.documentKind === 'sin_documento'"
+                >
+                  {{ row.documentKind === 'factura_fiscal' ? 'FACTURA FISCAL' : row.documentKind === 'nota_entrega' ? 'NOTA DE ENTREGA' : 'SIN DOCUMENTO' }}
+                </span>
+                <span class="font-mono font-semibold text-stone-800 block mt-1">{{ row.orderNumber }}</span>
+                <span class="font-mono text-[10px] text-stone-500 block" [title]="row.documentLabel">{{ row.documentLabel }}</span>
+                @if (row.hasDeliveryNote && row.documentKind !== 'nota_entrega') {
+                  <span class="text-[9px] text-amber-700 block">{{ row.order.deliveryNoteNumber || 'Nota de entrega' }}</span>
+                }
               </td>
               <td class="py-2.5 px-2">
                 <span class="text-[10px] px-1.5 py-0.5 rounded border"
@@ -297,8 +327,15 @@
                 {{ displayAmount(row.collectedUsd, row) | veCurrency: currency() }}
               </td>
               <td class="py-2.5 px-2 text-right font-mono text-stone-600">
-                <span class="block">C {{ displayAmount(row.creditNotesUsd, row) | veCurrency: currency() }}</span>
-                <span class="block">D {{ displayAmount(row.debitNotesUsd, row) | veCurrency: currency() }}</span>
+                <span class="block" [title]="row.noteDetails.join(' | ') || 'Sin notas de crédito'">
+                  C {{ displayAmount(row.creditNotesUsd, row) | veCurrency: currency() }}
+                </span>
+                <span class="block" [title]="row.noteDetails.join(' | ') || 'Sin notas de débito'">
+                  D {{ displayAmount(row.debitNotesUsd, row) | veCurrency: currency() }}
+                </span>
+                @if (row.noteDetails.length) {
+                  <span class="block text-[9px] text-sky-700 font-sans">{{ row.noteDetails.join(' · ') }}</span>
+                }
               </td>
               <td class="py-2.5 px-2 text-right font-mono font-bold text-amber-950 bg-amber-50/30">
                 {{ displayAmount(row.balanceUsd, row) | veCurrency: currency() }}

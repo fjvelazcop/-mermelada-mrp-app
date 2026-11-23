@@ -2,8 +2,9 @@ import {ChangeDetectionStrategy, Component, computed, inject, signal} from '@ang
 import {CommonModule} from '@angular/common';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
-import {Expense, ExpenseCategoryConfig, ExpenseTaxCategory} from '../../core/models/erp.models';
+import {AccountingBookType, Expense, ExpenseCategoryConfig, ExpenseTaxCategory} from '../../core/models/erp.models';
 import {VeCurrencyPipe} from '../../core/pipes/ve-currency.pipe';
 import {
   VENEZUELAN_BANKS,
@@ -33,7 +34,7 @@ export interface CategoryBudgetAnalysis {
 @Component({
   selector: 'app-expenses',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog, SupplierAutocompleteComponent, AccountsPayableComponent],
+  imports: [CommonModule, ReactiveFormsModule, MatIconModule, VeCurrencyPipe, AuditLog, SupplierAutocompleteComponent, AccountsPayableComponent, ModuleHelpComponent],
   templateUrl: './expenses.html',
 })
 export class ExpensesComponent {
@@ -365,6 +366,30 @@ export class ExpensesComponent {
   public expensesAuditCount = computed<number>(() => {
     return this.api.auditLogs().filter(l => l.module === 'gastos').length;
   });
+
+  /** Conteos reales para las tarjetas de libros de la pestaña de preparación. */
+  public purchasesBookCount = computed<number>(() =>
+    this.api.expenses().filter(e => e.fiscalBookEligible).length
+  );
+  public salesBookCount = computed<number>(() => this.api.fiscalInvoices().length);
+  public accountingEntriesCount = computed<number>(() => this.api.accountingEntries().length);
+
+  /** Última exportación de libros registrada en la bitácora (si existe). */
+  public lastBookExportLabel = computed<string>(() => {
+    const entry = this.api
+      .auditLogs()
+      .find(log => log.module === 'contabilidad' && /export|libro/i.test(log.title));
+    if (!entry) return 'Sin exportaciones registradas';
+    return new Date(entry.timestamp).toLocaleString('es-VE', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  });
+
+  /** Abre el libro correspondiente en Contabilidad, preseleccionando el tipo. */
+  public openAccountingBook(type: AccountingBookType): void {
+    this.api.navigateToAccountingBook(type);
+  }
 
   // Category Color Badge Helpers
   public getCategoryColorClass(color?: string): string {

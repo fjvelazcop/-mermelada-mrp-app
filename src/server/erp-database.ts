@@ -49,6 +49,7 @@ import {
   ExpenseCategoryConfig,
   MaterialCategoryConfig,
   Payable,
+  PayableOrigin,
   PayablePayment,
   PayableStatus,
   Supplier,
@@ -2224,6 +2225,20 @@ export class ErpDatabase {
 
   public getMovements(): InventoryMovement[] {
     return this.state.inventoryMovements;
+  }
+
+  /** Completa metadatos de la compra (p. ej. el CxP generado) sin recalcular stock. */
+  public updateInventoryMovement(
+    id: string,
+    updates: Partial<InventoryMovement>
+  ): InventoryMovement | null {
+    const index = this.state.inventoryMovements.findIndex((mov) => mov.id === id);
+    if (index === -1) return null;
+    this.state.inventoryMovements[index] = {
+      ...this.state.inventoryMovements[index],
+      ...updates,
+    };
+    return this.state.inventoryMovements[index];
   }
 
   // --- FINISHED GOODS ---
@@ -4957,6 +4972,81 @@ export class ErpDatabase {
     return newEmp;
   }
 
+  /** Un operario tiene pagos si alguna semana registra un neto positivo. */
+  public hasEmployeePayments(employeeId: string): boolean {
+    return this.state.payrollWeeks.some((week) =>
+      week.payments.some(
+        (payment) => payment.employeeId === employeeId && payment.netPaid > 0
+      )
+    );
+  }
+
+  /** El prefijo `update` es requerido por el Proxy que persiste mutaciones. */
+  public updateEmployeeStatus(
+    id: string,
+    status: Employee['status'],
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Employee | null {
+    const employee = this.state.employees.find((item) => item.id === id);
+    if (!employee) return null;
+    const previousStatus = employee.status;
+    employee.status = status;
+    const actor = this.manualOrderActor(actorInput);
+    const actionType =
+      status === 'inactivo'
+        ? 'operario_inactivado'
+        : status === 'vacaciones'
+          ? 'operario_vacaciones'
+          : 'operario_activado';
+    const statusLabel =
+      status === 'inactivo' ? 'dado de baja' : status === 'vacaciones' ? 'de vacaciones' : 'reactivado';
+    this.addAuditLog({
+      module: 'costos',
+      actionType,
+      title: `Operario ${statusLabel}: ${employee.fullName}`,
+      description: `Estado de ${employee.fullName} cambiado de ${previousStatus} a ${status}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: employee.id,
+        itemName: employee.fullName,
+        previousStatus,
+        status,
+      },
+    });
+    return employee;
+  }
+
+  /** Eliminación permitida solo para operarios sin pagos registrados. */
+  public deleteEmployee(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Employee | null {
+    const index = this.state.employees.findIndex((item) => item.id === id);
+    if (index === -1) return null;
+    if (this.hasEmployeePayments(id)) {
+      throw new Error(
+        'El operario ya tiene pagos registrados. Desactívelo para conservar la trazabilidad.'
+      );
+    }
+    const [employee] = this.state.employees.splice(index, 1);
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'costos',
+      actionType: 'operario_eliminado',
+      title: `Operario eliminado: ${employee.fullName}`,
+      description: `Se eliminó a ${employee.fullName} al no tener pagos registrados.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {targetId: employee.id, itemName: employee.fullName},
+    });
+    return employee;
+  }
+
   // --- FISCAL SETTINGS ---
   public getFiscalSettings(): FiscalSettings {
     return this.state.fiscalSettings;
@@ -6552,7 +6642,10 @@ export class ErpDatabase {
     return this.state.expenses || [];
   }
 
-  public addExpense(data: Omit<Expense, 'id' | 'expenseNumber'>): Expense {
+  public addExpense(
+    data: Omit<Expense, 'id' | 'expenseNumber'>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): Expense {
     if (!this.state.expenses) {
       this.state.expenses = [];
     }
@@ -6597,16 +6690,58 @@ export class ErpDatabase {
 
     this.state.expenses.unshift(newExpense);
     this.recordAutomaticEntryForExpense(newExpense);
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'gasto_registrado',
+      title: `Gasto registrado: ${newExpense.expenseNumber}`,
+      description: `${newExpense.concept} · $${newExpense.amountUsd.toFixed(2)} / Bs. ${newExpense.amountBs.toFixed(2)} · ${newExpense.category}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: newExpense.id,
+        targetCode: newExpense.expenseNumber,
+        referenceDoc: newExpense.documentNumber || '',
+        amount: newExpense.amountUsd,
+        year: Number(newExpense.date.slice(0, 4)),
+        month: Number(newExpense.date.slice(5, 7)),
+      },
+    });
     return newExpense;
   }
 
-  public deleteExpense(id: string): boolean {
+  public deleteExpense(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): boolean {
     if (!this.state.expenses) return false;
     const idx = this.state.expenses.findIndex(e => e.id === id);
     if (idx === -1) return false;
-    const [year, month] = this.state.expenses[idx].date.split('-').map(Number);
+    const expense = this.state.expenses[idx];
+    const [year, month] = expense.date.split('-').map(Number);
     this.assertFiscalPeriodOpen(year, month);
     this.state.expenses.splice(idx, 1);
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'gasto_eliminado',
+      title: `Gasto eliminado: ${expense.expenseNumber}`,
+      description: `${expense.concept} · $${expense.amountUsd.toFixed(2)} / Bs. ${expense.amountBs.toFixed(2)}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        targetId: expense.id,
+        targetCode: expense.expenseNumber,
+        referenceDoc: expense.documentNumber || '',
+        amount: expense.amountUsd,
+        year,
+        month,
+      },
+    });
     return true;
   }
 
@@ -6664,6 +6799,252 @@ export class ErpDatabase {
     const payments = this.state.payablePayments || [];
     const filtered = payableId ? payments.filter((item) => item.payableId === payableId) : payments;
     return [...filtered].sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  }
+
+  /** Origen calculado de una CxP, sin persistir columnas nuevas (DB v16). */
+  public describePayableOrigin(payable: Payable): {
+    origin: PayableOrigin;
+    movementId?: string;
+    linkedMovementCount: number;
+    movements: InventoryMovement[];
+  } {
+    const movements = (this.state.inventoryMovements || []).filter(
+      (movement) =>
+        movement.payableId === payable.id && movement.paymentCondition === 'credito'
+    );
+    return {
+      origin: movements.length ? 'compra_inventario' : 'manual',
+      movementId: movements[0]?.id,
+      linkedMovementCount: movements.length,
+      movements,
+    };
+  }
+
+  /** Copia de solo lectura con el origen ya resuelto para respuestas de API. */
+  public decoratePayable(payable: Payable): Payable {
+    const {origin, movementId, linkedMovementCount} = this.describePayableOrigin(payable);
+    return {...payable, origin, movementId, linkedMovementCount};
+  }
+
+  public listPayables(): Payable[] {
+    return this.getPayables().map((payable) => this.decoratePayable(payable));
+  }
+
+  private normalizeDocumentKey(value: string | undefined): string {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  private payableSupplierKeys(payable: Pick<Payable, 'supplierId' | 'supplierName'>): string[] {
+    return [
+      this.normalizeDocumentKey(payable.supplierId),
+      this.normalizeDocumentKey(payable.supplierName),
+    ].filter(Boolean);
+  }
+
+  /**
+   * Clave de negocio compartida por Inventario y CxP manual: proveedor + documento.
+   * Las facturas anuladas no bloquean un registro nuevo.
+   */
+  public findPayableByDocument(input: {
+    supplierId?: string;
+    supplierName?: string;
+    invoiceNumber: string;
+    excludeId?: string;
+  }): Payable | undefined {
+    const documentKey = this.normalizeDocumentKey(input.invoiceNumber);
+    if (!documentKey) return undefined;
+    const supplierKeys = this.payableSupplierKeys({
+      supplierId: input.supplierId,
+      supplierName: input.supplierName || '',
+    });
+    if (!supplierKeys.length) return undefined;
+    return (this.state.payables || []).find((payable) => {
+      if (payable.id === input.excludeId || payable.status === 'anulada') return false;
+      if (this.normalizeDocumentKey(payable.invoiceNumber) !== documentKey) return false;
+      return this.payableSupplierKeys(payable).some((key) => supplierKeys.includes(key));
+    });
+  }
+
+  private inventoryPurchaseLineKey(
+    movement: Pick<InventoryMovement, 'materialId' | 'referenceDoc' | 'quantity' | 'costPerUnit' | 'date'>
+  ): string {
+    return [
+      String(movement.materialId || ''),
+      this.normalizeDocumentKey(movement.referenceDoc),
+      String(movement.quantity),
+      String(movement.costPerUnit),
+      String(movement.date || ''),
+    ].join('|');
+  }
+
+  /** Devuelve la línea de compra ya vinculada a la CxP, si existe. */
+  public findInventoryPurchaseLine(
+    payable: Payable,
+    movement: Pick<InventoryMovement, 'materialId' | 'referenceDoc' | 'quantity' | 'costPerUnit' | 'date'>
+  ): InventoryMovement | undefined {
+    const lineKey = this.inventoryPurchaseLineKey(movement);
+    return this.describePayableOrigin(payable).movements.find(
+      (candidate) => this.inventoryPurchaseLineKey(candidate) === lineKey
+    );
+  }
+
+  /** ¿Esta línea de compra ya está vinculada a la CxP indicada? */
+  public hasInventoryPurchaseLine(
+    payable: Payable,
+    movement: Pick<InventoryMovement, 'materialId' | 'referenceDoc' | 'quantity' | 'costPerUnit' | 'date'>
+  ): boolean {
+    return !!this.findInventoryPurchaseLine(payable, movement);
+  }
+
+  /**
+   * Crea, reutiliza o agrega líneas a la CxP de una compra a crédito.
+   * Idempotente por proveedor + documento y por línea de movimiento.
+   */
+  public upsertPayableForInventoryPurchase(
+    movement: InventoryMovement,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ):
+    | {ok: true; payable: Payable; reused: boolean; updated: boolean}
+    | {
+        ok: false;
+        code: 'DUPLICATE_PAYABLE' | 'PAYABLE_CLOSED';
+        error: string;
+        payable: Payable;
+        origin: PayableOrigin;
+        movementId?: string;
+      } {
+    const invoiceNumber = String(movement.referenceDoc || '').trim();
+    const existing = this.findPayableByDocument({
+      supplierId: movement.supplierId,
+      supplierName: movement.supplierNameSnapshot,
+      invoiceNumber,
+    });
+
+    const linkMovement = (payable: Payable): void => {
+      this.updateInventoryMovement(movement.id, {
+        payableId: payable.id,
+        payableNumber: payable.payableNumber,
+      });
+      movement.payableId = payable.id;
+      movement.payableNumber = payable.payableNumber;
+    };
+
+    if (!existing) {
+      const supplier = movement.supplierId
+        ? this.getSuppliers().find((candidate) => candidate.id === movement.supplierId)
+        : undefined;
+      const dueDate =
+        movement.dueDate && movement.dueDate >= movement.date ? movement.dueDate : movement.date;
+      const payable = this.addPayable(
+        {
+          supplierId: supplier?.id || movement.supplierId,
+          supplierName: supplier?.businessName || movement.supplierNameSnapshot || 'Proveedor',
+          taxId: supplier?.taxId || movement.supplierTaxIdSnapshot,
+          invoiceNumber,
+          issueDate: movement.date,
+          dueDate,
+          amountUsd: movement.totalCost,
+          exchangeRateUsed: movement.exchangeRateUsed,
+          amountBs: movement.totalCostBs,
+          category: 'materia_prima',
+          notes: `Compra de inventario · ${movement.materialName}${
+            movement.notes ? ` · ${movement.notes}` : ''
+          }`,
+        },
+        actorInput
+      );
+      linkMovement(payable);
+      return {
+        ok: true,
+        payable: this.decoratePayable(payable),
+        reused: false,
+        updated: false,
+      };
+    }
+
+    const info = this.describePayableOrigin(existing);
+    const lineKey = this.inventoryPurchaseLineKey(movement);
+    if (
+      info.movements.some(
+        (candidate) => this.inventoryPurchaseLineKey(candidate) === lineKey
+      )
+    ) {
+      linkMovement(existing);
+      return {
+        ok: true,
+        payable: this.decoratePayable(existing),
+        reused: true,
+        updated: false,
+      };
+    }
+
+    const decorated = this.decoratePayable(existing);
+    if (info.origin === 'manual') {
+      return {
+        ok: false,
+        code: 'DUPLICATE_PAYABLE',
+        error: `Ya existe la CxP ${existing.payableNumber} registrada manualmente para este proveedor y el documento ${invoiceNumber}. No la vuelvas a cargar; usa esa factura para el pago.`,
+        payable: decorated,
+        origin: 'manual',
+      };
+    }
+
+    if (existing.status === 'pagada' || existing.status === 'anulada') {
+      return {
+        ok: false,
+        code: 'PAYABLE_CLOSED',
+        error: `La CxP ${existing.payableNumber} ya está ${existing.status} y no admite nuevas líneas de inventario.`,
+        payable: decorated,
+        origin: 'compra_inventario',
+        movementId: info.movementId,
+      };
+    }
+
+    const lineUsd = Number(movement.totalCost.toFixed(2));
+    const lineBs = Number(
+      (
+        movement.totalCostBs ||
+        Number((movement.totalCost * movement.exchangeRateUsed).toFixed(2))
+      ).toFixed(2)
+    );
+    existing.amountUsd = Number((existing.amountUsd + lineUsd).toFixed(2));
+    existing.amountBs = Number(((existing.amountBs || 0) + lineBs).toFixed(2));
+    existing.notes = [
+      existing.notes,
+      `+ ${movement.materialName} · $${lineUsd.toFixed(2)} / Bs. ${lineBs.toFixed(2)} (${movement.date})`,
+    ]
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 1900);
+    existing.updatedAt = new Date().toISOString();
+    linkMovement(existing);
+
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'payable_actualizado_linea_inventario',
+      title: `Línea de inventario agregada a la CxP ${existing.payableNumber}`,
+      description: `${movement.materialName} · $${lineUsd.toFixed(2)} / Bs. ${lineBs.toFixed(2)}. Documento ${invoiceNumber}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: existing.id,
+        targetCode: existing.payableNumber,
+        referenceDoc: invoiceNumber,
+        movementId: movement.id,
+        amount: lineUsd,
+        origin: 'compra_inventario',
+      },
+    });
+
+    return {
+      ok: true,
+      payable: this.decoratePayable(existing),
+      reused: false,
+      updated: true,
+    };
   }
 
   /** Saldo de una factura: total menos la suma de pagos registrados. */
@@ -6952,7 +7333,10 @@ export class ErpDatabase {
     return this.state.expenseCategories || [];
   }
 
-  public addExpenseCategory(data: Omit<ExpenseCategoryConfig, 'id'>): ExpenseCategoryConfig {
+  public addExpenseCategory(
+    data: Omit<ExpenseCategoryConfig, 'id'>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): ExpenseCategoryConfig {
     if (!this.state.expenseCategories) {
       this.state.expenseCategories = [];
     }
@@ -6963,31 +7347,91 @@ export class ErpDatabase {
       isSystem: false,
     };
     this.state.expenseCategories.push(newCategory);
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'categoria_gasto_creada',
+      title: `Categoría de gasto creada: ${newCategory.name}`,
+      description: `Presupuesto mensual $${newCategory.monthlyBudgetUsd.toFixed(2)}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: newCategory.id,
+        targetCode: newCategory.name,
+        amount: newCategory.monthlyBudgetUsd,
+      },
+    });
     return newCategory;
   }
 
-  public updateExpenseCategory(id: string, updates: Partial<ExpenseCategoryConfig>): ExpenseCategoryConfig | null {
+  public updateExpenseCategory(
+    id: string,
+    updates: Partial<ExpenseCategoryConfig>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): ExpenseCategoryConfig | null {
     if (!this.state.expenseCategories) return null;
     const idx = this.state.expenseCategories.findIndex(c => c.id === id);
     if (idx === -1) return null;
+    const previous = this.state.expenseCategories[idx];
 
     if (updates.monthlyBudgetUsd !== undefined) {
       updates.monthlyBudgetUsd = Number(updates.monthlyBudgetUsd) || 0;
     }
 
     this.state.expenseCategories[idx] = {
-      ...this.state.expenseCategories[idx],
+      ...previous,
       ...updates,
     };
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'categoria_gasto_actualizada',
+      title: `Categoría de gasto actualizada: ${this.state.expenseCategories[idx].name}`,
+      description: `${previous.name} · presupuesto $${previous.monthlyBudgetUsd.toFixed(2)} → $${this.state.expenseCategories[idx].monthlyBudgetUsd.toFixed(2)}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: id,
+        targetCode: this.state.expenseCategories[idx].name,
+        amount: this.state.expenseCategories[idx].monthlyBudgetUsd,
+        changes: [
+          `Presupuesto: $${previous.monthlyBudgetUsd.toFixed(2)} → $${this.state.expenseCategories[idx].monthlyBudgetUsd.toFixed(2)}`,
+        ],
+      },
+    });
     return this.state.expenseCategories[idx];
   }
 
-  public deleteExpenseCategory(id: string): boolean {
+  public deleteExpenseCategory(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): boolean {
     if (!this.state.expenseCategories) return false;
     const idx = this.state.expenseCategories.findIndex(c => c.id === id);
     if (idx === -1) return false;
+    const category = this.state.expenseCategories[idx];
     // Don't allow deletion of system categories if requested, or delete if custom
     this.state.expenseCategories.splice(idx, 1);
+    const actor = this.manualOrderActor(actorInput);
+    this.addAuditLog({
+      module: 'gastos',
+      actionType: 'categoria_gasto_eliminada',
+      title: `Categoría de gasto eliminada: ${category.name}`,
+      description: `Presupuesto mensual $${category.monthlyBudgetUsd.toFixed(2)}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        targetId: id,
+        targetCode: category.name,
+        amount: category.monthlyBudgetUsd,
+      },
+    });
     return true;
   }
 
@@ -7443,17 +7887,39 @@ export class ErpDatabase {
   }
 
   private recordAutomaticEntryForMovement(movement: InventoryMovement): void {
+    // Una entrada a crédito acreencia al proveedor (2.01.01); de contado se
+    // asienta contra Caja/Bancos y no queda deuda abierta en CxP. Solo "credito"
+    // explícito genera acreencia: coincide con el default "contado" del API y
+    // evita asientos 2.01.01 sin CxP en importaciones directas.
+    const purchaseOnCredit =
+      movement.type === 'entrada' && movement.paymentCondition === 'credito';
+    const cashAccount =
+      movement.paymentMethod === 'efectivo_usd' ||
+      movement.paymentMethod === 'efectivo_bs'
+        ? '1.01.01'
+        : '1.01.02';
     const codes =
       movement.type === 'entrada'
-        ? {debit: '1.03.01', credit: '2.01.01'}
+        ? {debit: '1.03.01', credit: purchaseOnCredit ? '2.01.01' : cashAccount}
         : movement.type === 'salida_produccion'
           ? {debit: '6.01.01', credit: '1.03.01'}
           : {debit: '5.01.02', credit: '1.03.01'};
+    // Trazabilidad del pago de contado en el asiento: no cambia cuentas ni
+    // reglas de Fase 0, solo hace consultable el banco y la referencia capturados.
+    const cashTrace =
+      movement.type === 'entrada' && !purchaseOnCredit
+        ? [
+            movement.bankCode ? `Banco ${movement.bankCode}` : '',
+            movement.paymentReference ? `Ref. ${movement.paymentReference}` : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : '';
     this.recordAutomaticEntry({
       sourceType: 'inventario',
       sourceId: movement.id,
       date: movement.date,
-      description: `Movimiento ${movement.type} · ${movement.materialName}`,
+      description: `Movimiento ${movement.type} · ${movement.materialName}${cashTrace ? ` · ${cashTrace}` : ''}`,
       lines: [
         {accountCode: codes.debit, debit: Number(movement.totalCost.toFixed(2))},
         {accountCode: codes.credit, credit: Number(movement.totalCost.toFixed(2))},

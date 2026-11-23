@@ -1,6 +1,7 @@
 import {ChangeDetectionStrategy, Component, inject, signal, computed} from '@angular/core';
 import {ReactiveFormsModule, FormGroup, FormControl, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   RawMaterial,
@@ -11,6 +12,11 @@ import {
 } from '../../core/models/erp.models';
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
+import {
+  VENEZUELAN_BANKS,
+  bankLabel,
+} from '../../core/data/venezuelan-banks';
+import {paymentTermsToDays} from '../accounts-payable/payables.calculations';
 
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
 import {
@@ -20,19 +26,81 @@ import {
 import {
   filterMaterials,
   filterMovements,
+  MovementPaymentLabel,
+  movementPaymentLabel,
   MovementTypeFilter,
   normalizeSearchText,
   summarizeMovementsByMaterial,
 } from './inventory.filters';
 
+export interface StockConsolidationRow {
+  material: RawMaterial;
+  stockKg: number;
+  valueUsd: number;
+  valueBs: number;
+  movementCount: number;
+  lastMovement?: InventoryMovement;
+  recent: boolean;
+}
+
+export interface StockConsolidationGroup {
+  key: string;
+  label: string;
+  materialCount: number;
+  stockKg: number;
+  valueUsd: number;
+  valueBs: number;
+}
+
+export interface StockConsolidation {
+  byMaterial: StockConsolidationRow[];
+  byGroup: StockConsolidationGroup[];
+  totalKg: number;
+  totalUsd: number;
+  totalBs: number;
+}
+
 @Component({
   selector: 'app-inventory',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, AuditLog, SupplierAutocompleteComponent],
+  imports: [MatIconModule, ReactiveFormsModule, VeCurrencyPipe, VeNumberPipe, AuditLog, SupplierAutocompleteComponent, ModuleHelpComponent],
   templateUrl: './inventory.html',
 })
 export class InventoryComponent {
   public api = inject(ErpApiService);
+
+  public readonly todayIso = new Date().toISOString().slice(0, 10);
+  public readonly banks = VENEZUELAN_BANKS;
+  public readonly bankLabel = bankLabel;
+  public readonly purchasePaymentMethods = [
+    {value: 'transferencia_bancaria', label: 'Transferencia bancaria'},
+    {value: 'pago_movil', label: 'Pago móvil'},
+    {value: 'efectivo_usd', label: 'Efectivo USD'},
+    {value: 'efectivo_bs', label: 'Efectivo Bs.'},
+    {value: 'zelle', label: 'Zelle'},
+    {value: 'tarjeta', label: 'Tarjeta'},
+  ] as const;
+
+  constructor() {
+    const refreshDueDate = () => this.updateDueDate();
+    this.movementForm.controls.creditDays.valueChanges.subscribe(refreshDueDate);
+    this.movementForm.controls.paymentCondition.valueChanges.subscribe(refreshDueDate);
+    this.movementForm.controls.type.valueChanges.subscribe(refreshDueDate);
+  }
+
+  /** Vencimiento derivado de los días de crédito capturados. */
+  private updateDueDate(): void {
+    const value = this.movementForm.getRawValue();
+    if (value.type !== 'entrada' || value.paymentCondition !== 'credito') {
+      this.movementForm.controls.dueDate.setValue('', {emitEvent: false});
+      return;
+    }
+    const issue = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00`);
+    issue.setDate(issue.getDate() + Math.max(0, Number(value.creditDays) || 0));
+    this.movementForm.controls.dueDate.setValue(issue.toISOString().slice(0, 10), {
+      emitEvent: false,
+    });
+  }
 
   public activeInventoryTab = signal<'stock' | 'movements' | 'audit'>('stock');
   public selectedCategory = signal<string>('all');
@@ -49,6 +117,8 @@ export class InventoryComponent {
   public movementDateFrom = signal<string>('');
   public movementDateTo = signal<string>('');
   public expandedMovement = signal<string | null>(null);
+  /** Resumen persistente de la última compra registrada (contado o CxP). */
+  public lastPurchaseResult = signal<string | null>(null);
 
   // Currency view toggle: 'USD' ($) or 'Bs' (Bolívares)
   public currencyMode = signal<'USD' | 'Bs'>('USD');
@@ -66,6 +136,14 @@ export class InventoryComponent {
     supplierId: new FormControl<string>('', {nonNullable: true}),
     supplierNameSnapshot: new FormControl<string>('', {nonNullable: true}),
     supplierTaxIdSnapshot: new FormControl<string>('', {nonNullable: true}),
+    paymentCondition: new FormControl<'contado' | 'credito'>('contado', {nonNullable: true}),
+    paymentMethod: new FormControl<
+      'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta'
+    >('transferencia_bancaria', {nonNullable: true}),
+    bankCode: new FormControl<string>('0134', {nonNullable: true}),
+    paymentReference: new FormControl<string>('', {nonNullable: true}),
+    creditDays: new FormControl<number>(30, {nonNullable: true}),
+    dueDate: new FormControl<string>('', {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
   });
 
@@ -132,6 +210,11 @@ export class InventoryComponent {
   public finishedGoods = computed(() => this.api.finishedGoods());
   public movements = computed(() => this.api.inventoryMovements());
 
+  /** Condición de pago y CxP mostradas en el historial de movimientos. */
+  public paymentLabel(movement: InventoryMovement): MovementPaymentLabel {
+    return movementPaymentLabel(movement);
+  }
+
   public filteredMovements = computed(() =>
     filterMovements(this.movements(), {
       search: this.movementSearch(),
@@ -146,9 +229,91 @@ export class InventoryComponent {
     summarizeMovementsByMaterial(this.filteredMovements())
   );
 
+  /** Consolidado auditable: kilos y valoración por insumo y por agrupación. */
+  public stockConsolidation = computed<StockConsolidation>(() => {
+    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const movements = this.api.inventoryMovements();
+    const today = new Date(this.todayIso);
+    const byMaterial: StockConsolidationRow[] = this.filteredMaterials().map((material) => {
+      const materialMovements = movements
+        .filter((movement) => movement.materialId === material.id)
+        .sort((a, b) => b.date.localeCompare(a.date));
+      const lastMovement = materialMovements[0];
+      const daysSince = lastMovement
+        ? Math.floor((today.getTime() - new Date(`${lastMovement.date}T00:00:00`).getTime()) / 86_400_000)
+        : Number.POSITIVE_INFINITY;
+      const kg =
+        material.unit === 'kg'
+          ? material.currentStock
+          : material.unit === 'g'
+            ? material.currentStock / 1000
+            : 0;
+      return {
+        material,
+        stockKg: Number(kg.toFixed(2)),
+        valueUsd: Number((material.currentStock * material.costPerUnit).toFixed(2)),
+        valueBs: Number((material.currentStock * material.costPerUnit * rate).toFixed(2)),
+        movementCount: materialMovements.length,
+        lastMovement,
+        recent: daysSince >= 0 && daysSince <= 7,
+      };
+    });
+
+    const groups = new Map<string, StockConsolidationGroup>();
+    for (const row of byMaterial) {
+      const name = row.material.name.toLowerCase();
+      const isGuava = name.includes('guayaba') || row.material.code === 'MP-FRU-01';
+      const key = isGuava ? 'guayaba' : row.material.category;
+      const label = isGuava ? 'Guayaba' : this.categoryLabel(row.material.category);
+      const group =
+        groups.get(key) || {
+          key,
+          label,
+          materialCount: 0,
+          stockKg: 0,
+          valueUsd: 0,
+          valueBs: 0,
+        };
+      group.materialCount += 1;
+      group.stockKg += row.stockKg;
+      group.valueUsd += row.valueUsd;
+      group.valueBs += row.valueBs;
+      groups.set(key, group);
+    }
+
+    const byGroup = [...groups.values()]
+      .map((group) => ({
+        ...group,
+        stockKg: Number(group.stockKg.toFixed(2)),
+        valueUsd: Number(group.valueUsd.toFixed(2)),
+        valueBs: Number(group.valueBs.toFixed(2)),
+      }))
+      .sort((a, b) => b.stockKg - a.stockKg);
+
+    return {
+      byMaterial,
+      byGroup,
+      totalKg: Number(byMaterial.reduce((sum, row) => sum + row.stockKg, 0).toFixed(2)),
+      totalUsd: Number(byMaterial.reduce((sum, row) => sum + row.valueUsd, 0).toFixed(2)),
+      totalBs: Number(byMaterial.reduce((sum, row) => sum + row.valueBs, 0).toFixed(2)),
+    };
+  });
+
   public inventoryAuditCount = computed(() =>
     this.api.auditLogs().filter(l => l.module === 'inventario').length
   );
+
+  /** Confirmación visible del efecto contable de la compra que se va a registrar. */
+  public purchasePaymentSummary = computed<string>(() => {
+    const value = this.movementForm.getRawValue();
+    const totalUsd = (Number(value.quantity) || 0) * (Number(value.costPerUnit) || 0);
+    if (value.type !== 'entrada') return '';
+    if (value.paymentCondition === 'credito') {
+      return `Se generará una Cuenta por Pagar por $${formatVeNumber(totalUsd, 2)} con vencimiento ${value.dueDate || 'N/D'} vinculada a ${value.referenceDoc || 'sin documento'}.`;
+    }
+    const method = this.purchasePaymentMethods.find((item) => item.value === value.paymentMethod);
+    return `Compra de contado por $${formatVeNumber(totalUsd, 2)} pagada con ${method?.label || 'efectivo'}. No quedará deuda abierta en CxP.`;
+  });
 
   public openMovementModal(mat?: RawMaterial) {
     const activeRate = this.api.exchangeRates()?.currentUsd || 48.35;
@@ -177,6 +342,16 @@ export class InventoryComponent {
         supplierTaxIdSnapshot: '',
       });
     }
+    this.movementForm.patchValue({
+      paymentCondition: 'contado',
+      paymentMethod: 'transferencia_bancaria',
+      bankCode: '0134',
+      paymentReference: '',
+      creditDays: 30,
+      dueDate: '',
+      notes: '',
+    });
+    this.updateDueDate();
     this.isMovementModalOpen.set(true);
   }
 
@@ -192,6 +367,12 @@ export class InventoryComponent {
       supplierNameSnapshot: selection.businessName,
       supplierTaxIdSnapshot: selection.taxId,
     });
+    const supplier = this.api.suppliers().find((item) => item.id === selection.supplierId);
+    const termsDays = paymentTermsToDays(supplier?.paymentTerms);
+    if (termsDays > 0 && this.movementForm.controls.paymentCondition.value === 'credito') {
+      this.movementForm.controls.creditDays.setValue(termsDays, {emitEvent: false});
+    }
+    this.updateDueDate();
   }
 
   public async submitMovement() {
@@ -204,7 +385,29 @@ export class InventoryComponent {
       );
       return;
     }
-    await this.api.recordMovement({
+    if (v.type === 'entrada' && v.paymentCondition === 'credito') {
+      if (!v.supplierId || !v.referenceDoc.trim()) {
+        this.api.showToast(
+          'Para una compra a crédito selecciona el proveedor y captura el número de factura.',
+          'error'
+        );
+        return;
+      }
+      const duplicate = this.api.payables().find(
+        (payable) =>
+          payable.status !== 'anulada' &&
+          payable.supplierId === v.supplierId &&
+          payable.invoiceNumber.trim().toLowerCase() === v.referenceDoc.trim().toLowerCase()
+      );
+      if (duplicate) {
+        this.api.showToast(
+          `Ya existe la CxP ${duplicate.payableNumber} para este proveedor y factura.`,
+          'error'
+        );
+        return;
+      }
+    }
+    const created = await this.api.recordMovement({
       materialId: v.materialId,
       type: v.type,
       quantity: Number(v.quantity),
@@ -215,7 +418,31 @@ export class InventoryComponent {
       supplierNameSnapshot: v.supplierNameSnapshot || undefined,
       supplierTaxIdSnapshot: v.supplierTaxIdSnapshot || undefined,
       notes: v.notes,
+      paymentCondition: v.type === 'entrada' ? v.paymentCondition : undefined,
+      paymentMethod: v.type === 'entrada' ? v.paymentMethod : undefined,
+      bankCode: v.type === 'entrada' ? v.bankCode : undefined,
+      paymentReference: v.type === 'entrada' ? v.paymentReference : undefined,
+      creditDays:
+        v.type === 'entrada' && v.paymentCondition === 'credito'
+          ? Number(v.creditDays)
+          : undefined,
+      dueDate:
+        v.type === 'entrada' && v.paymentCondition === 'credito'
+          ? v.dueDate
+          : undefined,
     });
+
+    if (v.type === 'entrada') {
+      const total = Number(v.quantity) * Number(v.costPerUnit);
+      const materialName = this.api.rawMaterials().find(m => m.id === v.materialId)?.name || v.materialId;
+      const paymentDetail = created.payable
+        ? `CxP ${created.payable.payableNumber} por ${formatVeNumber(total, 2)} USD, vencimiento ${created.payable.dueDate}.`
+        : `Contado (${v.paymentMethod}) por ${formatVeNumber(total, 2)} USD sin deuda abierta.`;
+      this.lastPurchaseResult.set(
+        `${materialName} · Doc. ${v.referenceDoc || 'S/R'} · ${v.supplierNameSnapshot || 'Sin proveedor'} · ${paymentDetail}`
+      );
+    }
+
     this.closeMovementModal();
   }
 
@@ -325,11 +552,18 @@ export class InventoryComponent {
       `Valoración Total (${isBs ? 'Bs.' : 'USD'})`,
       'Tasa del Día Ref. (Bs./USD)',
       'Proveedor',
+      'Kilos consolidados',
+      'Último movimiento',
+      'Documento / CxP',
     ];
 
+    const consolidationById = new Map(
+      this.stockConsolidation().byMaterial.map(row => [row.material.id, row])
+    );
     const rows = this.filteredMaterials().map(m => {
       const unitCost = isBs ? m.costPerUnit * rate : m.costPerUnit;
       const totalVal = unitCost * m.currentStock;
+      const consolidated = consolidationById.get(m.id);
       return [
         m.code,
         m.name,
@@ -341,6 +575,13 @@ export class InventoryComponent {
         formatVeNumber(totalVal, 2),
         formatVeNumber(rate, 2),
         m.supplier || 'N/A',
+        formatVeNumber(consolidated?.stockKg || 0, 2),
+        consolidated?.lastMovement
+          ? `${consolidated.lastMovement.date} · ${this.movementTypeLabel(consolidated.lastMovement.type)}`
+          : 'S/R',
+        consolidated?.lastMovement?.payableNumber
+          ? `${consolidated.lastMovement.referenceDoc || 'S/R'} · CxP ${consolidated.lastMovement.payableNumber}`
+          : consolidated?.lastMovement?.referenceDoc || 'S/R',
       ];
     });
 
@@ -361,11 +602,18 @@ export class InventoryComponent {
       `Valoración Total (${isBs ? 'Bs.' : 'USD'})`,
       'Tasa Ref. (Bs.)',
       'Proveedor',
+      'Kilos consolidados',
+      'Último movimiento',
+      'Documento / CxP',
     ];
 
+    const consolidationById = new Map(
+      this.stockConsolidation().byMaterial.map(row => [row.material.id, row])
+    );
     const rows = this.filteredMaterials().map(m => {
       const unitCost = isBs ? m.costPerUnit * rate : m.costPerUnit;
       const totalVal = unitCost * m.currentStock;
+      const consolidated = consolidationById.get(m.id);
       return [
         m.code,
         m.name,
@@ -377,6 +625,13 @@ export class InventoryComponent {
         formatVeNumber(totalVal, 2),
         formatVeNumber(rate, 2),
         m.supplier || 'N/A',
+        formatVeNumber(consolidated?.stockKg || 0, 2),
+        consolidated?.lastMovement
+          ? `${consolidated.lastMovement.date} · ${this.movementTypeLabel(consolidated.lastMovement.type)}`
+          : 'S/R',
+        consolidated?.lastMovement?.payableNumber
+          ? `${consolidated.lastMovement.referenceDoc || 'S/R'} · CxP ${consolidated.lastMovement.payableNumber}`
+          : consolidated?.lastMovement?.referenceDoc || 'S/R',
       ];
     });
 
@@ -388,6 +643,7 @@ export class InventoryComponent {
       {
         tasaCambio: `Bs. ${formatVeNumber(rate, 2)} por USD`,
         moneda: isBs ? 'Bolívares (Bs.)' : 'Dólares Estadounidenses (USD)',
+        consolidado: `Total ${formatVeNumber(this.stockConsolidation().totalKg, 2)} kg · ${this.stockConsolidation().byGroup.length} grupos`,
       }
     );
   }
@@ -404,13 +660,20 @@ export class InventoryComponent {
       'Unidad',
       `Costo (${isBs ? 'Bs.' : '$'})`,
       `Total (${isBs ? 'Bs.' : '$'})`,
+      'Kilos consolidados',
+      'Último movimiento',
+      'Documento / CxP',
     ];
 
     let grandTotal = 0;
+    const consolidationById = new Map(
+      this.stockConsolidation().byMaterial.map(row => [row.material.id, row])
+    );
     const rows = this.filteredMaterials().map(m => {
       const unitCost = isBs ? m.costPerUnit * rate : m.costPerUnit;
       const totalVal = unitCost * m.currentStock;
       grandTotal += totalVal;
+      const consolidated = consolidationById.get(m.id);
       return [
         m.code,
         m.name,
@@ -420,6 +683,13 @@ export class InventoryComponent {
         m.unit,
         `${isBs ? 'Bs. ' : '$ '}${formatVeNumber(unitCost, 2)}`,
         `${isBs ? 'Bs. ' : '$ '}${formatVeNumber(totalVal, 2)}`,
+        formatVeNumber(consolidated?.stockKg || 0, 2),
+        consolidated?.lastMovement
+          ? `${consolidated.lastMovement.date} · ${this.movementTypeLabel(consolidated.lastMovement.type)}`
+          : 'S/R',
+        consolidated?.lastMovement?.payableNumber
+          ? `${consolidated.lastMovement.referenceDoc || 'S/R'} · CxP ${consolidated.lastMovement.payableNumber}`
+          : consolidated?.lastMovement?.referenceDoc || 'S/R',
       ];
     });
 
@@ -435,8 +705,16 @@ export class InventoryComponent {
           label: `Valoración Total de Insumos (${isBs ? 'Bs.' : 'USD'})`,
           value: `${isBs ? 'Bs. ' : '$ '}${formatVeNumber(grandTotal, 2)}`,
         },
+        {
+          label: 'Total kilos consolidados',
+          value: `${formatVeNumber(this.stockConsolidation().totalKg, 2)} kg`,
+        },
+        ...this.stockConsolidation().byGroup.map(group => ({
+          label: `${group.label} (${group.materialCount} insumos)`,
+          value: `${formatVeNumber(group.stockKg, 2)} kg · $ ${formatVeNumber(group.valueUsd, 2)}`,
+        })),
       ],
-      notes: `Reporte emitido conforme a la tasa oficial del día de Bs. ${formatVeNumber(rate, 2)}. Separador decimal con coma (,) y miles con punto (.).`,
+      notes: `Reporte emitido conforme a la tasa oficial del día de Bs. ${formatVeNumber(rate, 2)}. Separador decimal con coma (,) y miles con punto (.). Trazabilidad: ${this.stockConsolidation().byMaterial.filter(row => row.recent).length} insumos con movimiento en los últimos 7 días.`,
     });
   }
 
@@ -455,6 +733,8 @@ export class InventoryComponent {
       'Documento / Referencia',
       'Proveedor',
       'RIF / Cédula',
+      'Condición de pago',
+      'CxP generada',
       'Responsable',
     ];
 
@@ -473,6 +753,12 @@ export class InventoryComponent {
         m.referenceDoc || 'S/R',
         m.supplierNameSnapshot || '',
         m.supplierTaxIdSnapshot || '',
+        m.type === 'entrada'
+          ? m.paymentCondition === 'credito'
+            ? 'Crédito'
+            : 'Contado'
+          : 'N/A',
+        m.payableNumber || '-',
         m.performedBy,
       ];
     });
@@ -493,6 +779,8 @@ export class InventoryComponent {
       'Documento de Referencia',
       'Proveedor',
       'RIF / Cédula',
+      'Condición de pago',
+      'CxP generada',
       'Responsable',
     ];
 
@@ -511,6 +799,12 @@ export class InventoryComponent {
         m.referenceDoc || 'S/R',
         m.supplierNameSnapshot || '',
         m.supplierTaxIdSnapshot || '',
+        m.type === 'entrada'
+          ? m.paymentCondition === 'credito'
+            ? 'Crédito'
+            : 'Contado'
+          : 'N/A',
+        m.payableNumber || '-',
         m.performedBy,
       ];
     });
@@ -540,6 +834,8 @@ export class InventoryComponent {
       'Tasa (Bs.)',
       'Documento',
       'Proveedor',
+      'Cond.',
+      'CxP',
     ];
 
     let totalDesembolsos = 0;
@@ -560,6 +856,12 @@ export class InventoryComponent {
         formatVeNumber(itemRate, 2),
         m.referenceDoc || '-',
         m.supplierNameSnapshot || '-',
+        m.type === 'entrada'
+          ? m.paymentCondition === 'credito'
+            ? 'Crédito'
+            : 'Contado'
+          : 'N/A',
+        m.payableNumber || '-',
       ];
     });
 

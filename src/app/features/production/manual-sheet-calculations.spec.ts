@@ -10,6 +10,7 @@ import {
   calculateSheetMerma,
   calculateSheetMatrixTotals,
   calculateTotalKgFromIngredients,
+  describeTotalKgCalculation,
   normalizePresentationUnits,
   reconcileSheet,
   requiresManualPresentationUnits,
@@ -112,6 +113,47 @@ describe('manual sheet calculations', () => {
           20
         )
       ).toBe(5);
+    });
+  });
+
+  describe('describeTotalKgCalculation', () => {
+    it('explica la diferencia entre kilos estimados, capturados y merma', () => {
+      const breakdown = describeTotalKgCalculation(
+        {
+          guavaKg: 381.18,
+          sugarKg: 200,
+          starchKg: 25,
+          chemicalG: 250,
+          acidG: 250,
+        },
+        88.6,
+        466.57
+      );
+
+      expect(breakdown.lines.map((line) => line.kg)).toEqual([
+        381.18, 200, 25, 0.25, 0.25,
+      ]);
+      expect(breakdown.ingredientKg).toBe(606.68);
+      expect(breakdown.estimatedKg).toBe(537.52);
+      expect(breakdown.capturedKg).toBe(466.57);
+      expect(breakdown.isManual).toBe(true);
+      expect(breakdown.mermaKg).toBe(140.11);
+    });
+
+    it('alinea isManual con la señal manual del formulario', () => {
+      const input = {
+        guavaKg: 100,
+        sugarKg: 0,
+        starchKg: 0,
+        chemicalG: 0,
+        acidG: 0,
+      };
+      const overridden = describeTotalKgCalculation(input, 88.6, 88.6, true);
+      expect(overridden.estimatedKg).toBe(88.6);
+      expect(overridden.capturedKg).toBe(88.6);
+      expect(overridden.isManual).toBe(true);
+      expect(describeTotalKgCalculation(input, 88.6, 88.6, false).isManual).toBe(false);
+      expect(describeTotalKgCalculation(input, 88.6, 88.6).isManual).toBe(false);
     });
   });
 
@@ -348,6 +390,48 @@ describe('manual sheet calculations', () => {
         { presentationId: 'cunete', units: 0, assignedKg: 0 },
       ]);
       expect(totals.totalUnits).toBe(0);
+    });
+
+    it('sincroniza 1 frasco de 300 g y 19 cuñetes de 20 kg en la matriz', () => {
+      const totals = calculateSheetMatrixTotals(
+        [
+          {
+            number: 1,
+            totalKg: 466.57,
+            presentationUnits: [
+              {presentationId: 'frasco300', units: 1},
+              {presentationId: 'cunete', units: 19},
+            ],
+          },
+        ],
+        [
+          {id: 'frasco300', presentationKg: 0.3},
+          {id: 'cunete', presentationKg: 20},
+        ]
+      );
+      const marmita = totals.marmitas[0];
+
+      expect(marmita.cells).toEqual([
+        {presentationId: 'frasco300', units: 1, assignedKg: 0.3},
+        {presentationId: 'cunete', units: 19, assignedKg: 380},
+      ]);
+      expect(marmita.units).toBe(20);
+      expect(marmita.assignedKg).toBe(380.3);
+      expect(marmita.estimatedKg).toBe(466.57);
+      expect(marmita.missingKg).toBe(86.27);
+      expect(totals.presentations.map((line) => line.units)).toEqual([1, 19]);
+      expect(totals.totalUnits).toBe(20);
+      expect(totals.assignedKg).toBe(380.3);
+      expect(
+        calculateSheetMerma({
+          guavaKg: 381.18,
+          sugarKg: 200,
+          starchKg: 25,
+          chemicalG: 250,
+          acidG: 250,
+          totalKg: 466.57,
+        })
+      ).toBe(140.11);
     });
   });
 

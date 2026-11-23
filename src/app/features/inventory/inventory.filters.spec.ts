@@ -2,6 +2,7 @@ import {InventoryMovement, RawMaterial} from '../../core/models/erp.models';
 import {
   filterMaterials,
   filterMovements,
+  movementPaymentLabel,
   normalizeSearchText,
   summarizeMovementsByMaterial,
 } from './inventory.filters';
@@ -154,5 +155,68 @@ describe('summarizeMovementsByMaterial', () => {
     expect(summary[0].totalUsd).toBe(16.8);
     expect(summary[0].totalBs).toBe(840);
     expect(summary[0].movementCount).toBe(3);
+  });
+});
+
+describe('movementPaymentLabel', () => {
+  it('muestra contado con banco y referencia, crédito con CxP y vencimiento, y legacy sin inventar datos', () => {
+    expect(
+      movementPaymentLabel(
+        makeMovement({
+          paymentCondition: 'contado',
+          bankCode: '0134',
+          paymentReference: 'TRANSF-889',
+        })
+      )
+    ).toEqual({
+      conditionLabel: 'Contado',
+      conditionTone: 'cash',
+      payableLabel: null,
+      paymentDetail: 'Banco 0134 · Ref. TRANSF-889',
+      dueDateLabel: null,
+    });
+
+    expect(
+      movementPaymentLabel(
+        makeMovement({
+          paymentCondition: 'credito',
+          payableNumber: 'FAP-2026-011',
+          dueDate: '2026-12-17',
+        })
+      )
+    ).toMatchObject({
+      conditionLabel: 'Crédito',
+      conditionTone: 'credit',
+      payableLabel: 'CxP FAP-2026-011',
+      dueDateLabel: '2026-12-17',
+    });
+
+    expect(movementPaymentLabel(makeMovement())).toMatchObject({
+      conditionLabel: 'Contado (legacy)',
+      conditionTone: 'legacy',
+      payableLabel: null,
+    });
+    expect(movementPaymentLabel(makeMovement({paymentCondition: 'credito'})).payableLabel).toBe(
+      'CxP pendiente'
+    );
+  });
+
+  it('busca movimientos por CxP, referencia de pago o banco', () => {
+    const movements = [
+      makeMovement({paymentCondition: 'credito', payableNumber: 'FAP-2026-011'}),
+      makeMovement({id: 'mov-2', paymentReference: 'TRANSF-889'}),
+      makeMovement({id: 'mov-3', bankCode: '0134'}),
+    ];
+    const options = {
+      search: '',
+      materialId: 'all',
+      type: 'all' as const,
+      dateFrom: '',
+      dateTo: '',
+    };
+
+    expect(filterMovements(movements, {...options, search: 'FAP-2026-011'})).toHaveLength(1);
+    expect(filterMovements(movements, {...options, search: 'transf-889'})).toHaveLength(1);
+    expect(filterMovements(movements, {...options, search: '0134'})).toHaveLength(1);
   });
 });

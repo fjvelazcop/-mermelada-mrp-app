@@ -80,12 +80,65 @@ export function filterMovements(
       movement.performedBy,
       movement.type,
       movement.notes,
+      movement.payableNumber,
+      movement.paymentReference,
+      movement.bankCode,
     ]
       .filter(Boolean)
       .map((value) => normalizeSearchText(String(value)))
       .join(' ')
       .includes(term);
   });
+}
+
+export interface MovementPaymentLabel {
+  conditionLabel: string;
+  conditionTone: 'cash' | 'credit' | 'legacy';
+  payableLabel: string | null;
+  paymentDetail: string | null;
+  dueDateLabel: string | null;
+}
+
+/** Etiqueta de condición de pago y CxP para el historial de movimientos. */
+export function movementPaymentLabel(movement: InventoryMovement): MovementPaymentLabel {
+  const paymentDetail = [
+    movement.bankCode ? `Banco ${movement.bankCode}` : '',
+    movement.paymentReference ? `Ref. ${movement.paymentReference}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  if (!movement.paymentCondition) {
+    return {
+      conditionLabel: 'Contado (legacy)',
+      conditionTone: 'legacy',
+      payableLabel: null,
+      paymentDetail: paymentDetail || null,
+      dueDateLabel: null,
+    };
+  }
+
+  if (movement.paymentCondition === 'credito') {
+    return {
+      conditionLabel: 'Crédito',
+      conditionTone: 'credit',
+      payableLabel: movement.payableNumber
+        ? `CxP ${movement.payableNumber}`
+        : movement.payableId
+          ? 'CxP vinculada'
+          : 'CxP pendiente',
+      paymentDetail: null,
+      dueDateLabel: movement.dueDate || null,
+    };
+  }
+
+  return {
+    conditionLabel: 'Contado',
+    conditionTone: 'cash',
+    payableLabel: null,
+    paymentDetail: paymentDetail || null,
+    dueDateLabel: null,
+  };
 }
 
 export interface MaterialMovementSummary {

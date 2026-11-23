@@ -214,6 +214,79 @@ describe('normalized SQLite schema', () => {
     expect(movementRow.supplier_tax_id_snapshot).toBe(supplier.taxId);
   });
 
+  it('persiste la condición de pago y la CxP vinculada de los movimientos de inventario', () => {
+    const material = dbInstance.getRawMaterials()[0];
+    const supplier = dbInstance.getSuppliers()[0];
+    const suffix = Date.now().toString(36);
+
+    const cash = dbInstance.addInventoryMovement({
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 1,
+      costPerUnit: 20,
+      totalCost: 20,
+      exchangeRateUsed: 50,
+      referenceDoc: `F-COND-CASH-${suffix}`,
+      supplierId: supplier.id,
+      supplierNameSnapshot: supplier.businessName,
+      notes: 'Compra cancelada el mismo día',
+      date: '2026-11-16',
+      performedBy: 'Prueba',
+      paymentCondition: 'contado',
+      paymentMethod: 'transferencia_bancaria',
+      bankCode: '0134',
+      bankName: 'Banco de Venezuela',
+      paymentReference: `TRANSF-${suffix}`,
+    } as Parameters<typeof dbInstance.addInventoryMovement>[0]);
+
+    const credit = dbInstance.addInventoryMovement({
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 3,
+      costPerUnit: 10,
+      totalCost: 30,
+      exchangeRateUsed: 50,
+      referenceDoc: `F-COND-CRED-${suffix}`,
+      supplierId: supplier.id,
+      supplierNameSnapshot: supplier.businessName,
+      date: '2026-11-17',
+      performedBy: 'Prueba',
+      paymentCondition: 'credito',
+      creditDays: 30,
+      dueDate: '2026-12-17',
+    } as Parameters<typeof dbInstance.addInventoryMovement>[0]);
+    const linked = dbInstance.upsertPayableForInventoryPurchase(credit);
+    expect(linked.ok).toBe(true);
+    if (!linked.ok) return;
+
+    dbInstance.persist();
+    const state = loadRelationalState()!;
+
+    expect(state.inventoryMovements.find((m) => m.id === cash.id)).toMatchObject({
+      paymentCondition: 'contado',
+      paymentMethod: 'transferencia_bancaria',
+      bankCode: '0134',
+      bankName: 'Banco de Venezuela',
+      paymentReference: `TRANSF-${suffix}`,
+      notes: 'Compra cancelada el mismo día',
+    });
+    expect(state.inventoryMovements.find((m) => m.id === credit.id)).toMatchObject({
+      paymentCondition: 'credito',
+      creditDays: 30,
+      dueDate: '2026-12-17',
+      payableId: linked.payable.id,
+      payableNumber: linked.payable.payableNumber,
+    });
+
+    // La derivación del origen CxP debe sobrevivir al reinicio (misma regla que en vivo).
+    const reloaded = new ErpDatabase();
+    const origin = reloaded.describePayableOrigin(linked.payable);
+    expect(origin.origin).toBe('compra_inventario');
+    expect(origin.linkedMovementCount).toBe(1);
+  });
+
   it('persists accounts, double-entry lines and periods added by migration v14', () => {
     const account = dbInstance.addAccount({
       code: '5.01.04',

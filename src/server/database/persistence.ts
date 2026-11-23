@@ -1022,12 +1022,26 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'inventory_movements', 'supplier_id', 'TEXT');
   ensureColumn(db, 'inventory_movements', 'supplier_name_snapshot', 'TEXT');
   ensureColumn(db, 'inventory_movements', 'supplier_tax_id_snapshot', 'TEXT');
+  // Trazabilidad de compras: condición de pago, cuenta por pagar vinculada y
+  // datos del pago de contado. Columnas aditivas, sin cambio de versión de DB.
+  ensureColumn(db, 'inventory_movements', 'payment_condition', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'payment_method', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'bank_code', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'bank_name', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'payment_reference', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'credit_days', 'INTEGER');
+  ensureColumn(db, 'inventory_movements', 'due_date', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'payable_id', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'payable_number', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'notes', 'TEXT');
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_payable
       ON expenses(payable_id) WHERE payable_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_expenses_supplier ON expenses(supplier_id);
     CREATE INDEX IF NOT EXISTS idx_inventory_movements_supplier
       ON inventory_movements(supplier_id);
+    CREATE INDEX IF NOT EXISTS idx_inventory_movements_payable
+      ON inventory_movements(payable_id);
   `);
 
   const row = db

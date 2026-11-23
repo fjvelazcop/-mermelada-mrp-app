@@ -6,10 +6,11 @@
         <h1 class="text-xl sm:text-2xl font-bold text-stone-900">Contabilidad</h1>
       </div>
       <p class="text-sm text-stone-500 mt-1">
-        Plan de cuentas base y asientos de doble entrada. Pendiente de validación contable (#13).
+        Plan de cuentas base y asientos de doble entrada; libros en borrador/prueba hasta la validación contable (#13).
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
+      <app-module-help module="accounting" label="Ver ayuda de Contabilidad" />
       @if (api.hasPermission('accounting', 'canCreate')) {
         @if (activeTab() === 'accounts') {
           <button
@@ -81,6 +82,83 @@
       <p class="text-2xl font-bold text-stone-900">${{ totalPostedUsd().toFixed(2) }}</p>
     </div>
   </div>
+
+  <section class="rounded-xl border border-amber-200 bg-amber-50/50 p-4 space-y-3" aria-label="Ficha jurídica en borrador">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <mat-icon class="text-amber-700">gavel</mat-icon>
+          <h2 class="text-sm font-bold text-stone-900">Ficha jurídica — borrador / referencia (#13)</h2>
+        </div>
+        <p class="text-[11px] text-stone-600 mt-1">{{ legalEntityDraft.source }}</p>
+      </div>
+      <span class="shrink-0 self-start rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+        Borrador
+      </span>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div class="rounded-lg border border-stone-200 bg-white p-3">
+        <p class="text-[10px] uppercase tracking-wide text-stone-500">Capital social nominal en el acta</p>
+        <p class="text-base font-bold text-stone-900">Bs. {{ legalEntityDraft.capital.amountInActa | number:'1.2-2' }}</p>
+        <p class="text-[11px] text-stone-600">{{ legalEntityDraft.capital.literal }}</p>
+      </div>
+      <div class="rounded-lg border border-stone-200 bg-white p-3">
+        <p class="text-[10px] uppercase tracking-wide text-stone-500">Acciones y valor nominal</p>
+        <p class="text-base font-bold text-stone-900">
+          {{ legalEntityDraft.shares.count | number }} {{ legalEntityDraft.shares.type }}
+        </p>
+        <p class="text-[11px] text-stone-600">
+          Bs. {{ legalEntityDraft.shares.nominalValueBs | number:'1.2-2' }} cada una
+        </p>
+      </div>
+      <div class="rounded-lg border border-stone-200 bg-white p-3">
+        <p class="text-[10px] uppercase tracking-wide text-stone-500">Condición de pago</p>
+        <p class="text-base font-bold text-stone-900">Suscrito y pagado en su totalidad</p>
+        <p class="text-[11px] text-amber-800">Reconversión: consulta contable pendiente (#13), sin conversión automática.</p>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+      <p class="text-xs font-semibold text-amber-900">Aclaración sobre la reconversión monetaria (#13)</p>
+      <p class="text-[11px] leading-relaxed text-amber-900 mt-1">
+        {{ legalEntityDraft.capital.reconversionInquiry }}
+      </p>
+    </div>
+
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-stone-600">Reglas estatutarias</p>
+      <ul class="list-disc pl-5 mt-1 space-y-0.5 text-xs text-stone-700">
+        @for (rule of legalEntityDraft.statutoryRules; track rule) {
+          <li>{{ rule }}</li>
+        }
+      </ul>
+    </div>
+
+    <div class="rounded-lg border border-stone-200 bg-white p-3">
+      <p class="text-xs font-semibold text-stone-800">Referencia para saldos iniciales — sin asiento registrado</p>
+      <p class="text-[11px] text-stone-600 mt-1">
+        Cuenta {{ legalEntityDraft.openingReference.accountCode }} ·
+        {{ legalEntityDraft.openingReference.accountName }} · crédito Bs.
+        {{ legalEntityDraft.openingReference.creditBs | number:'1.2-2' }}.
+        Estado: {{ legalEntityDraft.openingReference.postingStatus }}.
+      </p>
+      <p class="text-[11px] text-amber-800 mt-1">
+        No constituye asiento de apertura ni saldo contable; depende de la reconversión y de la fecha de corte.
+      </p>
+    </div>
+
+    <div>
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-stone-600">
+        Pendiente de validar con el contador (#13) · {{ legalEntityDraft.pendingValidation.length }}
+      </p>
+      <ul class="list-disc pl-5 mt-1 space-y-0.5 text-xs text-stone-700">
+        @for (item of legalEntityDraft.pendingValidation; track item.id) {
+          <li>{{ item.detail }}</li>
+        }
+      </ul>
+    </div>
+  </section>
 
   <nav class="flex flex-wrap gap-2 border-b border-stone-200 pb-2">
     @for (tab of [
@@ -355,6 +433,9 @@
         <div class="p-4 bg-amber-50 border-b border-amber-200 text-xs text-amber-900">
           <p class="font-semibold">
             BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13). No constituye un libro oficial.
+          </p>
+          <p class="mt-1">
+            Ficha jurídica y capital del acta en referencia (#13), sin asiento de apertura registrado.
           </p>
           <p class="mt-1">
             {{ report.metadata.companyName }} · RIF {{ report.metadata.taxId }} ·

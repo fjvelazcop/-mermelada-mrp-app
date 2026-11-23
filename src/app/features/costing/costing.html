@@ -4,9 +4,7 @@
     <div>
       <div class="flex items-center gap-2">
         <h1 class="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight">Estructura de Costos & Precios</h1>
-        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-          Hoja de Excel
-        </span>
+        <app-module-help module="costing" label="Ver ayuda de Costos & Precios" />
       </div>
       <p class="text-xs sm:text-sm text-stone-500 mt-1">
         Cálculo interactivo de Materia Prima, Empaques, Nómina de 10 Trabajadores, Gastos Fijos y Precios con Margen (20%, 25%, 30%)
@@ -46,10 +44,10 @@
         <button
           (click)="resetToImage2Preset()"
           class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg transition-colors"
-          title="Cargar valores exactos de la hoja de cálculo de la Imagen 2"
+          title="Cargar valores de referencia de la Imagen 2"
         >
           <mat-icon class="text-xs text-amber-700">restore</mat-icon>
-          <span class="hidden sm:inline">Hoja Excel</span> (Img 2)
+          <span class="hidden sm:inline">Preset</span> Img 2
         </button>
 
         <button

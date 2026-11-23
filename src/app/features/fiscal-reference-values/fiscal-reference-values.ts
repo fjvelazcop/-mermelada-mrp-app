@@ -1,6 +1,7 @@
 import {ChangeDetectionStrategy, Component, computed, inject, OnInit, signal} from '@angular/core';
 import {FormControl, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
 import {MatIconModule} from '@angular/material/icon';
+import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   AccountingBookSettingsInput,
@@ -16,7 +17,7 @@ import {
 @Component({
   selector: 'app-fiscal-reference-values',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, MatIconModule],
+  imports: [ReactiveFormsModule, MatIconModule, ModuleHelpComponent],
   templateUrl: './fiscal-reference-values.html',
 })
 export class FiscalReferenceValuesComponent implements OnInit {

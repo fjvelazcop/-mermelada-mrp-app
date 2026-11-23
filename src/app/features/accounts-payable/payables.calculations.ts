@@ -4,6 +4,7 @@ import {
   Payable,
   PayableAgingBucket,
   PayableFilters,
+  PayableOrigin,
   PayableRow,
   PayableSupplierSummary,
   PayableTotals,
@@ -79,8 +80,24 @@ export function buildPayableRows(input: BuildPayableRowsInput): PayableRow[] {
     paymentsByPayable.set(payment.payableId, list);
   }
 
+  const movementsByPayable = new Map<
+    string,
+    NonNullable<BuildPayableRowsInput['movements']>
+  >();
+  for (const movement of input.movements ?? []) {
+    if (!movement.payableId) continue;
+    const list = movementsByPayable.get(movement.payableId) ?? [];
+    list.push(movement);
+    movementsByPayable.set(movement.payableId, list);
+  }
+
   return input.payables.map((payable) => {
     const payments = paymentsByPayable.get(payable.id) ?? [];
+    const linkedMovements = (movementsByPayable.get(payable.id) ?? []).filter(
+      (movement) => movement.paymentCondition === 'credito'
+    );
+    const origin: PayableOrigin =
+      payable.origin ?? (linkedMovements.length ? 'compra_inventario' : 'manual');
     const paidUsd = roundMoney(
       payments.reduce(
         (sum, payment) => sum + (Number.isFinite(payment.amountUsd) ? payment.amountUsd : 0),
@@ -127,6 +144,13 @@ export function buildPayableRows(input: BuildPayableRowsInput): PayableRow[] {
       partialPayment: paidUsd > 0 && balanceUsd > 0.01,
       paymentCount: payments.length,
       expenseId: payable.expenseId,
+      origin,
+      movementId: payable.movementId ?? linkedMovements[0]?.id,
+      linkedMovementCount: payable.linkedMovementCount ?? linkedMovements.length,
+      searchHints: linkedMovements.flatMap((movement) => [
+        movement.referenceDoc ?? '',
+        movement.materialName ?? '',
+      ]),
     };
   });
 }
@@ -140,12 +164,14 @@ function matchesSearch(row: PayableRow, search: string): boolean {
     row.payableNumber,
     row.invoiceNumber,
     row.controlNumber ?? '',
+    ...(row.searchHints ?? []),
   ].some((value) => value.toLowerCase().includes(term));
 }
 
 export function filterPayables(rows: PayableRow[], filters: PayableFilters): PayableRow[] {
   return rows.filter((row) => {
     if (!matchesSearch(row, filters.search)) return false;
+    if (filters.origin && filters.origin !== 'todos' && row.origin !== filters.origin) return false;
     if (filters.supplierId && row.supplierId !== filters.supplierId) return false;
     if (filters.bucket !== 'todos' && row.agingBucket !== filters.bucket) return false;
     if (filters.status === 'pendientes' && row.status !== 'pendiente') return false;

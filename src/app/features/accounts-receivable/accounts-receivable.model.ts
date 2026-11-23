@@ -9,6 +9,18 @@ export type ReceivableStatusFilter = 'todos' | 'vigentes' | 'vencidos' | 'parcia
 
 export type ReceivableBucketFilter = 'todos' | AgingBucket;
 
+/** Documento que respalda visualmente el saldo de la fila. */
+export type ReceivableDocumentKind =
+  | 'factura_fiscal'
+  | 'nota_entrega'
+  | 'nota_credito'
+  | 'nota_debito'
+  | 'sin_documento';
+
+export type ReceivableDocumentKindFilter =
+  | 'todos'
+  | ReceivableDocumentKind;
+
 /** Una fila por pedido de venta, con su saldo y su vencimiento. */
 export interface ReceivableRow {
   id: string;
@@ -36,6 +48,14 @@ export interface ReceivableRow {
   /** El pedido figura como cobrado, pero el monto registrado no cubre el total. */
   partialCollection: boolean;
   hasInvoice: boolean;
+  /** Documento principal: factura fiscal, nota de entrega o sin soporte fiscal. */
+  documentKind: ReceivableDocumentKind;
+  documentLabel: string;
+  /** Detalle legible de las notas de crédito/débito vinculadas. */
+  noteDetails: string[];
+  /** Tipos de nota presentes, para filtros y resaltado visual. */
+  adjustmentTypes: ('nota_credito' | 'nota_debito')[];
+  hasDeliveryNote: boolean;
 }
 
 /** Resumen de la deuda de un cliente. */
@@ -70,6 +90,7 @@ export interface ReceivableFilters {
   status: ReceivableStatusFilter;
   bucket: ReceivableBucketFilter;
   creditOnly: boolean;
+  documentKind?: ReceivableDocumentKindFilter;
 }
 
 export interface BuildReceivableRowsInput {
@@ -85,8 +106,13 @@ export interface BuildReceivableRowsInput {
     issuedAt: string;
   }[];
   notes: {
+    id?: string;
     fiscalInvoiceId: string;
     type: 'nota_credito' | 'nota_debito';
+    serie?: string;
+    noteNumber?: number;
+    reason?: string;
+    reasonDetails?: string;
     total: number;
   }[];
   exchangeRateUsd?: number | null;

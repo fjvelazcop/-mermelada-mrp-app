@@ -231,6 +231,18 @@ export interface InventoryMovement {
   notes?: string;
   date: string;
   performedBy: string;
+  /** Condición de pago capturada en compras a proveedor. */
+  paymentCondition?: 'contado' | 'credito';
+  paymentMethod?: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+  bankCode?: string;
+  bankName?: string;
+  paymentReference?: string;
+  creditDays?: number;
+  /** Vencimiento de la factura cuando la compra es a crédito. */
+  dueDate?: string;
+  /** CxP generado automáticamente por una compra a crédito. */
+  payableId?: string;
+  payableNumber?: string;
 }
 
 export type BasePriceTier = 'mayorista' | 'detal' | 'especial';
@@ -1364,11 +1376,15 @@ export interface AuditLogDetails {
   salesOrderId?: string;
   invoiceId?: string;
   payableId?: string;
+  movementId?: string;
+  origin?: string;
   entryNumber?: string;
   accountCode?: string;
   periodKey?: string;
   sourceType?: string;
   reason?: string;
+  previousStatus?: string;
+  status?: string;
   documentType?: string;
   adjustmentType?: FiscalAdjustmentType;
   year?: number;
@@ -1412,8 +1428,12 @@ export interface AuditLogEntry {
     | 'gasto_registrado'
     | 'gasto_eliminado'
     | 'gasto_elegibilidad_actualizada'
+    | 'categoria_gasto_creada'
+    | 'categoria_gasto_actualizada'
+    | 'categoria_gasto_eliminada'
     | 'payable_registrado'
     | 'payable_actualizado'
+    | 'payable_actualizado_linea_inventario'
     | 'payable_anulado'
     | 'payable_pago_registrado'
     | 'proveedor_creado'
@@ -1452,7 +1472,11 @@ export interface AuditLogEntry {
     | 'valor_fiscal_referencia_actualizado'
     | 'valor_fiscal_referencia_anulado'
     | 'valor_fiscal_referencia_vigencia_cerrada'
-    | 'configuracion_libros_actualizada';
+    | 'configuracion_libros_actualizada'
+    | 'operario_inactivado'
+    | 'operario_vacaciones'
+    | 'operario_activado'
+    | 'operario_eliminado';
   title: string;
   description: string;
   userId: string;
@@ -1531,6 +1555,9 @@ export interface Expense {
 
 export type PayableStatus = 'pendiente' | 'parcial' | 'pagada' | 'anulada';
 
+/** Origen derivado de la factura por pagar (no se persiste como columna). */
+export type PayableOrigin = 'compra_inventario' | 'manual';
+
 /** Factura de proveedor pendiente de pago (USD canónico, Bs derivado). */
 export interface Payable {
   id: string;
@@ -1553,6 +1580,10 @@ export interface Payable {
   createdAt?: string;
   updatedAt?: string;
   expenseId?: string;
+  /** Calculado desde los movimientos de inventario vinculados. */
+  origin?: PayableOrigin;
+  movementId?: string;
+  linkedMovementCount?: number;
 }
 
 export interface PayablePayment {

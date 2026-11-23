@@ -399,7 +399,7 @@ The server (`src/server.ts` + `src/server/api.ts`) exposes a RESTful API under `
 | **Customers** | `GET /api/sales/customers`, `POST /api/sales/customers` |
 | **Sales Orders** | `GET /api/sales/orders`, `POST /api/sales/orders`, `PUT /api/sales/orders/:id/status`, `POST /api/sales/orders/:id/create-production-order`, `POST /api/sales/orders/:id/create-delivery-note` |
 | **Delivery Notes** | `GET /api/sales/delivery-notes` |
-| **Payroll & Employees** | `GET /api/payroll/weeks`, `POST /api/payroll/weeks`, `GET /api/payroll/employees`, `POST /api/payroll/employees` |
+| **Payroll & Employees** | `GET /api/payroll/weeks`, `POST /api/payroll/weeks`, `GET /api/payroll/employees`, `POST /api/payroll/employees`, `PATCH /api/payroll/employees/:id` (alta/baja), `DELETE /api/payroll/employees/:id` (solo sin pagos) |
 | **Costing / Margins** | `GET /api/costing/summary`, `POST /api/costing/simulate` |
 | **Expenses** | `GET /api/expenses`, `POST /api/expenses`, `DELETE /api/expenses/:id`, `GET/POST /api/expenses/categories`, `PUT/DELETE /api/expenses/categories/:id` |
 | **Accounting (Fase 1)** | `GET/POST /api/accounting/accounts`, `PATCH /api/accounting/accounts/:id`, `GET/POST /api/accounting/entries`, `POST /api/accounting/entries/:id/confirm`, `POST /api/accounting/entries/:id/annul`, `GET /api/accounting/periods`, `POST /api/accounting/periods/:key/close`, `POST /api/accounting/periods/:key/open`, `GET /api/accounting/books?type=…&year=…&month=…` |

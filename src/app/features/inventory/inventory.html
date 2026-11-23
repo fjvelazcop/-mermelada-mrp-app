@@ -8,6 +8,7 @@
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
+      <app-module-help module="inventory" label="Ver ayuda de Inventario" />
       <!-- Currency Switcher Toggle -->
       <div class="inline-flex items-center p-0.5 bg-stone-100 rounded-lg border border-stone-200 text-xs font-semibold">
         <button
@@ -81,6 +82,24 @@
       }
     </div>
   </div>
+
+  @if (lastPurchaseResult(); as summary) {
+    <div class="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">
+      <mat-icon class="text-base text-emerald-700">check_circle</mat-icon>
+      <div class="flex-1">
+        <span class="font-bold block">Resumen de la compra registrada</span>
+        <span class="text-emerald-800">{{ summary }}</span>
+      </div>
+      <button
+        type="button"
+        (click)="lastPurchaseResult.set(null)"
+        class="text-emerald-700 hover:text-emerald-900"
+        title="Cerrar resumen"
+      >
+        <mat-icon class="text-base">close</mat-icon>
+      </button>
+    </div>
+  }
 
   <!-- Sub-Navigation Segmented Tabs -->
   <div class="flex items-center gap-2 border-b border-stone-200 pb-px overflow-x-auto">
@@ -401,6 +420,90 @@
         </tbody>
       </table>
     </div>
+
+    <!-- CONSOLIDADO Y TRAZABILIDAD DEL REPORTE OFICIAL -->
+    <div class="mt-5 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div class="flex items-center gap-2">
+          <mat-icon class="text-amber-700 text-base">summarize</mat-icon>
+          <div>
+            <h3 class="text-sm font-bold text-stone-900">Consolidado y trazabilidad — Reporte Oficial</h3>
+            <p class="text-[11px] text-stone-500">Kilos y valoración por insumo/grupo, con el último movimiento registrado.</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2 text-[11px]">
+          <span class="rounded-lg bg-white border border-amber-200 px-2.5 py-1 font-mono text-stone-800">
+            Total kilos: <strong>{{ stockConsolidation().totalKg | veNumber:2 }} kg</strong>
+          </span>
+          <span class="rounded-lg bg-white border border-amber-200 px-2.5 py-1 font-mono text-stone-800">
+            Total general: <strong>{{ currencyMode() === 'Bs' ? (stockConsolidation().totalBs | veCurrency:'Bs.':2) : (stockConsolidation().totalUsd | veCurrency:'$':2) }}</strong>
+          </span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div class="rounded-lg border border-stone-200 bg-white overflow-hidden">
+          <div class="px-3 py-2 bg-stone-100 text-[10px] font-bold uppercase tracking-wide text-stone-600">Por insumo / agrupación</div>
+          <table class="w-full text-xs">
+            <thead class="text-[10px] uppercase text-stone-500 border-b border-stone-200">
+              <tr>
+                <th class="py-1.5 px-2 text-left">Grupo</th>
+                <th class="py-1.5 px-2 text-right">Insumos</th>
+                <th class="py-1.5 px-2 text-right">Kilos</th>
+                <th class="py-1.5 px-2 text-right">Valoración</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (group of stockConsolidation().byGroup; track group.key) {
+                <tr class="border-b border-stone-100 last:border-0">
+                  <td class="py-1.5 px-2 font-semibold text-stone-800">{{ group.label }}</td>
+                  <td class="py-1.5 px-2 text-right font-mono text-stone-500">{{ group.materialCount }}</td>
+                  <td class="py-1.5 px-2 text-right font-mono text-stone-800">{{ group.stockKg | veNumber:2 }}</td>
+                  <td class="py-1.5 px-2 text-right font-mono text-stone-800">
+                    {{ currencyMode() === 'Bs' ? (group.valueBs | veCurrency:'Bs.':2) : (group.valueUsd | veCurrency:'$':2) }}
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="4" class="py-3 px-2 text-center text-stone-400">Sin insumos para consolidar.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="rounded-lg border border-stone-200 bg-white overflow-hidden">
+          <div class="px-3 py-2 bg-stone-100 text-[10px] font-bold uppercase tracking-wide text-stone-600">Últimos movimientos por insumo</div>
+          <div class="max-h-64 overflow-y-auto divide-y divide-stone-100">
+            @for (row of stockConsolidation().byMaterial; track row.material.id) {
+              <div class="flex items-start justify-between gap-2 px-3 py-2">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-mono text-[10px] text-stone-500">{{ row.material.code }}</span>
+                    @if (row.recent) {
+                      <span class="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">Reciente</span>
+                    }
+                  </div>
+                  <span class="block truncate text-xs text-stone-800" [title]="row.material.name">{{ row.material.name }}</span>
+                  @if (row.lastMovement; as last) {
+                    <span class="block text-[10px] text-stone-500">
+                      {{ last.date }} · {{ last.type === 'entrada' ? 'Entrada' : last.type === 'salida_produccion' ? 'Consumo' : 'Merma' }}
+                      · {{ last.referenceDoc || 'S/R' }} · {{ last.supplierNameSnapshot || 'Sin proveedor' }}
+                    </span>
+                  } @else {
+                    <span class="block text-[10px] text-stone-400">Sin movimientos registrados</span>
+                  }
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="block font-mono text-xs text-stone-900">{{ row.stockKg | veNumber:2 }} kg</span>
+                  <span class="block text-[10px] text-stone-400">{{ row.movementCount }} mov.</span>
+                </div>
+              </div>
+            } @empty {
+              <div class="px-3 py-4 text-center text-stone-400 text-xs">Sin insumos para mostrar.</div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
   }
 
@@ -564,6 +667,7 @@
             <th class="py-2.5 px-3 text-right font-semibold">Total (USD)</th>
             <th class="py-2.5 px-3 text-right font-bold text-stone-900 bg-stone-100/60">Total en Bs. (Tasa Real)</th>
             <th class="py-2.5 px-3">Referencia / Factura</th>
+            <th class="py-2.5 px-3">Condición / CxP</th>
             <th class="py-2.5 px-3">Proveedor</th>
             <th class="py-2.5 px-3">Responsable</th>
           </tr>
@@ -606,6 +710,29 @@
                   </button>
                 }
               </td>
+              <td class="py-2.5 px-3 text-[11px]">
+                @let payment = paymentLabel(mov);
+                <span
+                  class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold"
+                  [class.bg-emerald-100]="payment.conditionTone === 'cash'"
+                  [class.text-emerald-800]="payment.conditionTone === 'cash'"
+                  [class.bg-indigo-100]="payment.conditionTone === 'credit'"
+                  [class.text-indigo-800]="payment.conditionTone === 'credit'"
+                  [class.bg-stone-100]="payment.conditionTone === 'legacy'"
+                  [class.text-stone-500]="payment.conditionTone === 'legacy'"
+                >
+                  {{ payment.conditionLabel }}
+                </span>
+                @if (payment.payableLabel) {
+                  <div class="mt-1 font-semibold text-indigo-800">{{ payment.payableLabel }}</div>
+                }
+                @if (payment.dueDateLabel) {
+                  <div class="font-mono text-[10px] text-stone-400">Vence {{ payment.dueDateLabel }}</div>
+                }
+                @if (payment.paymentDetail) {
+                  <div class="mt-1 font-mono text-[10px] text-stone-500">{{ payment.paymentDetail }}</div>
+                }
+              </td>
               <td class="py-2.5 px-3 text-[11px] text-stone-600">
                 @if (mov.supplierNameSnapshot) {
                   <div class="font-semibold text-stone-800">{{ mov.supplierNameSnapshot }}</div>
@@ -620,7 +747,7 @@
             </tr>
             @if (expandedMovement() === mov.id && mov.notes) {
               <tr class="bg-sky-50/50">
-                <td colspan="11" class="py-2 px-3 text-[11px] text-stone-600">
+                <td colspan="12" class="py-2 px-3 text-[11px] text-stone-600">
                   <span class="font-bold text-stone-500">Nota:</span> {{ mov.notes }}
                 </td>
               </tr>
@@ -628,7 +755,7 @@
           }
           @if (filteredMovements().length === 0) {
             <tr>
-              <td colspan="10" class="py-6 text-center text-stone-400 italic">
+              <td colspan="12" class="py-6 text-center text-stone-400 italic">
                 No hay movimientos registrados con los filtros actuales.
               </td>
             </tr>
@@ -764,6 +891,87 @@
             formControlName="supplierQuery"
             (supplierSelected)="onSupplierSelected($event)"
           />
+
+          @if (movementForm.controls.type.value === 'entrada') {
+            <div class="rounded-xl border border-stone-200 bg-stone-50/70 p-3 space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-stone-700 mb-1">Condición de pago</label>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs cursor-pointer"
+                    [class.border-amber-400]="movementForm.controls.paymentCondition.value === 'contado'"
+                    [class.text-amber-900]="movementForm.controls.paymentCondition.value === 'contado'"
+                    [class.border-stone-200]="movementForm.controls.paymentCondition.value !== 'contado'">
+                    <input type="radio" formControlName="paymentCondition" value="contado" class="accent-amber-600" />
+                    Contado
+                  </label>
+                  <label class="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs cursor-pointer"
+                    [class.border-indigo-400]="movementForm.controls.paymentCondition.value === 'credito'"
+                    [class.text-indigo-900]="movementForm.controls.paymentCondition.value === 'credito'"
+                    [class.border-stone-200]="movementForm.controls.paymentCondition.value !== 'credito'">
+                    <input type="radio" formControlName="paymentCondition" value="credito" class="accent-indigo-600" />
+                    Crédito
+                  </label>
+                </div>
+              </div>
+
+              @if (movementForm.controls.paymentCondition.value === 'contado') {
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Método de pago</label>
+                    <select formControlName="paymentMethod"
+                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500">
+                      @for (method of purchasePaymentMethods; track method.value) {
+                        <option [value]="method.value">{{ method.label }}</option>
+                      }
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Cuenta / Banco</label>
+                    <select formControlName="bankCode"
+                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500">
+                      @for (bank of banks; track bank.code) {
+                        <option [value]="bank.code">{{ bankLabel(bank) }}</option>
+                      }
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Referencia de pago</label>
+                    <input type="text" formControlName="paymentReference" placeholder="ej: TRANSF-8849102"
+                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  </div>
+                </div>
+              } @else {
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Días de crédito</label>
+                    <input type="number" min="0" max="365" formControlName="creditDays"
+                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 text-right font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Fecha de emisión</label>
+                    <input type="text" [value]="todayIso" disabled
+                      class="w-full bg-stone-100 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-500 font-mono" />
+                  </div>
+                  <div>
+                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Fecha de vencimiento</label>
+                    <input type="text" [value]="movementForm.controls.dueDate.value" disabled
+                      class="w-full bg-white border border-indigo-200 rounded-lg px-2 py-1.5 text-xs text-indigo-900 font-mono" />
+                  </div>
+                </div>
+              }
+
+              <p class="text-[11px] leading-relaxed text-stone-600 flex items-start gap-1.5">
+                <mat-icon class="text-sm text-amber-700">info</mat-icon>
+                <span>{{ purchasePaymentSummary() }}</span>
+              </p>
+              <p class="text-[11px] leading-relaxed text-stone-600 flex items-start gap-1.5">
+                <mat-icon class="text-sm text-stone-400">info_outline</mat-icon>
+                <span>
+                  Libro de Compras (#13, pendiente de validar con el contador): se alimenta al pagar la CxP, no al registrar la entrada. Criterio pago vs. devengo sujeto a revisión.
+                </span>
+              </p>
+            </div>
+          }
 
           <div>
             <label class="block text-xs font-semibold text-stone-700 mb-1">Notas u Observaciones</label>
