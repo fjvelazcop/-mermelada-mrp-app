@@ -501,7 +501,25 @@ export class ErpApiService {
     };
   }
 
-  private apiErrorMessage(err: unknown): string {
+  /**
+   * Extrae el mensaje devuelto por el backend. `HttpErrorResponse` no es una
+   * instancia de `Error`, por lo que leer solo `err.message` muestra el texto
+   * genérico de Angular y oculta la razón real de la validación. El mensaje
+   * contextual solo se usa cuando el servidor no aporta uno.
+   */
+  private apiErrorMessage(
+    err: unknown,
+    fallback = 'No se pudo completar la operación'
+  ): string {
+    if (err instanceof HttpErrorResponse) {
+      const body = err.error as
+        | { error?: string; message?: string }
+        | string
+        | null
+        | undefined;
+      if (typeof body === 'string') return body.trim() || fallback;
+      return body?.error || body?.message || fallback;
+    }
     const failure = err as {
       error?: { error?: string; message?: string };
       message?: string;
@@ -510,7 +528,7 @@ export class ErpApiService {
       failure?.error?.error ||
       failure?.error?.message ||
       failure?.message ||
-      'No se pudo completar la operación'
+      fallback
     );
   }
 
@@ -1397,7 +1415,7 @@ export class ErpApiService {
       );
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar tasa';
+      const msg = this.apiErrorMessage(err, 'Error al registrar tasa');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1412,7 +1430,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar insumo';
+      const msg = this.apiErrorMessage(err, 'Error al registrar insumo');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1431,7 +1449,7 @@ export class ErpApiService {
       await this.refreshInventoryData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar el insumo';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar el insumo');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1515,7 +1533,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return created;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar movimiento';
+      const msg = this.apiErrorMessage(err, 'Error al registrar movimiento');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1570,7 +1588,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al guardar receta';
+      const msg = this.apiErrorMessage(err, 'Error al guardar receta');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1616,7 +1634,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear orden de producción';
+      const msg = this.apiErrorMessage(err, 'Error al crear orden de producción');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1654,7 +1672,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al procesar orden';
+      const msg = this.apiErrorMessage(err, 'Error al procesar orden');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1679,7 +1697,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al crear orden manual',
+        this.apiErrorMessage(err, 'Error al crear orden manual'),
         'error'
       );
       throw err;
@@ -1724,9 +1742,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error
-          ? err.message
-          : 'Error al guardar la planilla manual',
+        this.apiErrorMessage(err, 'Error al guardar la planilla manual'),
         'error'
       );
       throw err;
@@ -1754,7 +1770,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al actualizar orden manual',
+        this.apiErrorMessage(err, 'Error al actualizar orden manual'),
         'error'
       );
       throw err;
@@ -1770,7 +1786,7 @@ export class ErpApiService {
       await this.refreshAllData();
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al eliminar orden manual',
+        this.apiErrorMessage(err, 'Error al eliminar orden manual'),
         'error'
       );
       throw err;
@@ -1795,7 +1811,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al procesar orden manual',
+        this.apiErrorMessage(err, 'Error al procesar orden manual'),
         'error'
       );
       throw err;
@@ -1820,7 +1836,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al anular orden manual',
+        this.apiErrorMessage(err, 'Error al anular orden manual'),
         'error'
       );
       throw err;
@@ -1836,7 +1852,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear cliente';
+      const msg = this.apiErrorMessage(err, 'Error al crear cliente');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1856,7 +1872,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al registrar proveedor',
+        this.apiErrorMessage(err, 'Error al registrar proveedor'),
         'error'
       );
       throw err;
@@ -1879,7 +1895,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al actualizar proveedor',
+        this.apiErrorMessage(err, 'Error al actualizar proveedor'),
         'error'
       );
       throw err;
@@ -1893,7 +1909,7 @@ export class ErpApiService {
       await this.refreshAllData();
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al eliminar proveedor',
+        this.apiErrorMessage(err, 'Error al eliminar proveedor'),
         'error'
       );
       throw err;
@@ -1925,7 +1941,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al registrar precio',
+        this.apiErrorMessage(err, 'Error al registrar precio'),
         'error'
       );
       throw err;
@@ -1943,7 +1959,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar pedido';
+      const msg = this.apiErrorMessage(err, 'Error al registrar pedido');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1961,7 +1977,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al generar OP desde pedido';
+      const msg = this.apiErrorMessage(err, 'Error al generar OP desde pedido');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1976,7 +1992,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al emitir nota de entrega';
+      const msg = this.apiErrorMessage(err, 'Error al emitir nota de entrega');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -1989,7 +2005,7 @@ export class ErpApiService {
         this.http.get<SalesCollection[]>(`/api/sales/orders/${orderId}/collections`)
       );
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar los cobros';
+      const msg = this.apiErrorMessage(err, 'Error al consultar los cobros');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2017,7 +2033,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al registrar cobro',
+        this.apiErrorMessage(err, 'Error al registrar cobro'),
         'error'
       );
       throw err;
@@ -2039,7 +2055,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar nómina';
+      const msg = this.apiErrorMessage(err, 'Error al registrar nómina');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2052,7 +2068,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar personal';
+      const msg = this.apiErrorMessage(err, 'Error al registrar personal');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2073,7 +2089,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar el operario';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar el operario');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2085,7 +2101,7 @@ export class ErpApiService {
       this.showToast('Operario eliminado al no tener pagos registrados.');
       await this.refreshAllData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar el operario';
+      const msg = this.apiErrorMessage(err, 'Error al eliminar el operario');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2120,7 +2136,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar gasto';
+      const msg = this.apiErrorMessage(err, 'Error al registrar gasto');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2145,7 +2161,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al crear la cuenta', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al crear la cuenta'), 'error');
       throw err;
     }
   }
@@ -2173,7 +2189,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al actualizar la cuenta', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al actualizar la cuenta'), 'error');
       throw err;
     }
   }
@@ -2189,7 +2205,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al actualizar la apertura', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al actualizar la apertura'), 'error');
       throw err;
     }
   }
@@ -2205,7 +2221,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al registrar el ajuste de apertura', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al registrar el ajuste de apertura'), 'error');
       throw err;
     }
   }
@@ -2228,7 +2244,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al crear el asiento', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al crear el asiento'), 'error');
       throw err;
     }
   }
@@ -2243,7 +2259,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al confirmar el asiento', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al confirmar el asiento'), 'error');
       throw err;
     }
   }
@@ -2258,7 +2274,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al anular el asiento', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al anular el asiento'), 'error');
       throw err;
     }
   }
@@ -2273,7 +2289,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al actualizar el período', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al actualizar el período'), 'error');
       throw err;
     }
   }
@@ -2287,7 +2303,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al verificar la cadena hash',
+        this.apiErrorMessage(err, 'Error al verificar la cadena hash'),
         'error'
       );
       throw err;
@@ -2309,7 +2325,7 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(
-        err instanceof Error ? err.message : 'Error al reconstruir la cadena hash',
+        this.apiErrorMessage(err, 'Error al reconstruir la cadena hash'),
         'error'
       );
       throw err;
@@ -2326,7 +2342,7 @@ export class ErpApiService {
       this.accountingBook.set(res);
       return res;
     } catch (err: unknown) {
-      this.showToast(err instanceof Error ? err.message : 'Error al generar el libro', 'error');
+      this.showToast(this.apiErrorMessage(err, 'Error al generar el libro'), 'error');
       throw err;
     }
   }
@@ -2375,7 +2391,7 @@ export class ErpApiService {
         );
         throw err;
       }
-      const msg = err instanceof Error ? err.message : 'Error al registrar la factura por pagar';
+      const msg = this.apiErrorMessage(err, 'Error al registrar la factura por pagar');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2399,7 +2415,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar la factura';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar la factura');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2411,7 +2427,7 @@ export class ErpApiService {
         this.http.get<PayablePayment[]>(`/api/payables/${payableId}/payments`)
       );
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al consultar los pagos';
+      const msg = this.apiErrorMessage(err, 'Error al consultar los pagos');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2460,7 +2476,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al registrar el pago';
+      const msg = this.apiErrorMessage(err, 'Error al registrar el pago');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2488,7 +2504,7 @@ export class ErpApiService {
       return updated;
     } catch (err: unknown) {
       const msg =
-        err instanceof Error ? err.message : 'No se pudo actualizar la elegibilidad fiscal';
+        this.apiErrorMessage(err, 'No se pudo actualizar la elegibilidad fiscal');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2516,7 +2532,7 @@ export class ErpApiService {
       this.showToast('Gasto eliminado del registro.');
       await this.refreshAllData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar gasto';
+      const msg = this.apiErrorMessage(err, 'Error al eliminar gasto');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2532,7 +2548,7 @@ export class ErpApiService {
       this.showToast(`Tipo de proveedor "${res.label}" creado con éxito.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear tipo de proveedor';
+      const msg = this.apiErrorMessage(err, 'Error al crear tipo de proveedor');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2547,7 +2563,7 @@ export class ErpApiService {
       this.showToast(`Tipo de proveedor "${res.label}" actualizado.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar tipo de proveedor';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar tipo de proveedor');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2560,7 +2576,7 @@ export class ErpApiService {
       this.showToast('Tipo de proveedor eliminado exitosamente.');
       return true;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar tipo de proveedor';
+      const msg = this.apiErrorMessage(err, 'Error al eliminar tipo de proveedor');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2575,7 +2591,7 @@ export class ErpApiService {
       this.showToast(`Categoría "${res.label}" creada con éxito.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear categoría de materia prima';
+      const msg = this.apiErrorMessage(err, 'Error al crear categoría de materia prima');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2590,7 +2606,7 @@ export class ErpApiService {
       this.showToast(`Categoría "${res.label}" actualizada.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar categoría de materia prima';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar categoría de materia prima');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2603,7 +2619,7 @@ export class ErpApiService {
       this.showToast('Categoría de materia prima eliminada exitosamente.');
       return true;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar categoría de materia prima';
+      const msg = this.apiErrorMessage(err, 'Error al eliminar categoría de materia prima');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2620,7 +2636,7 @@ export class ErpApiService {
       this.showToast(`Presentación "${res.label}" creada con éxito.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear presentación';
+      const msg = this.apiErrorMessage(err, 'Error al crear presentación');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2635,7 +2651,7 @@ export class ErpApiService {
       this.showToast(`Presentación "${res.label}" actualizada.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar presentación';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar presentación');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2648,7 +2664,7 @@ export class ErpApiService {
       this.showToast('Presentación eliminada exitosamente.');
       return true;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar presentación';
+      const msg = this.apiErrorMessage(err, 'Error al eliminar presentación');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2665,7 +2681,7 @@ export class ErpApiService {
       this.showToast(`Producto "${res.flavor}" registrado en estado ${res.status || 'borrador'}.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear producto terminado';
+      const msg = this.apiErrorMessage(err, 'Error al crear producto terminado');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2680,7 +2696,7 @@ export class ErpApiService {
       this.showToast('Producto terminado actualizado.');
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar producto terminado';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar producto terminado');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2696,7 +2712,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al ejecutar el reset operativo';
+      const msg = this.apiErrorMessage(err, 'Error al ejecutar el reset operativo');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2712,7 +2728,7 @@ export class ErpApiService {
       this.showToast(`Categoría "${res.name}" creada con éxito (Presupuesto: $${res.monthlyBudgetUsd.toFixed(2)}).`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al crear categoría de egreso';
+      const msg = this.apiErrorMessage(err, 'Error al crear categoría de egreso');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2727,7 +2743,7 @@ export class ErpApiService {
       this.showToast(`Categoría "${res.name}" actualizada con éxito.`);
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al actualizar categoría de egreso';
+      const msg = this.apiErrorMessage(err, 'Error al actualizar categoría de egreso');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2740,7 +2756,7 @@ export class ErpApiService {
       this.showToast('Categoría eliminada exitosamente.');
       return true;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al eliminar categoría';
+      const msg = this.apiErrorMessage(err, 'Error al eliminar categoría');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2767,7 +2783,7 @@ export class ErpApiService {
       this.showToast('Configuración de Facturación Fiscal guardada.');
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al guardar configuración fiscal';
+      const msg = this.apiErrorMessage(err, 'Error al guardar configuración fiscal');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -2782,7 +2798,7 @@ export class ErpApiService {
       this.fiscalObligationHistory.set(result.history);
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : 'Error al cargar las obligaciones fiscales';
+        this.apiErrorMessage(err, 'Error al cargar las obligaciones fiscales');
       this.showToast(message, 'error');
       throw err;
     }
@@ -2804,7 +2820,7 @@ export class ErpApiService {
       );
     } catch (err: unknown) {
       const message =
-        err instanceof Error ? err.message : 'Error al guardar la obligación fiscal';
+        this.apiErrorMessage(err, 'Error al guardar la obligación fiscal');
       this.showToast(message, 'error');
       throw err;
     }
@@ -2997,7 +3013,7 @@ export class ErpApiService {
       await this.refreshAllData();
       return res;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al anular la factura';
+      const msg = this.apiErrorMessage(err, 'Error al anular la factura');
       this.showToast(msg, 'error');
       throw err;
     }
@@ -3095,7 +3111,7 @@ export class ErpApiService {
       this.showToast('Datos del sistema restaurados a los valores de demostración.');
       await this.refreshAllData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al reiniciar datos';
+      const msg = this.apiErrorMessage(err, 'Error al reiniciar datos');
       this.showToast(msg, 'error');
     }
   }

@@ -1492,6 +1492,7 @@ export interface AuditLogEntry {
     | 'salida_produccion'
     | 'ajuste_merma'
     | 'ajuste_existencia'
+    | 'insumo_actualizado'
     | 'reabastecimiento_alerta'
     | 'orden_produccion_creada'
     | 'orden_produccion_procesada'

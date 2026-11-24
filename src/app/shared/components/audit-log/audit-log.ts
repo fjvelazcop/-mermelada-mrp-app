@@ -48,6 +48,7 @@ export class AuditLog {
     {id: 'orden_produccion_creada', label: 'Órdenes Creadas (OP)'},
     {id: 'orden_produccion_procesada', label: 'Cocción & Lotes Finalizados'},
     {id: 'ajuste_merma', label: 'Ajustes & Mermas'},
+    {id: 'insumo_actualizado', label: 'Fichas de Insumos Editadas'},
     {id: 'receta_bom_creada', label: 'Formulaciones BOM'},
     {id: 'gasto_registrado', label: 'Comprobantes de Egreso Registrados'},
     {id: 'gasto_eliminado', label: 'Comprobantes de Egreso Eliminados'},
@@ -170,6 +171,8 @@ export class AuditLog {
         return 'verified';
       case 'ajuste_merma':
         return 'tune';
+      case 'insumo_actualizado':
+        return 'edit';
       case 'receta_bom_creada':
         return 'menu_book';
       case 'alerta_stock_critico':

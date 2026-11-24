@@ -42,6 +42,7 @@ import {
 } from './inventory.filters';
 import {
   buildStockConsolidation,
+  filterStockConsolidation,
   validateMovementReference,
   type StockConsolidation,
 } from './inventory-stock.utils';
@@ -140,6 +141,10 @@ export class InventoryComponent {
   public activeInventoryTab = signal<'stock' | 'movements' | 'audit'>('stock');
   public selectedCategory = signal<string>('all');
   public materialSearch = signal<string>('');
+  /** Búsqueda visual del Reporte Oficial; no altera totales ni exportes. */
+  public consolidationSearch = signal<string>('');
+  /** Id del insumo que se está editando; `null` significa alta nueva. */
+  public editingMaterialId = signal<string | null>(null);
   public isMovementModalOpen = signal<boolean>(false);
   public isNewMaterialModalOpen = signal<boolean>(false);
   public isStockFixModalOpen = signal<boolean>(false);
@@ -378,6 +383,14 @@ export class InventoryComponent {
         categories.find((category) => category.code === code)?.label || code,
     });
   });
+
+  /** Vista filtrada del consolidado: comparte totales globales con el reporte. */
+  public visibleConsolidation = computed<StockConsolidation>(() =>
+    filterStockConsolidation(this.stockConsolidation(), {
+      search: this.consolidationSearch(),
+      categoryLabel: (code) => this.categoryLabel(code),
+    })
+  );
 
   public inventoryAuditCount = computed(() =>
     this.api.auditLogs().filter(l => l.module === 'inventario').length
@@ -719,29 +732,59 @@ export class InventoryComponent {
     return 'Ajuste Merma';
   }
 
-  public openNewMaterialModal() {
-    this.materialNameInput.set('');
-    this.newMaterialForm.reset({
-      code: 'MP-' + Math.floor(Math.random() * 900 + 100),
-      category: this.defaultMaterialCategory(),
-      currentStock: 50,
-      minStock: 20,
-      unit: 'kg',
-      costPerUnit: 1.0,
-      name: '',
-      supplier: '',
-      supplierId: '',
-      supplierTaxId: '',
-      paymentCondition: 'contado',
-      creditDays: 0,
-      paymentDueDate: '',
-      notes: '',
-    });
+  public openNewMaterialModal(material?: RawMaterial) {
+    const editing = Boolean(material);
+    this.editingMaterialId.set(material?.id ?? null);
+    this.materialNameInput.set(material?.name ?? '');
+    if (material) {
+      // La edición precarga la ficha; código y existencia se conservan intactos.
+      this.newMaterialForm.patchValue({
+        code: material.code,
+        name: material.name,
+        category: material.category,
+        currentStock: material.currentStock,
+        minStock: material.minStock,
+        unit: material.unit,
+        costPerUnit: material.costPerUnit,
+        supplier: material.supplier || '',
+        supplierId: material.supplierId || '',
+        supplierTaxId: material.supplierTaxId || '',
+        paymentCondition: material.paymentCondition || 'contado',
+        creditDays: Number(material.creditDays ?? 0),
+        paymentDueDate: material.paymentDueDate || '',
+        notes: material.notes || '',
+      });
+    } else {
+      this.newMaterialForm.reset({
+        code: 'MP-' + Math.floor(Math.random() * 900 + 100),
+        category: this.defaultMaterialCategory(),
+        currentStock: 50,
+        minStock: 20,
+        unit: 'kg',
+        costPerUnit: 1.0,
+        name: '',
+        supplier: '',
+        supplierId: '',
+        supplierTaxId: '',
+        paymentCondition: 'contado',
+        creditDays: 0,
+        paymentDueDate: '',
+        notes: '',
+      });
+    }
+    if (editing) {
+      this.newMaterialForm.controls.code.disable({emitEvent: false});
+      this.newMaterialForm.controls.currentStock.disable({emitEvent: false});
+    } else {
+      this.newMaterialForm.controls.code.enable({emitEvent: false});
+      this.newMaterialForm.controls.currentStock.enable({emitEvent: false});
+    }
     this.isNewMaterialModalOpen.set(true);
   }
 
   public closeNewMaterialModal() {
     this.isNewMaterialModalOpen.set(false);
+    this.editingMaterialId.set(null);
   }
 
   public async submitNewMaterial() {
@@ -751,11 +794,11 @@ export class InventoryComponent {
       this.api.showToast('Indica los días de crédito y la fecha de pago del proveedor.', 'error');
       return;
     }
-    await this.api.addRawMaterial({
+    const editingId = this.editingMaterialId();
+    const ficha = {
       code: v.code,
       name: v.name,
       category: v.category,
-      currentStock: Number(v.currentStock),
       minStock: Number(v.minStock),
       unit: v.unit,
       costPerUnit: Number(v.costPerUnit),
@@ -765,9 +808,18 @@ export class InventoryComponent {
       paymentCondition: v.paymentCondition,
       creditDays: v.paymentCondition === 'credito' ? Number(v.creditDays) : 0,
       paymentDueDate: v.paymentCondition === 'credito' ? v.paymentDueDate : '',
-      lastRestockDate: new Date().toISOString().slice(0, 10),
       notes: v.notes,
-    });
+    };
+    if (editingId) {
+      // No se envían currentStock ni lastRestockDate: la existencia se fija aparte.
+      await this.api.updateRawMaterial(editingId, ficha);
+    } else {
+      await this.api.addRawMaterial({
+        ...ficha,
+        currentStock: Number(v.currentStock),
+        lastRestockDate: new Date().toISOString().slice(0, 10),
+      });
+    }
     this.closeNewMaterialModal();
   }
 

@@ -2276,14 +2276,47 @@ export class ErpDatabase {
     return newMat;
   }
 
-  public updateRawMaterial(id: string, updates: Partial<RawMaterial>): RawMaterial | null {
+  public updateRawMaterial(
+    id: string,
+    updates: Partial<RawMaterial>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): RawMaterial | null {
     const idx = this.state.rawMaterials.findIndex(m => m.id === id);
     if (idx === -1) return null;
     if (updates.category !== undefined) {
       this.assertCatalogValue(updates.category, this.getMaterialCategories(), 'categoría de materia prima');
     }
-    this.state.rawMaterials[idx] = { ...this.state.rawMaterials[idx], ...updates };
-    return this.state.rawMaterials[idx];
+    const previous = this.state.rawMaterials[idx];
+    const updated = { ...previous, ...updates };
+    this.state.rawMaterials[idx] = updated;
+
+    // La existencia se registra aparte con «Fijar» y su propio motivo.
+    const changedFields = Object.keys(updates).filter((key) =>
+      key !== 'currentStock' &&
+      key !== 'id' &&
+      JSON.stringify((previous as unknown as Record<string, unknown>)[key]) !==
+        JSON.stringify((updates as unknown as Record<string, unknown>)[key])
+    );
+    if (changedFields.length) {
+      const actor = this.manualOrderActor(actorInput);
+      this.addAuditLog({
+        module: 'inventario',
+        actionType: 'insumo_actualizado',
+        title: `Insumo ${updated.code} actualizado`,
+        description: `Ficha modificada (${changedFields.join(', ')}). Categoría: ${previous.category} → ${updated.category}.`,
+        userId: actor.userId,
+        userName: actor.userName,
+        userRole: actor.userRole,
+        severity: 'info',
+        details: {
+          targetId: updated.id,
+          targetCode: updated.code,
+          itemName: updated.name,
+          changes: [`categoría: ${previous.category} → ${updated.category}`, ...changedFields],
+        },
+      });
+    }
+    return updated;
   }
 
   public addInventoryMovement(mov: Omit<InventoryMovement, 'id'>): InventoryMovement {

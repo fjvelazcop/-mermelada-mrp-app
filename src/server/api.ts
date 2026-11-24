@@ -648,7 +648,7 @@ export function createApiApp(): express.Express {
     validateParams(idParamsSchema),
     validateBody(rawMaterialUpdateSchema),
     mutation((req, res) => {
-      const updated = dbInstance.updateRawMaterial(routeId(req), req.body);
+      const updated = dbInstance.updateRawMaterial(routeId(req), req.body, auditActor(req));
       if (!updated) {
         res.status(404).json({ error: 'Materia prima no encontrada', code: 'NOT_FOUND' });
         return;

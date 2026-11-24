@@ -151,6 +151,80 @@ describe('inventory API', () => {
     expect(list.some((material) => material.id === created.id)).toBe(true);
   });
 
+  it('edita la ficha de un insumo, conserva la existencia y deja auditoría', async () => {
+    const createdResponse = await fetch(
+      `${baseUrl}/api/inventory/raw-materials`,
+      {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({...payload, code: 'TEST-API-EDIT-001'}),
+      }
+    );
+    expect(createdResponse.status).toBe(201);
+    const created = (await createdResponse.json()) as {id: string};
+
+    const response = await fetch(
+      `${baseUrl}/api/inventory/raw-materials/${created.id}`,
+      {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          category: 'quimico',
+          name: 'Pectina API editada',
+        }),
+      }
+    );
+    expect(response.status).toBe(200);
+    const updated = (await response.json()) as {
+      category: string;
+      currentStock: number;
+    };
+    expect(updated.category).toBe('quimico');
+    expect(updated.currentStock).toBe(payload.currentStock);
+
+    const row = getDb()
+      .prepare('SELECT category, current_stock FROM raw_materials WHERE id = ?')
+      .get(created.id) as {category: string; current_stock: number} | undefined;
+    expect(row).toEqual({category: 'quimico', current_stock: 17});
+
+    const audit = getDb()
+      .prepare(
+        `SELECT action_type, details_json FROM audit_logs
+         WHERE action_type = 'insumo_actualizado' AND details_json LIKE ?`
+      )
+      .get(`%${created.id}%`) as
+      | {action_type: string; details_json: string}
+      | undefined;
+    expect(audit?.action_type).toBe('insumo_actualizado');
+    expect(audit?.details_json).toContain('quimico');
+  });
+
+  it('rechaza una categoría inexistente al editar un insumo', async () => {
+    const createdResponse = await fetch(
+      `${baseUrl}/api/inventory/raw-materials`,
+      {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({...payload, code: 'TEST-API-EDIT-002'}),
+      }
+    );
+    expect(createdResponse.status).toBe(201);
+    const created = (await createdResponse.json()) as {id: string};
+
+    const response = await fetch(
+      `${baseUrl}/api/inventory/raw-materials/${created.id}`,
+      {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({category: 'categoria_que_no_existe'}),
+      }
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {error: string};
+    expect(body.error).toContain('categoría de materia prima');
+    expect(body.error).toContain('no existe o está inactivo');
+  });
+
   it('resets demo data through the API', async () => {
     const response = await fetch(`${baseUrl}/api/system/reset`, {
       method: 'POST',

@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {InventoryMovement, RawMaterial} from '../../core/models/erp.models';
 import {
   buildStockConsolidation,
+  filterStockConsolidation,
   validateMovementReference,
 } from './inventory-stock.utils';
 
@@ -150,5 +151,71 @@ describe('Consolidado del Reporte Oficial', () => {
     expect(result.byMaterial[0].movementCount).toBe(2);
     expect(result.byMaterial[0].recent).toBe(true);
     expect(result.byMaterial[1].recent).toBe(false);
+  });
+});
+
+describe('Buscador visual del consolidado', () => {
+  const todayIso = '2026-11-23';
+  const categories: Record<string, string> = {
+    fruta: 'Fruta / Pulpa Natural',
+    quimico_2: 'Químico 2',
+  };
+  const categoryLabel = (code: string) => categories[code] || code;
+  const consolidation = buildStockConsolidation({
+    materials: [
+      material('m1', 'MP-QUI-02', 'Pectina cítrica', 'quimico_2', 2, 'kg'),
+      material('m2', 'MP-FRU-01', 'Guayaba roja', 'fruta', 10, 'kg'),
+    ],
+    movements: [movement('mv1', 'm1', '2026-11-22')],
+    exchangeRate: 48,
+    todayIso,
+    categoryLabel,
+  });
+
+  it('encuentra insumos por nombre sin tildes y por código', () => {
+    const byName = filterStockConsolidation(consolidation, {
+      search: 'pectina citrica',
+      categoryLabel,
+    });
+    expect(byName.byMaterial.map((row) => row.material.code)).toEqual([
+      'MP-QUI-02',
+    ]);
+    expect(byName.byGroup.map((group) => group.key)).toEqual(['quimico_2']);
+
+    const byCode = filterStockConsolidation(consolidation, {
+      search: 'mp-fru-01',
+      categoryLabel,
+    });
+    expect(byCode.byMaterial.map((row) => row.material.id)).toEqual(['m2']);
+  });
+
+  it('busca por código y por etiqueta de categoría', () => {
+    const byCode = filterStockConsolidation(consolidation, {
+      search: 'quimico_2',
+      categoryLabel,
+    });
+    const byLabel = filterStockConsolidation(consolidation, {
+      search: 'quimico 2',
+      categoryLabel,
+    });
+    expect(byCode.byMaterial).toHaveLength(1);
+    expect(byLabel.byMaterial).toHaveLength(1);
+    expect(byLabel.byMaterial[0].lastMovement?.id).toBe('mv1');
+  });
+
+  it('conserva los totales globales y no altera el consolidado original', () => {
+    const filtered = filterStockConsolidation(consolidation, {
+      search: 'pectina',
+      categoryLabel,
+    });
+    expect(filtered.totalKg).toBe(consolidation.totalKg);
+    expect(filtered.totalUsd).toBe(consolidation.totalUsd);
+    expect(filtered.totalBs).toBe(consolidation.totalBs);
+    expect(consolidation.byMaterial).toHaveLength(2);
+    expect(consolidation.byGroup).toHaveLength(2);
+
+    expect(
+      filterStockConsolidation(consolidation, {search: '', categoryLabel})
+    ).toBe(consolidation);
   });
 });

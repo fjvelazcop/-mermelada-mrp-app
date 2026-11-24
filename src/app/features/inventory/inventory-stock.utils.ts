@@ -1,4 +1,5 @@
 import {InventoryMovement, RawMaterial} from '../../core/models/erp.models';
+import {normalizeSearchText} from './inventory.filters';
 
 export type MovementReferenceValidation =
   | 'ok'
@@ -99,12 +100,20 @@ export function buildStockConsolidation(
     };
   });
 
+  return buildConsolidationResult(byMaterial, input.categoryLabel);
+}
+
+/** Agrupa filas ya consolidadas, conservando la regla especial de Guayaba. */
+function buildConsolidationResult(
+  byMaterial: StockConsolidationRow[],
+  categoryLabel: (code: string) => string
+): StockConsolidation {
   const groups = new Map<string, StockConsolidationGroup>();
   for (const row of byMaterial) {
     const name = row.material.name.toLowerCase();
     const isGuava = name.includes('guayaba') || row.material.code === 'MP-FRU-01';
     const key = isGuava ? 'guayaba' : row.material.category;
-    const label = isGuava ? 'Guayaba' : input.categoryLabel(row.material.category);
+    const label = isGuava ? 'Guayaba' : categoryLabel(row.material.category);
     const group =
       groups.get(key) || {
         key,
@@ -136,5 +145,37 @@ export function buildStockConsolidation(
     totalKg: Number(byMaterial.reduce((sum, row) => sum + row.stockKg, 0).toFixed(2)),
     totalUsd: Number(byMaterial.reduce((sum, row) => sum + row.valueUsd, 0).toFixed(2)),
     totalBs: Number(byMaterial.reduce((sum, row) => sum + row.valueBs, 0).toFixed(2)),
+  };
+}
+
+/**
+ * Filtro visual del reporte: localiza insumos por nombre, código, categoría o
+ * etiqueta sin alterar los totales globales ni los exportes del Reporte Oficial.
+ */
+export function filterStockConsolidation(
+  consolidation: StockConsolidation,
+  options: { search: string; categoryLabel: (code: string) => string }
+): StockConsolidation {
+  const term = normalizeSearchText(options.search);
+  if (!term) return consolidation;
+
+  const byMaterial = consolidation.byMaterial.filter((row) => {
+    const haystack = [
+      row.material.code,
+      row.material.name,
+      row.material.category,
+      options.categoryLabel(row.material.category),
+    ]
+      .filter(Boolean)
+      .map((value) => normalizeSearchText(String(value)))
+      .join(' ');
+    return haystack.includes(term);
+  });
+
+  return {
+    ...buildConsolidationResult(byMaterial, options.categoryLabel),
+    totalKg: consolidation.totalKg,
+    totalUsd: consolidation.totalUsd,
+    totalBs: consolidation.totalBs,
   };
 }
