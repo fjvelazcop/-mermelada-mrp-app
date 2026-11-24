@@ -3,8 +3,10 @@ import type { DatabaseState } from '../erp-database.js';
 import {
   Account,
   AccountingBookSettings,
+  createDefaultAccountingOpening,
   AccountingEntry,
   AccountingEntryLine,
+  AccountingOpeningDraft,
   AccountingPeriod,
   AuditLogEntry,
   Customer,
@@ -26,6 +28,7 @@ import {
   Payable,
   PayablePayment,
   PayrollWeek,
+  PresentationTypeConfig,
   ProductionOrder,
   RawMaterial,
   RecipeBOM,
@@ -90,6 +93,11 @@ export function loadRelationalState(): DatabaseState | null {
       unit: r['unit'],
       costPerUnit: r['cost_per_unit'],
       supplier: o(r['supplier']),
+      supplierId: o(r['supplier_id']),
+      supplierTaxId: o(r['supplier_tax_id']),
+      paymentCondition: (o(r['payment_condition']) as RawMaterial['paymentCondition']) ?? 'contado',
+      creditDays: Number(r['credit_days'] ?? 0),
+      paymentDueDate: o(r['payment_due_date']) || '',
       lastRestockDate: r['last_restock_date'],
       notes: o(r['notes']),
     })
@@ -127,6 +135,7 @@ export function loadRelationalState(): DatabaseState | null {
       dueDate: o(r['due_date']),
       payableId: o(r['payable_id']),
       payableNumber: o(r['payable_number']),
+      paymentAccountCode: o(r['payment_account_code']),
     })
   );
 
@@ -148,6 +157,9 @@ export function loadRelationalState(): DatabaseState | null {
       suggestedRetailPrice: r['suggested_retail_price'],
       suggestedSpecialPrice: r['suggested_special_price'],
       minStock: r['min_stock'],
+      ...(o(r['status']) ? {status: o(r['status']) as FinishedGood['status']} : {}),
+      ...(o(r['notes']) ? {notes: o(r['notes'])} : {}),
+      ...(o(r['created_at']) ? {createdAt: o(r['created_at'])} : {}),
     })
   );
 
@@ -176,6 +188,8 @@ export function loadRelationalState(): DatabaseState | null {
       directLaborMinutes: r['direct_labor_minutes'],
       estimatedUtilityCost: r['estimated_utility_cost'],
       instructions: o(r['instructions']),
+      ...(o(r['presentation_label']) ? {presentationLabel: o(r['presentation_label'])} : {}),
+      ...(r['weight_grams'] != null ? {weightGrams: r['weight_grams']} : {}),
     })
   );
 
@@ -352,6 +366,22 @@ export function loadRelationalState(): DatabaseState | null {
     })
   );
 
+  const presentationTypes = (
+    db.prepare('SELECT * FROM presentation_types ORDER BY rowid').all() as Row[]
+  ).map(
+    (r): PresentationTypeConfig => ({
+      id: r['id'],
+      code: r['code'],
+      label: r['label'],
+      weightGrams: r['weight_grams'],
+      packagingMaterialId: o(r['packaging_material_id']),
+      active: r['active'] === 1,
+      isSystem: r['is_system'] === 1,
+      createdAt: r['created_at'],
+      updatedAt: r['updated_at'],
+    })
+  );
+
   const suppliers = (
     db.prepare('SELECT * FROM suppliers ORDER BY rowid').all() as Row[]
   ).map(
@@ -507,6 +537,7 @@ export function loadRelationalState(): DatabaseState | null {
       paymentReference: o(r['payment_reference']),
       issuingBankCode: o(r['issuing_bank_code']),
       issuingBankName: o(r['issuing_bank_name']),
+      paymentAccountCode: o(r['payment_account_code']),
       notes: o(r['notes']),
       registeredBy: r['registered_by'],
       taxCategory: r['tax_category'],
@@ -529,6 +560,7 @@ export function loadRelationalState(): DatabaseState | null {
       bankCode: r['bank_code'],
       bankName: r['bank_name'],
       paymentMethod: r['payment_method'],
+      accountCode: o(r['account_code']),
       reference: r['reference'],
       amountUsd: r['amount_usd'],
       amountBs: r['amount_bs'],
@@ -842,6 +874,18 @@ export function loadRelationalState(): DatabaseState | null {
       }
     : ({ history } as DailyExchangeRates);
 
+  const openingRow = db
+    .prepare('SELECT state_json, updated_at, updated_by FROM accounting_opening WHERE id = 1')
+    .get() as Row | undefined;
+  let accountingOpening: AccountingOpeningDraft;
+  try {
+    accountingOpening = openingRow?.['state_json']
+      ? (JSON.parse(openingRow['state_json']) as AccountingOpeningDraft)
+      : createDefaultAccountingOpening(exchangeRates.currentUsd || 48.35);
+  } catch {
+    accountingOpening = createDefaultAccountingOpening(exchangeRates.currentUsd || 48.35);
+  }
+
   const auditLogs = (
     db.prepare('SELECT * FROM audit_logs ORDER BY rowid').all() as Row[]
   ).map(
@@ -874,6 +918,16 @@ export function loadRelationalState(): DatabaseState | null {
       active: r['active'] === 1,
       isSystem: r['is_system'] === 1,
       description: o(r['description']),
+      kind: (o(r['kind']) as Account['kind']) || 'otra',
+      bankCode: o(r['bank_code']),
+      bankName: o(r['bank_name']),
+      accountNumber: o(r['account_number']),
+      currency: (o(r['currency']) as Account['currency']) || undefined,
+      referenceBalanceUsd: r['reference_balance_usd'] === null || r['reference_balance_usd'] === undefined
+        ? undefined
+        : Number(r['reference_balance_usd']),
+      referenceBalanceUpdatedAt: o(r['reference_balance_updated_at']),
+      referenceBalanceNote: o(r['reference_balance_note']),
       createdAt: r['created_at'],
       updatedAt: r['updated_at'],
     })
@@ -932,6 +986,9 @@ export function loadRelationalState(): DatabaseState | null {
         confirmedAt: o(r['confirmed_at']),
         annulledAt: o(r['annulled_at']),
         annulmentReason: o(r['annulment_reason']),
+        previousHash: o(r['previous_hash']) || '',
+        entryHash: o(r['entry_hash']) || '',
+        hashSequence: Number(r['hash_sequence'] ?? 0),
       };
     }
   );
@@ -946,6 +1003,7 @@ export function loadRelationalState(): DatabaseState | null {
     salesOrders,
     supplierTypes,
     materialCategories,
+    presentationTypes,
     suppliers,
     supplierPrices,
     deliveryNotes,
@@ -958,6 +1016,7 @@ export function loadRelationalState(): DatabaseState | null {
     accounts,
     accountingEntries,
     accountingPeriods,
+    accountingOpening,
     fiscalSettings,
     fiscalObligations,
     fiscalObligationHistory,
@@ -992,6 +1051,7 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM fiscal_obligations;
       DELETE FROM fiscal_reference_values;
       DELETE FROM accounting_book_settings;
+      DELETE FROM accounting_opening;
       DELETE FROM fiscal_invoices;
       DELETE FROM fiscal_settings;
       DELETE FROM expense_categories;
@@ -1010,6 +1070,7 @@ export function saveRelationalState(state: DatabaseState): void {
       DELETE FROM supplier_prices;
       DELETE FROM suppliers;
       DELETE FROM material_categories;
+      DELETE FROM presentation_types;
       DELETE FROM supplier_types;
       DELETE FROM production_orders;
       DELETE FROM recipes;
@@ -1021,8 +1082,10 @@ export function saveRelationalState(state: DatabaseState): void {
     const insertRawMaterial = db.prepare(`
       INSERT INTO raw_materials (
         id, code, name, category, current_stock, min_stock, unit,
-        cost_per_unit, supplier, last_restock_date, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        cost_per_unit, supplier, supplier_id, supplier_tax_id,
+        payment_condition, credit_days, payment_due_date,
+        last_restock_date, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const m of snapshot.rawMaterials) {
       insertRawMaterial.run(
@@ -1035,6 +1098,11 @@ export function saveRelationalState(state: DatabaseState): void {
         m.unit,
         m.costPerUnit,
         v(m.supplier),
+        v(m.supplierId),
+        v(m.supplierTaxId),
+        m.paymentCondition ?? 'contado',
+        Number(m.creditDays ?? 0),
+        v(m.paymentDueDate) ?? '',
         m.lastRestockDate,
         v(m.notes)
       );
@@ -1047,8 +1115,8 @@ export function saveRelationalState(state: DatabaseState): void {
         reference_doc, supplier_id, supplier_name_snapshot, supplier_tax_id_snapshot,
         notes, movement_date, performed_by, payment_condition, payment_method,
         bank_code, bank_name, payment_reference, credit_days, due_date,
-        payable_id, payable_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payable_id, payable_number, payment_account_code
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const m of snapshot.inventoryMovements) {
       insertMovement.run(
@@ -1077,7 +1145,8 @@ export function saveRelationalState(state: DatabaseState): void {
         v(m.creditDays),
         v(m.dueDate),
         v(m.payableId),
-        v(m.payableNumber)
+        v(m.payableNumber),
+        v(m.paymentAccountCode)
       );
     }
 
@@ -1086,8 +1155,8 @@ export function saveRelationalState(state: DatabaseState): void {
         id, code, flavor, presentation, presentation_label, weight_grams,
         stock_units, reserved_units, available_units, base_cost,
         suggested_wholesale_price, suggested_retail_price,
-        suggested_special_price, min_stock
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        suggested_special_price, min_stock, status, notes, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const f of snapshot.finishedGoods) {
       insertFinishedGood.run(
@@ -1104,15 +1173,19 @@ export function saveRelationalState(state: DatabaseState): void {
         f.suggestedWholesalePrice,
         f.suggestedRetailPrice,
         f.suggestedSpecialPrice,
-        f.minStock
+        f.minStock,
+        f.status || '',
+        v(f.notes),
+        v(f.createdAt)
       );
     }
 
     const insertRecipe = db.prepare(`
       INSERT INTO recipes (
         id, code, name, flavor, presentation, batch_size_units,
-        direct_labor_minutes, estimated_utility_cost, instructions
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        direct_labor_minutes, estimated_utility_cost, instructions,
+        presentation_label, weight_grams
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertRecipeItem = db.prepare(`
       INSERT INTO recipe_items (
@@ -1129,7 +1202,9 @@ export function saveRelationalState(state: DatabaseState): void {
         recipe.batchSizeUnits,
         recipe.directLaborMinutes,
         recipe.estimatedUtilityCost,
-        v(recipe.instructions)
+        v(recipe.instructions),
+        v(recipe.presentationLabel),
+        recipe.weightGrams ?? null
       );
       for (const item of recipe.items) {
         insertRecipeItem.run(
@@ -1426,11 +1501,11 @@ export function saveRelationalState(state: DatabaseState): void {
         id, expense_number, expense_date, concept, category, category_label,
         amount_usd, exchange_rate_used, amount_bs, supplier_or_beneficiary,
         supplier_id, tax_id, document_type, document_number, payment_method,
-        payment_reference, issuing_bank_code, issuing_bank_name,
+        payment_reference, issuing_bank_code, issuing_bank_name, payment_account_code,
         notes, registered_by, tax_category,
         tax_rate_percent, tax_amount_usd, tax_amount_bs,
         accounting_account_code, accounting_account_name, fiscal_book_eligible, payable_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const e of snapshot.expenses) {
       insertExpense.run(
@@ -1452,6 +1527,7 @@ export function saveRelationalState(state: DatabaseState): void {
         v(e.paymentReference),
         v(e.issuingBankCode),
         v(e.issuingBankName),
+        v(e.paymentAccountCode),
         v(e.notes),
         e.registeredBy,
         e.taxCategory,
@@ -1500,9 +1576,9 @@ export function saveRelationalState(state: DatabaseState): void {
 
     const insertPayablePayment = db.prepare(`
       INSERT INTO payable_payments (
-        id, payable_id, bank_code, bank_name, payment_method, reference,
+        id, payable_id, bank_code, bank_name, payment_method, account_code, reference,
         amount_usd, amount_bs, exchange_rate_used, paid_at, paid_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const payment of snapshot.payablePayments ?? []) {
       insertPayablePayment.run(
@@ -1511,6 +1587,7 @@ export function saveRelationalState(state: DatabaseState): void {
         payment.bankCode,
         payment.bankName,
         payment.paymentMethod,
+        v(payment.accountCode),
         payment.reference,
         payment.amountUsd,
         payment.amountBs,
@@ -1523,8 +1600,10 @@ export function saveRelationalState(state: DatabaseState): void {
     const insertAccount = db.prepare(`
       INSERT INTO accounts (
         id, code, name, type, nature, parent_code, level, active, is_system,
-        description, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        description, kind, bank_code, bank_name, account_number, currency,
+        reference_balance_usd, reference_balance_updated_at, reference_balance_note,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const account of snapshot.accounts ?? []) {
       insertAccount.run(
@@ -1538,6 +1617,14 @@ export function saveRelationalState(state: DatabaseState): void {
         b(account.active),
         b(account.isSystem),
         v(account.description),
+        account.kind || 'otra',
+        v(account.bankCode),
+        v(account.bankName),
+        v(account.accountNumber),
+        v(account.currency),
+        account.referenceBalanceUsd ?? 0,
+        v(account.referenceBalanceUpdatedAt),
+        v(account.referenceBalanceNote),
         account.createdAt,
         account.updatedAt
       );
@@ -1565,8 +1652,8 @@ export function saveRelationalState(state: DatabaseState): void {
         id, entry_number, entry_date, description, source_type, source_id,
         status, total_debit, total_credit, currency, exchange_rate_used,
         period_key, created_by, created_at, updated_at, confirmed_at,
-        annulled_at, annulment_reason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        annulled_at, annulment_reason, previous_hash, entry_hash, hash_sequence
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const insertAccountingLine = db.prepare(`
       INSERT INTO accounting_entry_lines (
@@ -1593,7 +1680,10 @@ export function saveRelationalState(state: DatabaseState): void {
         entry.updatedAt,
         v(entry.confirmedAt),
         v(entry.annulledAt),
-        v(entry.annulmentReason)
+        v(entry.annulmentReason),
+        v(entry.previousHash) || '',
+        v(entry.entryHash) || '',
+        Number(entry.hashSequence ?? 0)
       );
       entry.lines.forEach((line, index) => {
         insertAccountingLine.run(
@@ -2015,6 +2105,26 @@ export function saveRelationalState(state: DatabaseState): void {
       );
     }
 
+    const insertPresentationType = db.prepare(`
+      INSERT INTO presentation_types (
+        id, code, label, weight_grams, packaging_material_id,
+        active, is_system, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const presentation of snapshot.presentationTypes || []) {
+      insertPresentationType.run(
+        presentation.id,
+        presentation.code,
+        presentation.label,
+        presentation.weightGrams,
+        v(presentation.packagingMaterialId),
+        b(presentation.active),
+        b(presentation.isSystem),
+        presentation.createdAt,
+        presentation.updatedAt
+      );
+    }
+
     const insertSupplierPrice = db.prepare(`
       INSERT INTO supplier_prices (
         id, supplier_id, supplier_name, material_id, product_name, unit,
@@ -2039,6 +2149,16 @@ export function saveRelationalState(state: DatabaseState): void {
         v(price.createdBy)
       );
     }
+
+    const opening = snapshot.accountingOpening ?? createDefaultAccountingOpening();
+    db.prepare(`
+      INSERT INTO accounting_opening (id, state_json, updated_at, updated_by)
+      VALUES (1, ?, ?, ?)
+    `).run(
+      JSON.stringify(opening),
+      opening.updatedAt || new Date().toISOString(),
+      opening.updatedBy || 'sistema'
+    );
   });
 
   replace(state);

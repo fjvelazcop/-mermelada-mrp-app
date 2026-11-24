@@ -390,6 +390,18 @@ const paths: Record<string, JsonObject> = {
         403: errorResponses[403],
       },
     },
+    post: {
+      tags: ['Inventario'],
+      summary: 'Registrar producto terminado (borrador, stock cero)',
+      requestBody: requestBody(ref('FinishedGoodInput')),
+      responses: {
+        201: jsonResponse('Producto registrado', ref('FinishedGood')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
   },
   '/api/inventory/finished-goods/{id}': {
     put: {
@@ -641,6 +653,57 @@ const paths: Record<string, JsonObject> = {
       parameters: [idParameter],
       responses: {
         200: jsonResponse('Tipo eliminado'),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+      },
+    },
+  },
+  '/api/presentation-types': {
+    get: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Listar el catálogo editable de presentaciones',
+      responses: {
+        200: jsonResponse('Presentaciones', arrayOf('PresentationType')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+    post: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Crear una presentación (código nuevo se documenta como otra)',
+      requestBody: requestBody(ref('PresentationTypeInput')),
+      responses: {
+        201: jsonResponse('Presentación creada', ref('PresentationType')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        422: errorResponses[422],
+      },
+    },
+  },
+  '/api/presentation-types/{id}': {
+    put: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Actualizar una presentación del catálogo',
+      parameters: [idParameter],
+      requestBody: requestBody(ref('PresentationTypeInput'), false),
+      responses: {
+        200: jsonResponse('Presentación actualizada', ref('PresentationType')),
+        400: errorResponses[400],
+        401: errorResponses[401],
+        403: errorResponses[403],
+        404: errorResponses[404],
+        422: errorResponses[422],
+      },
+    },
+    delete: {
+      tags: ['Inventario', 'Configuración'],
+      summary: 'Eliminar una presentación (bloqueada si está en uso)',
+      parameters: [idParameter],
+      responses: {
+        200: jsonResponse('Presentación eliminada'),
         400: errorResponses[400],
         401: errorResponses[401],
         403: errorResponses[403],
@@ -1274,6 +1337,28 @@ const paths: Record<string, JsonObject> = {
         403: errorResponses[403],
         404: errorResponses[404],
         422: errorResponses[422],
+      },
+    },
+  },
+  '/api/accounting/hash/verify': {
+    get: {
+      tags: ['Contabilidad'],
+      summary: 'Verificar la cadena hash autorizada de asientos',
+      responses: {
+        200: jsonResponse('Verificación', ref('AccountingHashVerification')),
+        401: errorResponses[401],
+        403: errorResponses[403],
+      },
+    },
+  },
+  '/api/accounting/hash/rebuild': {
+    post: {
+      tags: ['Contabilidad'],
+      summary: 'Recalcular y reparar la cadena hash de asientos (#13)',
+      responses: {
+        200: jsonResponse('Verificación', ref('AccountingHashVerification')),
+        401: errorResponses[401],
+        403: errorResponses[403],
       },
     },
   },
@@ -2160,24 +2245,50 @@ const schemas: Record<string, JsonObject> = {
       { type: 'object', required: ['id'], properties: { id: string } },
     ],
   },
-  FinishedGood: {
+  FinishedGoodInput: {
     type: 'object',
+    required: [
+      'code',
+      'flavor',
+      'presentation',
+      'presentationLabel',
+      'weightGrams',
+      'baseCost',
+      'suggestedWholesalePrice',
+      'suggestedRetailPrice',
+      'suggestedSpecialPrice',
+      'minStock',
+    ],
     properties: {
-      id: string,
       code: string,
       flavor: string,
       presentation: { type: 'string', enum: presentationEnum },
       presentationLabel: string,
       weightGrams: number,
-      stockUnits: number,
-      reservedUnits: number,
-      availableUnits: number,
       baseCost: number,
       suggestedWholesalePrice: number,
       suggestedRetailPrice: number,
       suggestedSpecialPrice: number,
       minStock: number,
+      stockUnits: number,
+      reservedUnits: number,
+      availableUnits: number,
+      status: { type: 'string', enum: ['borrador', 'activo', 'inactivo'] },
+      notes: string,
     },
+  },
+  FinishedGood: {
+    allOf: [
+      ref('FinishedGoodInput'),
+      {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: string,
+          createdAt: dateTime,
+        },
+      },
+    ],
   },
   FinishedGoodUpdate: {
     type: 'object',
@@ -2200,6 +2311,8 @@ const schemas: Record<string, JsonObject> = {
       name: string,
       flavor: string,
       presentation: { type: 'string', enum: presentationEnum },
+      presentationLabel: string,
+      weightGrams: number,
       batchSizeUnits: integer,
       items: {
         type: 'array',
@@ -2552,6 +2665,32 @@ const schemas: Record<string, JsonObject> = {
           code: string,
           label: string,
           active: boolean,
+          isSystem: boolean,
+          createdAt: dateTime,
+          updatedAt: dateTime,
+        },
+      },
+    ],
+  },
+  PresentationTypeInput: {
+    type: 'object',
+    required: ['code', 'label', 'weightGrams'],
+    properties: {
+      code: string,
+      label: string,
+      weightGrams: number,
+      packagingMaterialId: string,
+      active: boolean,
+    },
+  },
+  PresentationType: {
+    allOf: [
+      ref('PresentationTypeInput'),
+      {
+        type: 'object',
+        required: ['id', 'code', 'label', 'weightGrams', 'active', 'isSystem', 'createdAt', 'updatedAt'],
+        properties: {
+          id: string,
           isSystem: boolean,
           createdAt: dateTime,
           updatedAt: dateTime,
@@ -3062,6 +3201,21 @@ const schemas: Record<string, JsonObject> = {
       confirmedAt: dateTime,
       annulledAt: dateTime,
       annulmentReason: string,
+      previousHash: string,
+      entryHash: string,
+      hashSequence: integer,
+    },
+  },
+  AccountingHashVerification: {
+    type: 'object',
+    required: ['valid', 'checkedEntries', 'repairedEntries', 'lastHash', 'checkedAt'],
+    properties: {
+      valid: {type: 'boolean'},
+      checkedEntries: integer,
+      repairedEntries: integer,
+      firstBrokenEntryId: string,
+      lastHash: string,
+      checkedAt: dateTime,
     },
   },
   AccountingEntryInput: {
@@ -3627,6 +3781,8 @@ const schemas: Record<string, JsonObject> = {
       pagination: string,
       signatureText: string,
       signatureRole: string,
+      accountantSigner: string,
+      partnerSigners: string,
       exchangeRatePolicy: {type: 'string', enum: ['documento_con_fallback']},
       notes: string,
       approvedAt: string,
@@ -3646,6 +3802,8 @@ const schemas: Record<string, JsonObject> = {
       pagination: string,
       signatureText: string,
       signatureRole: string,
+      accountantSigner: string,
+      partnerSigners: string,
       exchangeRatePolicy: {type: 'string', enum: ['documento_con_fallback']},
       notes: string,
       approvedAt: string,

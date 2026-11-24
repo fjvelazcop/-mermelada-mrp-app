@@ -1,3 +1,5 @@
+import type {ManualSheetIngredientMaterialIds} from '../utils/manual-sheet-ingredients';
+
 export type UserRole = 'admin' | 'master' | 'operator' | 'operador_produccion' | string;
 
 export type AppModuleId =
@@ -25,6 +27,7 @@ export type SettingsSection =
   | 'notifications'
   | 'supplierTypes'
   | 'materialCategories'
+  | 'presentationTypes'
   | 'operations';
 
 export interface NotificationRecipient {
@@ -198,6 +201,50 @@ export type PresentationType =
   | 'caja_6kg'
   | 'otra';
 
+export const PRESENTATION_TYPE_CODES: PresentationType[] = [
+  'pequena_250g',
+  'pequena_300g',
+  'grande_1000g',
+  'galon_5kg',
+  'balde_15kg',
+  'pote_20kg',
+  'caja_20kg',
+  'caja_6kg',
+  'otra',
+];
+
+/** Presentación administrable. Códigos nuevos se conservan como `otra`. */
+export interface PresentationTypeConfig {
+  id: string;
+  code: string;
+  label: string;
+  weightGrams: number;
+  packagingMaterialId?: string;
+  active: boolean;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Traduce un código del catálogo al enum cerrado usado por libros y URI. */
+export function presentationTypeForCode(code: string): PresentationType {
+  return PRESENTATION_TYPE_CODES.includes(code as PresentationType)
+    ? (code as PresentationType)
+    : 'otra';
+}
+
+/** Catálogo base compartido entre BD, API y fallbacks de la UI. */
+export const DEFAULT_PRESENTATION_TYPES: PresentationTypeConfig[] = [
+  {id: 'pt-250g', code: 'pequena_250g', label: 'Frasco 250 g', weightGrams: 250, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'pt-300g', code: 'pequena_300g', label: 'Frasco 300 g', weightGrams: 300, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'pt-1000g', code: 'grande_1000g', label: 'Frasco 1000 g', weightGrams: 1000, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'pt-galon5', code: 'galon_5kg', label: 'Galón 5 kg', weightGrams: 5000, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'pt-balde15', code: 'balde_15kg', label: 'Balde 15 kg', weightGrams: 15000, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'pt-cunete20', code: 'pote_20kg', label: 'Cuñete 20 kg', weightGrams: 20000, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'pt-caja20', code: 'caja_20kg', label: 'Caja 20 kg', weightGrams: 20000, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+  {id: 'pt-caja6', code: 'caja_6kg', label: 'Caja 6 kg', weightGrams: 6000, active: true, isSystem: true, createdAt: '', updatedAt: ''},
+];
+
 export interface RawMaterial {
   id: string;
   code: string;
@@ -208,6 +255,11 @@ export interface RawMaterial {
   unit: UnitOfMeasure;
   costPerUnit: number; // Costo unitario promedio ponderado
   supplier?: string;
+  supplierId?: string;
+  supplierTaxId?: string;
+  paymentCondition?: 'contado' | 'credito';
+  creditDays?: number;
+  paymentDueDate?: string;
   lastRestockDate: string;
   notes?: string;
 }
@@ -243,6 +295,8 @@ export interface InventoryMovement {
   /** CxP generado automáticamente por una compra a crédito. */
   payableId?: string;
   payableNumber?: string;
+  /** Cuenta contable elegida para el lado efectivo/banco del asiento automático. */
+  paymentAccountCode?: string;
 }
 
 export type BasePriceTier = 'mayorista' | 'detal' | 'especial';
@@ -263,6 +317,10 @@ export interface FinishedGood {
   suggestedRetailPrice: number; // Precio Detal / Minorista (venta directa al público)
   suggestedSpecialPrice: number; // Precio Especial / Institucional (gran volumen / convenios)
   minStock: number;
+  /** Estado del maestro. Los productos en borrador no se venden todavía. */
+  status?: 'borrador' | 'activo' | 'inactivo';
+  notes?: string;
+  createdAt?: string;
 }
 
 export interface BOMItem {
@@ -284,6 +342,9 @@ export interface RecipeBOM {
   directLaborMinutes: number; // Minutos de mano de obra directa para el lote
   estimatedUtilityCost: number; // Gas, energía, agua estimada para el lote
   instructions?: string;
+  /** Presentación del catálogo cuando el código cerrado es `otra`. */
+  presentationLabel?: string;
+  weightGrams?: number;
 }
 
 export type ProductionOrderStatus =
@@ -418,6 +479,8 @@ interface ProductionManualSheet {
   packaging: ProductionSheetPackaging;
   totals: ProductionSheetTotals;
   costs: ProductionSheetCosts;
+  /** Insumos concretos elegidos para almidón, químico y ácido. */
+  ingredientMaterialIds?: ManualSheetIngredientMaterialIds;
 }
 
 export interface ProductionOrder {
@@ -567,6 +630,8 @@ export interface SalesCollection {
   bankCode: string;
   bankName: string;
   paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+  /** Cuenta contable de entrada elegida para el asiento automático. */
+  accountCode?: string;
   reference: string;
   amountUsd: number;
   amountBs?: number;
@@ -870,6 +935,9 @@ export interface AccountingBookSettings {
   pagination: string;
   signatureText: string;
   signatureRole: string;
+  /** Firmantes del cierre #13: contador y socios. */
+  accountantSigner?: string;
+  partnerSigners?: string;
   exchangeRatePolicy: string;
   notes: string;
   approvedAt: string;
@@ -1381,6 +1449,12 @@ export interface AuditLogDetails {
   entryNumber?: string;
   accountCode?: string;
   periodKey?: string;
+  cutoffDate?: string;
+  openingEntryId?: string;
+  balances?: number;
+  adjustmentId?: string;
+  exchangeRateUsed?: number;
+  rateSource?: string;
   sourceType?: string;
   reason?: string;
   previousStatus?: string;
@@ -1405,6 +1479,8 @@ export interface AuditLogDetails {
   products?: number;
   printCount?: number;
   isDuplicate?: boolean;
+  repairedEntries?: number;
+  firstBrokenEntryId?: string;
 }
 
 export interface AuditLogEntry {
@@ -1415,6 +1491,7 @@ export interface AuditLogEntry {
     | 'entrada_materia_prima'
     | 'salida_produccion'
     | 'ajuste_merma'
+    | 'ajuste_existencia'
     | 'reabastecimiento_alerta'
     | 'orden_produccion_creada'
     | 'orden_produccion_procesada'
@@ -1424,6 +1501,11 @@ export interface AuditLogEntry {
     | 'orden_manual_procesada'
     | 'orden_manual_anulada'
     | 'receta_bom_creada'
+    | 'presentacion_creada'
+    | 'presentacion_actualizada'
+    | 'presentacion_eliminada'
+    | 'producto_terminado_creado'
+    | 'producto_terminado_actualizado'
     | 'alerta_stock_critico'
     | 'gasto_registrado'
     | 'gasto_eliminado'
@@ -1466,6 +1548,7 @@ export interface AuditLogEntry {
     | 'asiento_automatico'
     | 'asiento_confirmado'
     | 'asiento_anulado'
+    | 'cadena_hash_reparada'
     | 'periodo_contable_cerrado'
     | 'periodo_contable_abierto'
     | 'valor_fiscal_referencia_creado'
@@ -1473,6 +1556,8 @@ export interface AuditLogEntry {
     | 'valor_fiscal_referencia_anulado'
     | 'valor_fiscal_referencia_vigencia_cerrada'
     | 'configuracion_libros_actualizada'
+    | 'apertura_actualizada'
+    | 'apertura_ajuste_registrado'
     | 'operario_inactivado'
     | 'operario_vacaciones'
     | 'operario_activado'
@@ -1538,6 +1623,8 @@ export interface Expense {
   paymentReference?: string;
   issuingBankCode?: string; // Código SUDEBAN del banco emisor (obligatorio para pagos bancarios)
   issuingBankName?: string; // Nombre oficial del banco emisor
+  /** Cuenta contable de pago elegida para el asiento automático. */
+  paymentAccountCode?: string;
   notes?: string;
   registeredBy: string;
 
@@ -1592,6 +1679,8 @@ export interface PayablePayment {
   bankCode: string;
   bankName: string;
   paymentMethod: Expense['paymentMethod'];
+  /** Cuenta contable de salida elegida para el asiento automático. */
+  accountCode?: string;
   reference: string;
   amountUsd: number;
   amountBs: number;
@@ -1624,6 +1713,16 @@ export interface Account {
   active: boolean;
   isSystem: boolean;
   description?: string;
+  /** Clasificación funcional para filtros y asientos automáticos (#13). */
+  kind?: 'banco' | 'caja' | 'otra';
+  bankCode?: string;
+  bankName?: string;
+  accountNumber?: string;
+  currency?: 'USD' | 'Bs' | 'AMBAS';
+  /** Saldo de referencia editable; no constituye asiento ni saldo de libros (#13). */
+  referenceBalanceUsd?: number;
+  referenceBalanceUpdatedAt?: string;
+  referenceBalanceNote?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1638,7 +1737,8 @@ export type AccountingEntrySource =
   | 'inventario'
   | 'nota_credito'
   | 'nota_debito'
-  | 'retencion';
+  | 'retencion'
+  | 'apertura';
 
 export type AccountingEntryStatus = 'borrador' | 'confirmado' | 'anulado';
 
@@ -1674,6 +1774,20 @@ export interface AccountingEntry {
   confirmedAt?: string;
   annulledAt?: string;
   annulmentReason?: string;
+  /** Cadena hash autorizada: enlace con el asiento anterior. */
+  previousHash?: string;
+  entryHash?: string;
+  hashSequence?: number;
+}
+
+/** Resultado de verificar la integridad de la cadena hash de asientos. */
+export interface AccountingHashVerification {
+  valid: boolean;
+  checkedEntries: number;
+  repairedEntries: number;
+  firstBrokenEntryId?: string;
+  lastHash: string;
+  checkedAt: string;
 }
 
 export type AccountingPeriodStatus = 'abierto' | 'cerrado';
@@ -1687,6 +1801,326 @@ export interface AccountingPeriod {
   status: AccountingPeriodStatus;
   closedAt?: string;
   closedBy?: string;
+}
+
+// --- APERTURA PROVISIONAL #13 ---
+
+/** Origen de la tasa guardada en cada línea de apertura. */
+export type OpeningRateSource = 'currentUsd (referencia)' | 'Tasa capturada en apertura';
+
+export interface OpeningAmount {
+  amountUsd: number;
+  amountBs: number;
+  exchangeRateUsed: number;
+  rateSource: OpeningRateSource;
+}
+
+export interface OpeningAmountInput {
+  amountUsd?: number;
+  amountBs?: number;
+  exchangeRateUsed?: number;
+  rateSource?: OpeningRateSource;
+}
+
+export interface OpeningLegalEntityDraft {
+  currentName: string;
+  convertedName: string;
+  legalForm: string;
+  reconversionInstrument: string;
+  reconversionDate: string;
+  notes: string;
+}
+
+export interface OpeningGeneralBalance extends OpeningAmount {
+  id: string;
+  accountCode: string;
+  memo?: string;
+}
+
+export type OpeningAuxiliaryKind = 'banco' | 'clientes' | 'proveedores';
+
+export interface OpeningAuxiliaryBalance extends OpeningAmount {
+  id: string;
+  kind: OpeningAuxiliaryKind;
+  name: string;
+  accountCode: string;
+  memo?: string;
+}
+
+export interface OpeningShareholder extends OpeningAmount {
+  id: string;
+  name: string;
+  taxId?: string;
+  contributionType?: string;
+  accountCode?: string;
+}
+
+export type OpeningAdjustmentDirection = 'debito' | 'credito';
+
+export interface OpeningAdjustment extends OpeningAmount {
+  id: string;
+  date: string;
+  accountCode: string;
+  description: string;
+  direction: OpeningAdjustmentDirection;
+}
+
+/**
+ * Borrador editable de apertura. Nunca confirma el asiento ni alimenta libros:
+ * la autorización contable expresa queda fuera de esta entrega (#13).
+ */
+export interface AccountingOpeningDraft {
+  id: 'apertura-13';
+  status: 'borrador';
+  postingStatus: 'borrador_provisional';
+  legalEntity: OpeningLegalEntityDraft;
+  cutoffDate: string;
+  shareholders: OpeningShareholder[];
+  generalBalances: OpeningGeneralBalance[];
+  auxiliaryBalances: OpeningAuxiliaryBalance[];
+  adjustments: OpeningAdjustment[];
+  openingEntryId?: string;
+  notes: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface OpeningReconciliationLine {
+  source: 'general' | 'auxiliar' | 'accionista' | 'ajuste';
+  reference: string;
+  accountCode: string;
+  debitUsd: number;
+  creditUsd: number;
+  debitBs: number;
+  creditBs: number;
+  exchangeRateUsed: number;
+  rateSource: OpeningRateSource;
+}
+
+export interface OpeningReconciliation {
+  lines: OpeningReconciliationLine[];
+  debitsUsd: number;
+  creditsUsd: number;
+  differenceUsd: number;
+  debitsBs: number;
+  creditsBs: number;
+  differenceBs: number;
+  balanced: boolean;
+  /** Texto listo para mostrar el faltante de contrapartida en USD y Bs. */
+  pendingMessage: string;
+  entryLines: {accountCode: string; debit: number; credit: number; memo?: string}[];
+}
+
+const roundOpeningMoney = (value: number): number =>
+  Number((Number.isFinite(value) ? value : 0).toFixed(2));
+
+/** Genera un id local estable para las filas editables de la apertura. */
+export function newOpeningRowId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+}
+
+/**
+ * Normaliza un monto dual. Si el usuario captura Bs. sin USD, deriva el USD con
+ * la tasa de esa fila; en caso contrario el USD es la fuente y el Bs se deriva.
+ */
+export function normalizeOpeningAmount(
+  input: OpeningAmountInput,
+  fallbackRate: number
+): OpeningAmount {
+  const rate = Number.isFinite(Number(input.exchangeRateUsed))
+    ? Number(input.exchangeRateUsed)
+    : Number(fallbackRate);
+  const safeRate = Number.isFinite(rate) && rate > 0 ? rate : 0;
+  const amountUsd = Math.max(0, Number(input.amountUsd) || 0);
+  const amountBs = Math.max(0, Number(input.amountBs) || 0);
+  const sourceUsd = amountUsd > 0 ? amountUsd : safeRate > 0 ? amountBs / safeRate : 0;
+  return {
+    amountUsd: roundOpeningMoney(sourceUsd),
+    amountBs: roundOpeningMoney(sourceUsd > 0 ? sourceUsd * safeRate : 0),
+    exchangeRateUsed: roundOpeningMoney(safeRate),
+    rateSource: input.exchangeRateUsed ? 'Tasa capturada en apertura' : 'currentUsd (referencia)',
+  };
+}
+
+export function createDefaultAccountingOpening(
+  fallbackRate = 48.35
+): AccountingOpeningDraft {
+  const zero = (accountCode: string, id: string): OpeningGeneralBalance => ({
+    id,
+    accountCode,
+    ...normalizeOpeningAmount(
+      {amountUsd: 0, exchangeRateUsed: fallbackRate},
+      fallbackRate
+    ),
+  });
+  const aux = (
+    id: string,
+    kind: OpeningAuxiliaryKind,
+    name: string,
+    accountCode: string,
+    amountUsd: number
+  ): OpeningAuxiliaryBalance => ({
+    id,
+    kind,
+    name,
+    accountCode,
+    ...normalizeOpeningAmount(
+      {amountUsd, exchangeRateUsed: fallbackRate},
+      fallbackRate
+    ),
+  });
+  return {
+    id: 'apertura-13',
+    status: 'borrador',
+    postingStatus: 'borrador_provisional',
+    legalEntity: {
+      currentName: '',
+      convertedName: '',
+      legalForm: '',
+      reconversionInstrument: '',
+      reconversionDate: '',
+      notes:
+        'Referencia del acta: Bs. 3.000.000.000,00 (1.000 acciones nominativas por Bs. 3.000.000,00, 100 % suscritas y pagadas). Sin conversión automática; pendiente de cotejo con el contador (#13).',
+    },
+    cutoffDate: '',
+    shareholders: [],
+    generalBalances: [
+      zero('1.01.01', 'ob-gen-caja'),
+      zero('3.01', 'ob-gen-capital'),
+      zero('3.02', 'ob-gen-utilidades'),
+      zero('2.02.01', 'ob-gen-iva-por-pagar'),
+    ],
+    auxiliaryBalances: [
+      aux('ob-aux-banco', 'banco', 'Banco principal', '1.01.02', 30000),
+      aux('ob-aux-clientes', 'clientes', 'Clientes', '1.02.01', 0),
+      aux('ob-aux-proveedores', 'proveedores', 'Proveedores', '2.01.01', 0),
+    ],
+    adjustments: [],
+    notes:
+      'Asiento de apertura borrador/provisional. No validado por el contador; no activa retenciones, facturación digital ni cadena hash (#13).',
+    updatedAt: new Date(0).toISOString(),
+    updatedBy: 'sistema',
+  };
+}
+
+/** Naturaleza contable por código, con fallback seguro para cuentas nuevas. */
+export function openingAccountSide(
+  account: Pick<Account, 'code' | 'type' | 'nature'> | undefined
+): OpeningAdjustmentDirection {
+  if (!account) return 'debito';
+  if (account.nature === 'credito') return 'credito';
+  if (account.nature === 'debito') return 'debito';
+  return ['pasivo', 'patrimonio', 'ingreso'].includes(account.type) ? 'credito' : 'debito';
+}
+
+/**
+ * Cuadre en tiempo real de la apertura. Las líneas hijas (auxiliares) se suman
+ * una sola vez: los saldos generales son cuentas sin auxiliar.
+ */
+export function summarizeOpening(
+  opening: AccountingOpeningDraft,
+  accounts: Pick<Account, 'code' | 'name' | 'type' | 'nature'>[]
+): OpeningReconciliation {
+  const byCode = new Map(accounts.map((account) => [account.code, account]));
+  const lines: OpeningReconciliationLine[] = [];
+  const push = (
+    source: OpeningReconciliationLine['source'],
+    reference: string,
+    accountCode: string,
+    direction: OpeningAdjustmentDirection,
+    amount: OpeningAmount,
+    memo?: string
+  ): void => {
+    const debitUsd = direction === 'debito' ? amount.amountUsd : 0;
+    const creditUsd = direction === 'credito' ? amount.amountUsd : 0;
+    const debitBs = direction === 'debito' ? amount.amountBs : 0;
+    const creditBs = direction === 'credito' ? amount.amountBs : 0;
+    if (debitUsd === 0 && creditUsd === 0) return;
+    lines.push({
+      source,
+      reference,
+      accountCode,
+      debitUsd: roundOpeningMoney(debitUsd),
+      creditUsd: roundOpeningMoney(creditUsd),
+      debitBs: roundOpeningMoney(debitBs),
+      creditBs: roundOpeningMoney(creditBs),
+      exchangeRateUsed: amount.exchangeRateUsed,
+      rateSource: amount.rateSource,
+    });
+    if (memo) {
+      lines[lines.length - 1]!.reference = `${reference} · ${memo}`;
+    }
+  };
+
+  for (const balance of opening.generalBalances || []) {
+    push(
+      'general',
+      balance.accountCode,
+      balance.accountCode,
+      openingAccountSide(byCode.get(balance.accountCode)),
+      balance,
+      balance.memo
+    );
+  }
+  for (const balance of opening.auxiliaryBalances || []) {
+    push(
+      'auxiliar',
+      `${balance.kind}: ${balance.name}`,
+      balance.accountCode,
+      openingAccountSide(byCode.get(balance.accountCode)),
+      balance,
+      balance.memo
+    );
+  }
+  for (const shareholder of opening.shareholders || []) {
+    push(
+      'accionista',
+      shareholder.name,
+      shareholder.accountCode || '3.01',
+      'credito',
+      shareholder
+    );
+  }
+  for (const adjustment of opening.adjustments || []) {
+    push(
+      'ajuste',
+      adjustment.description,
+      adjustment.accountCode,
+      adjustment.direction,
+      adjustment,
+      adjustment.date
+    );
+  }
+
+  const debitsUsd = roundOpeningMoney(lines.reduce((sum, line) => sum + line.debitUsd, 0));
+  const creditsUsd = roundOpeningMoney(lines.reduce((sum, line) => sum + line.creditUsd, 0));
+  const debitsBs = roundOpeningMoney(lines.reduce((sum, line) => sum + line.debitBs, 0));
+  const creditsBs = roundOpeningMoney(lines.reduce((sum, line) => sum + line.creditBs, 0));
+  const differenceUsd = roundOpeningMoney(debitsUsd - creditsUsd);
+  const differenceBs = roundOpeningMoney(debitsBs - creditsBs);
+  const balanced = Math.abs(differenceUsd) < 0.01;
+
+  return {
+    lines,
+    debitsUsd,
+    creditsUsd,
+    differenceUsd,
+    debitsBs,
+    creditsBs,
+    differenceBs,
+    balanced,
+    pendingMessage: balanced
+      ? 'Cuadre provisional alcanzado; el asiento continúa en borrador hasta autorización expresa (#13).'
+      : differenceUsd > 0
+        ? `Falta contrapartida en Patrimonio/Resultados: USD ${Math.abs(differenceUsd).toFixed(2)} / Bs. ${Math.abs(differenceBs).toFixed(2)} (débitos mayores).`
+        : `Falta contrapartida en Patrimonio/Resultados: USD ${Math.abs(differenceUsd).toFixed(2)} / Bs. ${Math.abs(differenceBs).toFixed(2)} (créditos mayores).`,
+    entryLines: lines.map((line) => ({
+      accountCode: line.accountCode,
+      debit: line.debitUsd,
+      credit: line.creditUsd,
+      memo: `${line.source} · ${line.reference} · Bs. ${(line.debitBs + line.creditBs).toFixed(2)} @ ${line.exchangeRateUsed.toFixed(2)} (${line.rateSource})`,
+    })),
+  };
 }
 
 export type AccountingBookType =
@@ -1734,7 +2168,7 @@ export interface AccountingBookMetadata {
   generatedBy: string;
   totalControl: number;
   hash: string;
-  provisional: true;
+  provisional: boolean;
   signatureLabel: string;
 }
 

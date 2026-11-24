@@ -10,7 +10,16 @@ import {
   ProductionOrder,
   ProductionSheetPresentationLine,
   PresentationType,
+  UnitOfMeasure,
+  presentationTypeForCode,
+  DEFAULT_PRESENTATION_TYPES,
 } from '../../core/models/erp.models';
+import {
+  resolveManualSheetIngredientMaterial,
+  normalizeManualSheetIngredientQuantity,
+  type ManualSheetIngredientKey,
+  type ManualSheetIngredientMaterialIds,
+} from '../../core/utils/manual-sheet-ingredients';
 import {VeCurrencyPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
 import {
@@ -52,6 +61,8 @@ export class ProductionComponent {
   public activeSheetMarmita = signal<number>(1);
   public editingManualOrderId = signal<string | null>(null);
   public isRecipeDetailModalOpen = signal<boolean>(false);
+  public isRecipeModalOpen = signal<boolean>(false);
+  public isSavingRecipe = signal<boolean>(false);
   public selectedRecipe = signal<RecipeBOM | null>(null);
   public isOrderDetailsModalOpen = signal<boolean>(false);
   public selectedOrderForDetails = signal<ProductionOrder | null>(null);
@@ -101,6 +112,11 @@ export class ProductionComponent {
       { nonNullable: true, validators: [Validators.required] }
     ),
     commitmentReference: new FormControl<string>('', { nonNullable: true }),
+    ingredientMaterialIds: new FormGroup({
+      starchKg: new FormControl<string>('', { nonNullable: true }),
+      chemicalG: new FormControl<string>('', { nonNullable: true }),
+      acidG: new FormControl<string>('', { nonNullable: true }),
+    }),
     operatorNotes: new FormControl<string>('', { nonNullable: true }),
     marmitas: new FormArray<
       FormGroup<{
@@ -129,7 +145,7 @@ export class ProductionComponent {
         FormGroup<{
           id: FormControl<string>;
           label: FormControl<string>;
-          presentation: FormControl<PresentationType>;
+          presentation: FormControl<string>;
           presentationKg: FormControl<number>;
         }>
       >([]),
@@ -155,6 +171,56 @@ export class ProductionComponent {
         ],
       }),
     }),
+  });
+
+  /** Alta de fórmulas maestras BOM desde la pestaña Recetas. */
+  public recipeForm = new FormGroup({
+    code: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.maxLength(60)],
+    }),
+    name: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(3), Validators.maxLength(200)],
+    }),
+    flavor: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.maxLength(120)],
+    }),
+    presentationCode: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+    presentationLabel: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.maxLength(120)],
+    }),
+    weightGrams: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(1), Validators.max(1_000_000)],
+    }),
+    batchSizeUnits: new FormControl<number>(1, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(1)],
+    }),
+    directLaborMinutes: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(0)],
+    }),
+    estimatedUtilityCost: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(0)],
+    }),
+    instructions: new FormControl<string>('', {nonNullable: true}),
+    items: new FormArray<
+      FormGroup<{
+        materialId: FormControl<string>;
+        materialName: FormControl<string>;
+        quantity: FormControl<number>;
+        unit: FormControl<UnitOfMeasure>;
+        estimatedCost: FormControl<number>;
+      }>
+    >([]),
   });
 
   constructor() {
@@ -198,22 +264,38 @@ export class ProductionComponent {
     return this.manualOrderForm.controls.formulas;
   }
 
-  /** Presentation types available to the manual sheet. */
-  public readonly presentationOptions: {
-    value: PresentationType;
-    label: string;
-    kg: number;
-  }[] = [
-    { value: 'pequena_300g', label: 'Frasco 300 g', kg: 0.3 },
-    { value: 'galon_5kg', label: 'Galón 5 kg', kg: 5 },
-    { value: 'pote_20kg', label: 'Cuñete 20 kg', kg: 20 },
-    { value: 'caja_20kg', label: 'Caja 20 kg', kg: 20 },
-    { value: 'caja_6kg', label: 'Caja 6 kg', kg: 6 },
-    { value: 'pequena_250g', label: 'Frasco 250 g', kg: 0.25 },
-    { value: 'grande_1000g', label: 'Frasco 1000 g', kg: 1 },
-    { value: 'balde_15kg', label: 'Balde 15 kg', kg: 15 },
-    { value: 'otra', label: 'Otra presentación', kg: 1 },
-  ];
+  /** Presentation types available to the manual sheet, from the editable catalog. */
+  public readonly presentationOptions = computed<
+    { value: PresentationType; label: string; kg: number; code: string }[]
+  >(() => {
+    const catalog = this.api
+      .presentationTypes()
+      .filter((item) => item.active && item.code !== 'otra');
+    const source = catalog.length
+      ? catalog.map((item) => ({
+          value: presentationTypeForCode(item.code),
+          label: item.label,
+          kg: item.weightGrams / 1000,
+          code: item.code,
+        }))
+      : DEFAULT_PRESENTATION_TYPES.map((item) => ({
+          value: presentationTypeForCode(item.code),
+          label: item.label,
+          kg: item.weightGrams / 1000,
+          code: item.code,
+        }));
+    return [
+      ...source,
+      { value: 'otra' as PresentationType, label: 'Otra presentación', kg: 1, code: 'otra' },
+    ];
+  });
+
+  /** Aditivos y químicos del maestro para discriminar la planilla. */
+  public readonly sheetIngredientOptions = computed(() =>
+    this.api
+      .rawMaterials()
+      .filter((item) => item.category === 'aditivo' || item.category === 'quimico')
+  );
 
   public get sheetMarmitas() {
     return this.manualSheetForm.controls.marmitas;
@@ -237,10 +319,10 @@ export class ProductionComponent {
     requiresManualPresentationUnits(this.sheetPresentationLines())
   );
 
-  public presentationLabel(line: { label?: string; presentation?: PresentationType }): string {
+  public presentationLabel(line: { label?: string; presentation?: string }): string {
     return (
       line.label ||
-      this.presentationOptions.find((option) => option.value === line.presentation)
+      this.presentationOptions().find((option) => option.code === line.presentation)
         ?.label ||
       'Presentación'
     );
@@ -269,13 +351,13 @@ export class ProductionComponent {
   private buildPresentationGroup(data: {
     id: string;
     label: string;
-    presentation: PresentationType;
+    presentation: string;
     presentationKg: number;
   }) {
     const group = new FormGroup({
       id: new FormControl<string>(data.id, { nonNullable: true }),
       label: new FormControl<string>(data.label, { nonNullable: true }),
-      presentation: new FormControl<PresentationType>(data.presentation, {
+      presentation: new FormControl<string>(data.presentation, {
         nonNullable: true,
         validators: [Validators.required],
       }),
@@ -285,7 +367,7 @@ export class ProductionComponent {
       }),
     });
     group.controls.presentation.valueChanges.subscribe((value) => {
-      const option = this.presentationOptions.find((item) => item.value === value);
+      const option = this.presentationOptions().find((item) => item.code === value);
       if (!option) return;
       group.controls.label.setValue(option.label, { emitEvent: false });
       group.controls.presentationKg.setValue(option.kg, { emitEvent: false });
@@ -314,13 +396,13 @@ export class ProductionComponent {
       this.sheetPresentations.getRawValue().map((line) => line.presentation)
     );
     const option =
-      this.presentationOptions.find((item) => !used.has(item.value)) ??
-      this.presentationOptions[0];
+      this.presentationOptions().find((item) => !used.has(item.code)) ??
+      this.presentationOptions()[0];
     this.sheetPresentations.push(
       this.buildPresentationGroup({
         id: this.newPresentationId(),
         label: option.label,
-        presentation: option.value,
+        presentation: option.code,
         presentationKg: option.kg,
       })
     );
@@ -379,7 +461,7 @@ export class ProductionComponent {
   private syncLegacyPackaging(): void {
     const lines = this.sheetPresentations.getRawValue();
     const rows = this.sheetMarmitas.getRawValue();
-    const unitsFor = (presentation: PresentationType) => {
+    const unitsFor = (presentation: string) => {
       const ids = lines
         .filter((line) => line.presentation === presentation)
         .map((line) => line.id);
@@ -501,16 +583,28 @@ export class ProductionComponent {
   }
 
   /** Unit valuation rate (USD) of a finished good for the given presentation. */
-  public sheetUnitRateFor(presentation: PresentationType): number {
+  public sheetUnitRateFor(presentation: string): number {
+    const type = presentationTypeForCode(presentation);
+    const label = this.presentationOptions().find((item) => item.code === presentation)?.label;
     const guava = this.api
       .finishedGoods()
-      .filter((item) => item.flavor === 'Guayaba Criolla');
-    return guava.find((item) => item.presentation === presentation)?.baseCost ?? 0;
+      .filter(
+        (item) =>
+          item.flavor === 'Guayaba Criolla' &&
+          (!item.status || item.status === 'activo')
+      );
+    return (
+      guava.find(
+        (item) =>
+          item.presentation === type &&
+          (type !== 'otra' || item.presentationLabel === label)
+      )?.baseCost ?? 0
+    );
   }
 
   /** Packaging material cost (USD per unit) for the given presentation. */
-  public sheetPackagingUnitCostFor(presentation: PresentationType): number {
-    switch (presentation) {
+  public sheetPackagingUnitCostFor(presentation: string): number {
+    switch (presentationTypeForCode(presentation)) {
       case 'pote_20kg':
         return this.materialRate(['rm-17'], [/(cu[nñ]ete|pote).*20\s*kg/i]);
       case 'caja_20kg':
@@ -540,6 +634,24 @@ export class ProductionComponent {
     caja: this.sheetUnitRateFor('caja_20kg'),
   }));
 
+  /** Costo de un insumo discriminado, convertido a la unidad del maestro. */
+  private sheetIngredientCost(key: ManualSheetIngredientKey, quantity: number): number {
+    const ids = this.manualSheetForm.controls.ingredientMaterialIds.controls;
+    const selectedId = ids[key].value || undefined;
+    const material = resolveManualSheetIngredientMaterial(
+      this.api.rawMaterials(),
+      key,
+      selectedId
+    );
+    if (!material) return 0;
+    const normalized = normalizeManualSheetIngredientQuantity(
+      key,
+      quantity,
+      material.unit
+    );
+    return normalized * material.costPerUnit;
+  }
+
   /** Materials cost of the captured ingredients (USD). */
   public sheetMaterialsCost = computed(() => {
     this.sheetRevision();
@@ -548,10 +660,9 @@ export class ProductionComponent {
       (
         totals.guavaKg * this.materialRate(['rm-1'], [/guayaba/i]) +
         totals.sugarKg * this.materialRate(['rm-2'], [/az[uú]car/i]) +
-        totals.starchKg * this.materialRate(['rm-20'], [/almid[oó]n/i]) +
-        totals.chemicalG * this.materialRate(['rm-3'], [/pectina/i]) +
-        totals.acidG *
-          this.materialRate(['rm-4'], [/[aá]cido c[ií]trico/i]) +
+        this.sheetIngredientCost('starchKg', totals.starchKg) +
+        this.sheetIngredientCost('chemicalG', totals.chemicalG) +
+        this.sheetIngredientCost('acidG', totals.acidG) +
         totals.waterGasOil *
           this.materialRate(['rm-21'], [/gasoil|agua de proceso/i])
       ).toFixed(2)
@@ -851,6 +962,133 @@ export class ProductionComponent {
     this.selectedRecipe.set(null);
   }
 
+  public get recipeItems() {
+    return this.recipeForm.controls.items;
+  }
+
+  /** Insumos disponibles para armar la tabla del BOM. */
+  public recipeMaterialOptions = computed(() => this.api.rawMaterials());
+
+  private buildRecipeItem() {
+    return new FormGroup({
+      materialId: new FormControl<string>('', {
+        nonNullable: true,
+        validators: [Validators.required],
+      }),
+      materialName: new FormControl<string>('', {
+        nonNullable: true,
+        validators: [Validators.required],
+      }),
+      quantity: new FormControl<number>(1, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0.01)],
+      }),
+      unit: new FormControl<UnitOfMeasure>('kg', {
+        nonNullable: true,
+        validators: [Validators.required],
+      }),
+      estimatedCost: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0)],
+      }),
+    });
+  }
+
+  public openRecipeModal() {
+    const first = this.presentationOptions()[0];
+    this.recipeForm.reset({
+      code: `REC-${Date.now().toString(36).toUpperCase()}`,
+      name: '',
+      flavor: '',
+      presentationCode: first?.code || '',
+      presentationLabel: first?.label || '',
+      weightGrams: first?.kg ? Math.round(first.kg * 1000) : 1000,
+      batchSizeUnits: 50,
+      directLaborMinutes: 0,
+      estimatedUtilityCost: 0,
+      instructions: '',
+      items: [],
+    });
+    this.recipeItems.clear();
+    this.addRecipeItem();
+    this.isRecipeModalOpen.set(true);
+  }
+
+  public closeRecipeModal() {
+    this.isRecipeModalOpen.set(false);
+    this.isSavingRecipe.set(false);
+  }
+
+  public addRecipeItem() {
+    this.recipeItems.push(this.buildRecipeItem());
+  }
+
+  public removeRecipeItem(index: number) {
+    if (this.recipeItems.length <= 1) return;
+    this.recipeItems.removeAt(index);
+  }
+
+  public onRecipePresentationChange(code: string) {
+    const option = this.presentationOptions().find((item) => item.code === code);
+    if (!option) return;
+    this.recipeForm.patchValue({
+      presentationLabel: option.label,
+      weightGrams: Math.round(option.kg * 1000),
+    });
+  }
+
+  public onRecipeMaterialChange(index: number, materialId: string) {
+    const material = this.api.rawMaterials().find((item) => item.id === materialId);
+    const row = this.recipeItems.at(index);
+    if (!row) return;
+    row.patchValue({
+      materialName: material?.name || '',
+      unit: material?.unit || 'kg',
+      estimatedCost: material ? Number((material.costPerUnit * (material.unit === 'g' ? 1000 : 1)).toFixed(4)) : 0,
+    });
+  }
+
+  public async saveRecipe() {
+    if (this.recipeForm.invalid) {
+      this.recipeForm.markAllAsTouched();
+      return;
+    }
+    const v = this.recipeForm.getRawValue();
+    const items = v.items.filter((item) => item.materialId);
+    if (!items.length) {
+      this.api.showToast('Agregue al menos un insumo a la receta.', 'error');
+      return;
+    }
+    this.isSavingRecipe.set(true);
+    try {
+      await this.api.addRecipe({
+        code: v.code.trim(),
+        name: v.name.trim(),
+        flavor: v.flavor.trim(),
+        presentation: presentationTypeForCode(v.presentationCode),
+        presentationLabel: v.presentationLabel.trim(),
+        weightGrams: Number(v.weightGrams),
+        batchSizeUnits: Math.trunc(Number(v.batchSizeUnits)),
+        items: items.map((item) => ({
+          materialId: item.materialId,
+          materialName: item.materialName.trim(),
+          quantity: Number(item.quantity),
+          unit: item.unit,
+          estimatedCost: Number(item.estimatedCost),
+        })),
+        directLaborMinutes: Number(v.directLaborMinutes),
+        estimatedUtilityCost: Number(v.estimatedUtilityCost),
+        instructions: v.instructions.trim() || undefined,
+      });
+      this.closeRecipeModal();
+      this.activeProductionTab.set('recipes');
+    } catch {
+      // Toast handled by the API service.
+    } finally {
+      this.isSavingRecipe.set(false);
+    }
+  }
+
   public async submitProductionOrder() {
     if (this.newOrderForm.invalid) return;
     const v = this.newOrderForm.getRawValue();
@@ -1102,12 +1340,12 @@ export class ProductionComponent {
       this.sheetMarmitas.push(this.buildMarmitaGroup(index));
     }
     this.sheetPresentations.clear();
-    const defaultPresentation = this.presentationOptions[0];
+    const defaultPresentation = this.presentationOptions()[0];
     this.sheetPresentations.push(
       this.buildPresentationGroup({
         id: this.newPresentationId(),
         label: defaultPresentation.label,
-        presentation: defaultPresentation.value,
+        presentation: defaultPresentation.code,
         presentationKg: defaultPresentation.kg,
       })
     );
@@ -1116,6 +1354,11 @@ export class ProductionComponent {
         lotNumber: this.autoManualLot(),
         productionDate: new Date().toISOString().slice(0, 10),
         commitmentReference: '',
+        ingredientMaterialIds: {
+          starchKg: '',
+          chemicalG: '',
+          acidG: '',
+        },
         operatorNotes: '',
         packaging: {
           presentationKg: defaultPresentation.kg,
@@ -1182,16 +1425,22 @@ export class ProductionComponent {
         return {
           id: line.id,
           label: line.label,
-          presentation: line.presentation,
+          presentation: presentationTypeForCode(line.presentation),
           presentationKg: line.presentationKg,
           units: line.units,
           unitRate: cost?.unitRate ?? 0,
           packagingUnitCost: cost?.packagingUnitCost ?? 0,
         };
       });
+      const selectedIngredients: ManualSheetIngredientMaterialIds = {
+        starchKg: value.ingredientMaterialIds.starchKg || undefined,
+        chemicalG: value.ingredientMaterialIds.chemicalG || undefined,
+        acidG: value.ingredientMaterialIds.acidG || undefined,
+      };
       await this.api.createManualSheetProductionOrder({
         lotNumber: value.lotNumber,
         productionDate: value.productionDate,
+        ingredientMaterialIds: selectedIngredients,
         marmitas: value.marmitas.map((row) => ({
           ...row,
           number: Number(row.number),

@@ -165,19 +165,53 @@
           Disponibilidad en almacén discriminada por presentación y reserva para pedidos Make-to-Order
         </p>
       </div>
-      <div class="text-xs font-medium text-stone-600 bg-stone-100 px-3 py-1 rounded-md">
-        Trazabilidad Lotes BPM / Sanitario
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-stone-600">
+          <input type="checkbox" [checked]="showInactiveProducts()"
+            (change)="showInactiveProducts.set($any($event.target).checked)"
+            class="rounded border-stone-300" />
+          Ver inactivos
+        </label>
+        <button type="button" (click)="openNewProductModal()"
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold">
+          <mat-icon class="text-sm">add</mat-icon>
+          Nuevo producto terminado
+        </button>
       </div>
     </div>
 
+    <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+      <p class="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+        <mat-icon class="text-sm">playlist_add_check</mat-icon>
+        Preparar producto nuevo
+      </p>
+      <ol class="mt-1.5 grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-amber-900/80 list-decimal list-inside">
+        <li>Registre el producto en <strong>borrador/prueba #13</strong> con stock inicial 0.</li>
+        <li>Confirme etiqueta, peso y Costo Base con el contador; la facturación sigue desactivada.</li>
+        <li>Actívelo solo cuando proceda; la baja es lógica y deja rastro en la bitácora.</li>
+      </ol>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      @for (fg of finishedGoods(); track fg.id) {
+      @for (fg of visibleFinishedGoods(); track fg.id) {
         <div class="border border-stone-200 rounded-xl p-5 bg-gradient-to-br from-white to-stone-50/50 hover:border-stone-300 transition-all">
           <div class="flex items-start justify-between">
             <div>
               <span class="text-xs font-mono text-stone-400 block">{{ fg.code }}</span>
               <h3 class="text-base font-bold text-stone-900">Mermelada de {{ fg.flavor }}</h3>
               <span class="text-xs text-stone-600 font-medium">{{ fg.presentationLabel }}</span>
+              <span class="mt-1 inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                [class.bg-amber-50]="!fg.status || fg.status === 'borrador'"
+                [class.text-amber-800]="!fg.status || fg.status === 'borrador'"
+                [class.border-amber-200]="!fg.status || fg.status === 'borrador'"
+                [class.bg-emerald-50]="fg.status === 'activo'"
+                [class.text-emerald-800]="fg.status === 'activo'"
+                [class.border-emerald-200]="fg.status === 'activo'"
+                [class.bg-stone-100]="fg.status === 'inactivo'"
+                [class.text-stone-600]="fg.status === 'inactivo'"
+                [class.border-stone-200]="fg.status === 'inactivo'">
+                {{ fg.status || 'activo' }}
+              </span>
             </div>
             <div class="text-right">
               <span class="text-xs text-stone-400 block">Costo Base / Ud</span>
@@ -256,6 +290,24 @@
                   ≈ {{ (spPrice * curRate) | veCurrency:'Bs.':2 }}
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div class="mt-4 pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2">
+            <span class="text-[10px] text-stone-400">{{ fg.weightGrams }} g · {{ fg.code }}</span>
+            <div class="flex items-center gap-2">
+              @if (fg.status !== 'activo') {
+                <button type="button" (click)="setProductStatus(fg.id, fg.code, 'activo')"
+                  class="px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100">
+                  Activar
+                </button>
+              }
+              @if (fg.status !== 'inactivo') {
+                <button type="button" (click)="setProductStatus(fg.id, fg.code, 'inactivo')"
+                  class="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-[11px] font-semibold text-rose-700 hover:bg-rose-100">
+                  Dar de baja
+                </button>
+              }
             </div>
           </div>
         </div>
@@ -413,6 +465,14 @@
                     <mat-icon class="text-xs">add_circle_outline</mat-icon>
                     Entrada
                   </button>
+                  <button
+                    (click)="openStockFixModal(mat)"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-amber-800 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded transition-colors"
+                    title="Fijar existencia física (solo bitácora)"
+                  >
+                    <mat-icon class="text-xs">tune</mat-icon>
+                    Fijar
+                  </button>
                 </div>
               </td>
             </tr>
@@ -428,10 +488,23 @@
           <mat-icon class="text-amber-700 text-base">summarize</mat-icon>
           <div>
             <h3 class="text-sm font-bold text-stone-900">Consolidado y trazabilidad — Reporte Oficial</h3>
-            <p class="text-[11px] text-stone-500">Kilos y valoración por insumo/grupo, con el último movimiento registrado.</p>
+            <p class="text-[11px] text-stone-500">
+              Datos del maestro · {{ api.rawMaterials().length }} insumos (sin filtros). Solo kg/g
+              aportan a total kilos; la valoración incluye todas las unidades.
+            </p>
+            <p class="text-[10px] text-stone-400">Se actualiza automáticamente cada 30 s y al registrar cambios.</p>
           </div>
         </div>
-        <div class="flex flex-wrap gap-2 text-[11px]">
+        <div class="flex flex-wrap items-center gap-2 text-[11px]">
+          <button
+            type="button"
+            (click)="refreshInventoryNow(true)"
+            class="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-semibold text-amber-800 hover:bg-amber-100"
+            title="Sincronizar existencias con la base de datos"
+          >
+            <mat-icon class="text-sm">refresh</mat-icon>
+            Actualizar
+          </button>
           <span class="rounded-lg bg-white border border-amber-200 px-2.5 py-1 font-mono text-stone-800">
             Total kilos: <strong>{{ stockConsolidation().totalKg | veNumber:2 }} kg</strong>
           </span>
@@ -778,19 +851,19 @@
 
   <!-- MODAL: REGISTRAR MOVIMIENTO -->
   @if (isMovementModalOpen()) {
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-      <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200">
-        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-xl border border-stone-200">
+        <div class="sticky top-0 z-10 -mx-5 -mt-5 mb-4 flex items-center justify-between border-b border-stone-100 bg-white/95 px-5 py-4 backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6">
           <div class="flex items-center gap-2">
             <mat-icon class="text-amber-700">swap_horiz</mat-icon>
             <h3 class="text-lg font-bold text-stone-900">Registrar Movimiento de Inventario</h3>
           </div>
-          <button (click)="closeMovementModal()" class="text-stone-400 hover:text-stone-700">
+          <button (click)="closeMovementModal()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
             <mat-icon>close</mat-icon>
           </button>
         </div>
 
-        <form [formGroup]="movementForm" (ngSubmit)="submitMovement()" class="space-y-4 mt-4">
+        <form [formGroup]="movementForm" (ngSubmit)="submitMovement()" class="space-y-3">
           <div>
             <label class="block text-xs font-semibold text-stone-700 mb-1">Materia Prima / Insumo</label>
             <select
@@ -803,7 +876,7 @@
             </select>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label class="block text-xs font-semibold text-stone-700 mb-1">Tipo de Movimiento</label>
               <select
@@ -824,9 +897,6 @@
                 class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-800 font-mono"
               />
             </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-stone-700 mb-1">Costo Unitario ($)</label>
               <input
@@ -853,123 +923,129 @@
             </div>
           </div>
 
-          <!-- Dynamic Conversion Preview in Bolívares -->
-          <div class="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs">
-            <div class="flex items-center justify-between text-stone-600 pb-1.5 border-b border-stone-200/60">
-              <span>Costo Unitario en Bolívares:</span>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs">
+            <div class="sm:col-span-1">
+              <span class="block text-stone-500">Costo unitario Bs.</span>
               <span class="font-mono font-bold text-stone-900">
                 {{ ((movementForm.get('costPerUnit')?.value || 0) * (movementForm.get('exchangeRateUsed')?.value || 48.35)) | veCurrency:'Bs.':2 }}
               </span>
             </div>
-            <div class="flex items-center justify-between text-stone-600 pt-1.5">
-              <span class="font-bold text-stone-800">Total Transacción:</span>
-              <div class="text-right">
-                <span class="font-mono font-bold text-stone-900 block text-sm">
-                  {{ ((movementForm.get('costPerUnit')?.value || 0) * (movementForm.get('quantity')?.value || 0)) | veCurrency:'$':2 }}
-                </span>
-                <span class="font-mono font-bold text-emerald-800 block text-xs">
-                  ≈ {{ ((movementForm.get('costPerUnit')?.value || 0) * (movementForm.get('quantity')?.value || 0) * (movementForm.get('exchangeRateUsed')?.value || 48.35)) | veCurrency:'Bs.':2 }}
-                </span>
-              </div>
+            <div class="sm:col-span-1">
+              <span class="block text-stone-500">Total USD</span>
+              <span class="font-mono font-bold text-stone-900">
+                {{ ((movementForm.get('costPerUnit')?.value || 0) * (movementForm.get('quantity')?.value || 0)) | veCurrency:'$':2 }}
+              </span>
+            </div>
+            <div class="sm:col-span-1">
+              <span class="block text-stone-500">Total Bs.</span>
+              <span class="font-mono font-bold text-emerald-800">
+                ≈ {{ ((movementForm.get('costPerUnit')?.value || 0) * (movementForm.get('quantity')?.value || 0) * (movementForm.get('exchangeRateUsed')?.value || 48.35)) | veCurrency:'Bs.':2 }}
+              </span>
             </div>
           </div>
 
-          <div>
-            <label class="block text-xs font-semibold text-stone-700 mb-1">Doc. Referencia / Factura</label>
-            <input
-              type="text"
-              placeholder="ej: Factura F-310"
-              formControlName="referenceDoc"
-              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-800"
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Factura o nota (N.º / referencia)</label>
+              <input
+                type="text"
+                placeholder="ej: Factura F-310 o NOTA-0001"
+                formControlName="referenceDoc"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-800"
+              />
+              <p class="mt-1 text-[10px] leading-snug text-stone-500">
+                Sin factura: capture el N.º de nota y use contado. No genera CxP ni Libro de Compras.
+              </p>
+            </div>
+            <app-supplier-autocomplete
+              id="movement-supplier"
+              label="Proveedor de la factura"
+              placeholder="Busca por razón social, código o RIF/Cédula"
+              formControlName="supplierQuery"
+              (supplierSelected)="onSupplierSelected($event)"
             />
           </div>
 
-          <app-supplier-autocomplete
-            id="movement-supplier"
-            label="Proveedor de la factura"
-            placeholder="Busca por razón social, código o RIF/Cédula"
-            formControlName="supplierQuery"
-            (supplierSelected)="onSupplierSelected($event)"
-          />
-
           @if (movementForm.controls.type.value === 'entrada') {
-            <div class="rounded-xl border border-stone-200 bg-stone-50/70 p-3 space-y-3">
-              <div>
-                <label class="block text-xs font-semibold text-stone-700 mb-1">Condición de pago</label>
-                <div class="grid grid-cols-2 gap-2">
-                  <label class="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs cursor-pointer"
-                    [class.border-amber-400]="movementForm.controls.paymentCondition.value === 'contado'"
-                    [class.text-amber-900]="movementForm.controls.paymentCondition.value === 'contado'"
-                    [class.border-stone-200]="movementForm.controls.paymentCondition.value !== 'contado'">
-                    <input type="radio" formControlName="paymentCondition" value="contado" class="accent-amber-600" />
-                    Contado
-                  </label>
-                  <label class="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs cursor-pointer"
-                    [class.border-indigo-400]="movementForm.controls.paymentCondition.value === 'credito'"
-                    [class.text-indigo-900]="movementForm.controls.paymentCondition.value === 'credito'"
-                    [class.border-stone-200]="movementForm.controls.paymentCondition.value !== 'credito'">
-                    <input type="radio" formControlName="paymentCondition" value="credito" class="accent-indigo-600" />
-                    Crédito
-                  </label>
+            <div class="rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+              <div class="grid grid-cols-1 lg:grid-cols-[190px_1fr] gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-stone-700 mb-2">Condición de pago</label>
+                  <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
+                    <label class="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs cursor-pointer"
+                      [class.border-amber-400]="movementForm.controls.paymentCondition.value === 'contado'"
+                      [class.text-amber-900]="movementForm.controls.paymentCondition.value === 'contado'"
+                      [class.border-stone-200]="movementForm.controls.paymentCondition.value !== 'contado'">
+                      <input type="radio" formControlName="paymentCondition" value="contado" class="accent-amber-600" />
+                      Contado
+                    </label>
+                    <label class="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs cursor-pointer"
+                      [class.border-indigo-400]="movementForm.controls.paymentCondition.value === 'credito'"
+                      [class.text-indigo-900]="movementForm.controls.paymentCondition.value === 'credito'"
+                      [class.border-stone-200]="movementForm.controls.paymentCondition.value !== 'credito'">
+                      <input type="radio" formControlName="paymentCondition" value="credito" class="accent-indigo-600" />
+                      Crédito
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  @if (movementForm.controls.paymentCondition.value === 'contado') {
+                    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                      <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Método de pago</label>
+                        <select formControlName="paymentMethod"
+                          class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500">
+                          @for (method of purchasePaymentMethods; track method.value) {
+                            <option [value]="method.value">{{ method.label }}</option>
+                          }
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Cuenta / Banco</label>
+                        <select formControlName="bankCode"
+                          class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500">
+                          @for (bank of banks; track bank.code) {
+                            <option [value]="bank.code">{{ bankLabel(bank) }}</option>
+                          }
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Cuenta contable del asiento</label>
+                        <select formControlName="paymentAccountCode"
+                          class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500">
+                          @for (account of api.cashAccounts(); track account.id) {
+                            <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+                          }
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Referencia de pago</label>
+                        <input type="text" formControlName="paymentReference" placeholder="ej: TRANSF-8849102"
+                          class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      </div>
+                    </div>
+                  } @else {
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Días de crédito</label>
+                        <input type="number" min="0" max="365" formControlName="creditDays"
+                          class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 text-right font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Fecha de emisión</label>
+                        <input type="text" [value]="todayIso" disabled
+                          class="w-full bg-stone-100 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-500 font-mono" />
+                      </div>
+                      <div>
+                        <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Fecha de vencimiento</label>
+                        <input type="text" [value]="movementForm.controls.dueDate.value" disabled
+                          class="w-full bg-white border border-indigo-200 rounded-lg px-2 py-1.5 text-xs text-indigo-900 font-mono" />
+                      </div>
+                    </div>
+                  }
                 </div>
               </div>
-
-              @if (movementForm.controls.paymentCondition.value === 'contado') {
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Método de pago</label>
-                    <select formControlName="paymentMethod"
-                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500">
-                      @for (method of purchasePaymentMethods; track method.value) {
-                        <option [value]="method.value">{{ method.label }}</option>
-                      }
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Cuenta / Banco</label>
-                    <select formControlName="bankCode"
-                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500">
-                      @for (bank of banks; track bank.code) {
-                        <option [value]="bank.code">{{ bankLabel(bank) }}</option>
-                      }
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Referencia de pago</label>
-                    <input type="text" formControlName="paymentReference" placeholder="ej: TRANSF-8849102"
-                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                  </div>
-                </div>
-              } @else {
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Días de crédito</label>
-                    <input type="number" min="0" max="365" formControlName="creditDays"
-                      class="w-full bg-white border border-stone-300 rounded-lg px-2 py-1.5 text-xs text-stone-900 text-right font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                  </div>
-                  <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Fecha de emisión</label>
-                    <input type="text" [value]="todayIso" disabled
-                      class="w-full bg-stone-100 border border-stone-200 rounded-lg px-2 py-1.5 text-xs text-stone-500 font-mono" />
-                  </div>
-                  <div>
-                    <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">Fecha de vencimiento</label>
-                    <input type="text" [value]="movementForm.controls.dueDate.value" disabled
-                      class="w-full bg-white border border-indigo-200 rounded-lg px-2 py-1.5 text-xs text-indigo-900 font-mono" />
-                  </div>
-                </div>
-              }
-
-              <p class="text-[11px] leading-relaxed text-stone-600 flex items-start gap-1.5">
-                <mat-icon class="text-sm text-amber-700">info</mat-icon>
-                <span>{{ purchasePaymentSummary() }}</span>
-              </p>
-              <p class="text-[11px] leading-relaxed text-stone-600 flex items-start gap-1.5">
-                <mat-icon class="text-sm text-stone-400">info_outline</mat-icon>
-                <span>
-                  Libro de Compras (#13, pendiente de validar con el contador): se alimenta al pagar la CxP, no al registrar la entrada. Criterio pago vs. devengo sujeto a revisión.
-                </span>
-              </p>
             </div>
           }
 
@@ -983,7 +1059,7 @@
             />
           </div>
 
-          <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
+          <div class="sticky bottom-0 z-10 -mx-5 -mb-5 mt-4 flex items-center justify-end gap-2 border-t border-stone-100 bg-white/95 px-5 py-4 backdrop-blur sm:-mx-6 sm:-mb-6 sm:px-6">
             <button
               type="button"
               (click)="closeMovementModal()"
@@ -1004,10 +1080,89 @@
     </div>
   }
 
+  <!-- MODAL: FIJAR EXISTENCIA (CONTEO FÍSICO, SOLO BITÁCORA) -->
+  @if (isStockFixModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+      <div class="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl border border-stone-200">
+        <div class="flex items-center justify-between pb-4 border-b border-stone-100">
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-amber-700">tune</mat-icon>
+            <h3 class="text-lg font-bold text-stone-900">Fijar existencia</h3>
+          </div>
+          <button (click)="closeStockFixModal()" class="text-stone-400 hover:text-stone-700" aria-label="Cerrar">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <form [formGroup]="stockFixForm" (ngSubmit)="submitStockFix()" class="space-y-4 mt-4">
+          <div class="p-3 rounded-xl bg-stone-50 border border-stone-200">
+            <p class="text-sm font-semibold text-stone-900">{{ selectedMaterialForStockFix()?.name }}</p>
+            <p class="text-[11px] text-stone-500">
+              Existencia actual: <strong class="font-mono text-stone-800">{{ (stockFixForm.get('currentStock')?.value || 0) | veNumber:2 }} {{ selectedMaterialForStockFix()?.unit }}</strong>
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Nueva existencia</label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                formControlName="targetStock"
+                class="w-full bg-amber-50/40 border border-amber-300 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono focus:outline-none focus:ring-1 focus:ring-amber-800"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Referencia (opcional)</label>
+              <input
+                type="text"
+                placeholder="ej: CONTEO-1123"
+                formControlName="referenceDoc"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-800"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Motivo de la regularización <span class="text-rose-600">*</span></label>
+            <input
+              type="text"
+              placeholder="ej: Conteo físico de químicos, sobrante no facturado"
+              formControlName="reason"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-800"
+            />
+          </div>
+
+          <p class="text-[11px] leading-relaxed text-stone-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            No crea movimiento, CxP ni asiento contable. La diferencia queda registrada en la bitácora con la existencia anterior, la nueva, el motivo y la referencia.
+          </p>
+
+          <div class="flex items-center justify-end gap-2 border-t border-stone-100 pt-4">
+            <button
+              type="button"
+              (click)="closeStockFixModal()"
+              class="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="stockFixForm.invalid"
+              class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50"
+            >
+              Guardar existencia
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
   <!-- MODAL: NUEVA MATERIA PRIMA -->
   @if (isNewMaterialModalOpen()) {
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-      <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200">
+      <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-xl border border-stone-200">
         <div class="flex items-center justify-between pb-4 border-b border-stone-100">
           <div class="flex items-center gap-2">
             <mat-icon class="text-stone-800">add_box</mat-icon>
@@ -1019,7 +1174,7 @@
         </div>
 
         <form [formGroup]="newMaterialForm" (ngSubmit)="submitNewMaterial()" class="space-y-4 mt-4">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="block text-xs font-semibold text-stone-700 mb-1">Código Interno</label>
               <input
@@ -1037,6 +1192,19 @@
                 @for (category of materialCategories(); track category.code) {
                   <option [value]="category.code">{{ category.label }}</option>
                 }
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-stone-700 mb-1">Unidad</label>
+              <select
+                formControlName="unit"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
+              >
+                <option value="kg">kg</option>
+                <option value="g">gramos (g)</option>
+                <option value="unidades">unidades</option>
+                <option value="l">litros (l)</option>
+                <option value="cajas">cajas</option>
               </select>
             </div>
           </div>
@@ -1080,20 +1248,7 @@
             }
           </div>
 
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <label class="block text-xs font-semibold text-stone-700 mb-1">Unidad</label>
-              <select
-                formControlName="unit"
-                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
-              >
-                <option value="kg">kg</option>
-                <option value="g">gramos (g)</option>
-                <option value="unidades">unidades</option>
-                <option value="l">litros (l)</option>
-                <option value="cajas">cajas</option>
-              </select>
-            </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="block text-xs font-semibold text-stone-700 mb-1">Stock Inicial</label>
               <input
@@ -1110,9 +1265,6 @@
                 class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
               />
             </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-stone-700 mb-1">Costo Unitario ($)</label>
               <input
@@ -1122,15 +1274,59 @@
                 class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
               />
             </div>
-            <div>
-              <label class="block text-xs font-semibold text-stone-700 mb-1">Proveedor Habitual</label>
-              <input
-                type="text"
-                placeholder="Nombre de la empresa proveedora"
-                formControlName="supplier"
-                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"
-              />
+          </div>
+
+          <app-supplier-autocomplete
+            id="material-supplier"
+            label="Proveedor Habitual"
+            placeholder="Busca por razón social, código o RIF/Cédula"
+            formControlName="supplier"
+            (supplierSelected)="onMaterialSupplierSelected($event)"
+          />
+
+          <div
+            class="rounded-xl border border-stone-200 bg-stone-50/70 p-3"
+            aria-label="Condición de pago habitual"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-semibold text-stone-700">Condición de pago</span>
+              @if (newMaterialForm.controls.paymentCondition.value === 'credito') {
+                <span class="rounded-full border border-indigo-300 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
+                  Crédito
+                </span>
+              } @else {
+                <span class="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                  Contado
+                </span>
+              }
             </div>
+
+            @if (newMaterialForm.controls.paymentCondition.value === 'credito') {
+              <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">
+                    Días de crédito
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="365"
+                    formControlName="creditDays"
+                    class="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
+                  />
+                </div>
+                <div>
+                  <label class="block text-[10px] uppercase tracking-wide text-stone-500 font-semibold mb-1">
+                    Fecha de pago
+                  </label>
+                  <input
+                    type="date"
+                    formControlName="paymentDueDate"
+                    class="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono"
+                  />
+                </div>
+              </div>
+            }
           </div>
 
           <div class="flex items-center justify-end gap-2 pt-4 border-t border-stone-100">
@@ -1147,6 +1343,112 @@
               class="px-4 py-2 text-xs font-semibold bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50"
             >
               Registrar Insumo
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: NUEVO PRODUCTO TERMINADO -->
+  @if (isNewProductModalOpen()) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
+      <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl border border-stone-200">
+        <form [formGroup]="newProductForm" (ngSubmit)="saveNewProduct()">
+          <div class="sticky top-0 z-10 bg-white p-5 border-b border-stone-200 flex items-start justify-between gap-3">
+            <div>
+              <h3 class="text-base font-bold text-stone-900">Nuevo producto terminado</h3>
+              <p class="text-[11px] text-stone-500 mt-1">
+                Se registra en <strong>borrador/prueba #13</strong> con stock inicial 0. No genera asiento, factura ni CxP.
+              </p>
+            </div>
+            <button type="button" (click)="closeNewProductModal()" class="rounded-lg p-1.5 text-stone-500 hover:bg-stone-100">
+              <mat-icon class="text-base">close</mat-icon>
+            </button>
+          </div>
+
+          <div class="p-5 space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Código</label>
+                <input type="text" formControlName="code"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Sabor / producto</label>
+                <input type="text" formControlName="flavor" placeholder="Ej. Guayaba Criolla"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Presentación del catálogo</label>
+                <select formControlName="presentationCode" (change)="onProductPresentationChange($any($event.target).value)"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900">
+                  @for (option of productPresentationOptions(); track option.code) {
+                    <option [value]="option.code">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Etiqueta conservada</label>
+                <input type="text" formControlName="presentationLabel"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Peso (g)</label>
+                <input type="number" min="1" formControlName="weightGrams"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Stock mínimo</label>
+                <input type="number" min="0" formControlName="minStock"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-stone-100">
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Costo base ($)</label>
+                <input type="number" min="0" step="0.01" formControlName="baseCost"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Precio mayorista ($)</label>
+                <input type="number" min="0" step="0.01" formControlName="suggestedWholesalePrice"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Precio detal ($)</label>
+                <input type="number" min="0" step="0.01" formControlName="suggestedRetailPrice"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-stone-600 mb-1">Precio especial ($)</label>
+                <input type="number" min="0" step="0.01" formControlName="suggestedSpecialPrice"
+                  class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 font-mono" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-semibold text-stone-600 mb-1">Notas de validación</label>
+              <textarea formControlName="notes" rows="2" maxlength="2000"
+                class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900"></textarea>
+            </div>
+
+            @if (newProductForm.controls.presentationCode.value === 'otra') {
+              <p class="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                La presentación se conserva como <strong>otra</strong> con la etiqueta y el peso indicados. La etiqueta debe ser única entre productos en borrador.
+              </p>
+            }
+          </div>
+
+          <div class="sticky bottom-0 bg-white px-5 py-4 border-t border-stone-200 flex items-center justify-end gap-2">
+            <button type="button" (click)="closeNewProductModal()"
+              class="px-4 py-2 rounded-xl border border-stone-200 text-xs font-semibold text-stone-700 min-h-[44px]">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="newProductForm.invalid || isSavingProduct()"
+              class="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold min-h-[44px] disabled:opacity-50">
+              Registrar producto
             </button>
           </div>
         </form>

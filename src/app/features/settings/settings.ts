@@ -194,6 +194,25 @@ export class Settings {
     {label: 'Naranja', value: 'orange'},
     {label: 'Rojo', value: 'rose'},
   ];
+  public presentationModalOpen = signal<boolean>(false);
+  public editingPresentationId = signal<string | null>(null);
+  public presentationForm = new FormGroup({
+    code: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.pattern(/^[a-z0-9_-]+$/)],
+    }),
+    label: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(2)],
+    }),
+    weightGrams: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(1), Validators.max(1_000_000)],
+    }),
+    packagingMaterialId: new FormControl<string>('', {nonNullable: true}),
+    active: new FormControl<boolean>(true, {nonNullable: true}),
+  });
+
   public canManageSupplierTypes = computed(
     () => this.isAdmin() || this.api.hasPermission('supplier_types', 'canEdit')
   );
@@ -532,6 +551,64 @@ export class Settings {
     try {
       if (kind === 'supplierTypes') await this.api.deleteSupplierType(id);
       else await this.api.deleteMaterialCategory(id);
+    } catch {
+      // Toast handled by the API service.
+    }
+  }
+
+  public openPresentationModal(value?: {
+    id: string;
+    code: string;
+    label: string;
+    weightGrams: number;
+    packagingMaterialId?: string;
+    active: boolean;
+  }) {
+    this.editingPresentationId.set(value?.id ?? null);
+    this.presentationForm.reset({
+      code: value?.code ?? '',
+      label: value?.label ?? '',
+      weightGrams: value?.weightGrams ?? 0,
+      packagingMaterialId: value?.packagingMaterialId ?? '',
+      active: value?.active ?? true,
+    });
+    this.presentationModalOpen.set(true);
+  }
+
+  public closePresentationModal() {
+    this.presentationModalOpen.set(false);
+    this.editingPresentationId.set(null);
+  }
+
+  public async savePresentation() {
+    if (this.presentationForm.invalid) {
+      this.presentationForm.markAllAsTouched();
+      return;
+    }
+    const v = this.presentationForm.getRawValue();
+    const data = {
+      code: v.code.trim(),
+      label: v.label.trim(),
+      weightGrams: Number(v.weightGrams),
+      packagingMaterialId: v.packagingMaterialId || undefined,
+      active: v.active,
+    };
+    const editingId = this.editingPresentationId();
+    try {
+      if (editingId) await this.api.updatePresentationType(editingId, data);
+      else await this.api.addPresentationType(data);
+      this.closePresentationModal();
+    } catch {
+      // Toast handled by the API service.
+    }
+  }
+
+  public async deletePresentation(id: string, code: string) {
+    if (!window.confirm(`¿Eliminar la presentación "${code}"? No se puede eliminar si está asociada a registros existentes.`)) {
+      return;
+    }
+    try {
+      await this.api.deletePresentationType(id);
     } catch {
       // Toast handled by the API service.
     }

@@ -45,6 +45,13 @@ export class FiscalReferenceValuesComponent implements OnInit {
 
   public catalog = computed(() => this.api.fiscalReferenceCatalog());
 
+  /** Estado comprensible del catálogo: solo la tasa general y la UT están validadas. */
+  public catalogStatus(item: FiscalReferenceCatalogEntry): string {
+    if (item.code === 'IVA-GEN-16') return 'Validado · tasa general';
+    if (item.group === 'iva') return 'Por precisar si aplica';
+    return 'Pendiente del contador';
+  }
+
   public catalogIva = computed<FiscalReferenceCatalogEntry[]>(
     () => this.catalog()?.entries.filter((item) => item.group === 'iva') ?? []
   );

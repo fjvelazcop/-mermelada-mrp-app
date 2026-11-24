@@ -4,6 +4,7 @@ import {
   RawMaterial,
   AccountingBookSettings,
   AccountingBookSettingsInput,
+  AccountingHashVerification,
   InventoryMovement,
   FinishedGood,
   RecipeBOM,
@@ -15,6 +16,9 @@ import {
   ProductionSheetPresentationLine,
   ProductionSheetPresentationCost,
   PresentationType,
+  PresentationTypeConfig,
+  DEFAULT_PRESENTATION_TYPES,
+  presentationTypeForCode,
   Customer,
   SalesOrder,
   SalesCollection,
@@ -63,8 +67,27 @@ import {
   AccountingEntry,
   AccountingEntryLine,
   AccountingEntrySource,
+  AccountingOpeningDraft,
   AccountingPeriod,
+  createDefaultAccountingOpening,
+  newOpeningRowId,
+  normalizeOpeningAmount,
+  OpeningAdjustment,
+  OpeningAdjustmentDirection,
+  OpeningAuxiliaryBalance,
+  OpeningGeneralBalance,
+  OpeningLegalEntityDraft,
+  OpeningShareholder,
+  summarizeOpening,
 } from '../app/core/models/erp.models.js';
+import type {
+  ManualSheetIngredientKey,
+  ManualSheetIngredientMaterialIds,
+} from '../app/core/utils/manual-sheet-ingredients.js';
+import {
+  normalizeManualSheetIngredientQuantity,
+  resolveManualSheetIngredientMaterial,
+} from '../app/core/utils/manual-sheet-ingredients.js';
 import { loadState } from './database/persistence.js';
 import {
   loadRelationalState,
@@ -82,6 +105,7 @@ export interface DatabaseState {
   salesOrders: SalesOrder[];
   supplierTypes: SupplierTypeConfig[];
   materialCategories: MaterialCategoryConfig[];
+  presentationTypes: PresentationTypeConfig[];
   suppliers: Supplier[];
   supplierPrices: SupplierPrice[];
   deliveryNotes: DeliveryNote[];
@@ -94,6 +118,7 @@ export interface DatabaseState {
   accounts: Account[];
   accountingEntries: AccountingEntry[];
   accountingPeriods: AccountingPeriod[];
+  accountingOpening: AccountingOpeningDraft;
   fiscalSettings: FiscalSettings;
   fiscalObligations: FiscalObligationRecord[];
   fiscalObligationHistory: FiscalObligationHistoryEntry[];
@@ -104,6 +129,27 @@ export interface DatabaseState {
   fiscalPeriodClosures: FiscalPeriodClosure[];
   exchangeRates: DailyExchangeRates;
   auditLogs: AuditLogEntry[];
+}
+
+/** Cuerpo editable de la apertura; los importes se normalizan en el servidor. */
+export interface AccountingOpeningInput {
+  legalEntity: OpeningLegalEntityDraft;
+  cutoffDate: string;
+  shareholders: (Partial<OpeningShareholder> & {name: string})[];
+  generalBalances: (Partial<OpeningGeneralBalance> & {accountCode: string})[];
+  auxiliaryBalances: (Partial<OpeningAuxiliaryBalance> & {accountCode: string; name: string})[];
+  notes: string;
+}
+
+export interface OpeningAdjustmentInput {
+  date: string;
+  accountCode: string;
+  description: string;
+  direction: OpeningAdjustmentDirection;
+  amountUsd?: number;
+  amountBs?: number;
+  exchangeRateUsed?: number;
+  rateSource?: OpeningAdjustment['rateSource'];
 }
 
 interface CatalogInput {
@@ -168,6 +214,8 @@ const DEFAULT_ACCOUNTING_BOOK_SETTINGS: AccountingBookSettings = {
   pagination: '',
   signatureText: '',
   signatureRole: '',
+  accountantSigner: 'Contador',
+  partnerSigners: 'Socios',
   exchangeRatePolicy: 'documento_con_fallback',
   notes: 'Orden de columnas aprobado. Paginación y firma pendientes de indicar por el contador (#13). Plan base de 35 cuentas y cuenta para retenciones recibidas pendientes de validación; no se crean cuentas ni se alteran asientos.',
   approvedAt: '2026-11-22',
@@ -243,6 +291,17 @@ function ensureFiscalPhaseZeroSeeds(state: DatabaseState): boolean {
   if (!state.accountingBookSettings) {
     state.accountingBookSettings = {...DEFAULT_ACCOUNTING_BOOK_SETTINGS};
     changed = true;
+  } else {
+    if (!state.accountingBookSettings.accountantSigner) {
+      state.accountingBookSettings.accountantSigner =
+        DEFAULT_ACCOUNTING_BOOK_SETTINGS.accountantSigner;
+      changed = true;
+    }
+    if (!state.accountingBookSettings.partnerSigners) {
+      state.accountingBookSettings.partnerSigners =
+        DEFAULT_ACCOUNTING_BOOK_SETTINGS.partnerSigners;
+      changed = true;
+    }
   }
   const initial = createInitialFiscalObligations();
   for (const expected of initial) {
@@ -405,6 +464,10 @@ function ensureCatalogs(state: DatabaseState): boolean {
   }
   if (!state.materialCategories?.length) {
     state.materialCategories = DEFAULT_MATERIAL_CATEGORIES.map((value) => ({ ...value }));
+    changed = true;
+  }
+  if (!state.presentationTypes?.length) {
+    state.presentationTypes = DEFAULT_PRESENTATION_TYPES.map((value) => ({ ...value }));
     changed = true;
   }
   return changed;
@@ -717,7 +780,14 @@ export function createInitialDatabase(): DatabaseState {
     },
     ...PRODUCTION_SHEET_MATERIALS,
     ...PRESENTATION_PACKAGING_MATERIALS,
-  ];
+  ].map((material): RawMaterial => ({
+    supplierId: '',
+    supplierTaxId: '',
+    paymentCondition: 'contado',
+    creditDays: 0,
+    paymentDueDate: '',
+    ...(material as RawMaterial),
+  }));
 
   const finishedGoods: FinishedGood[] = [
     {
@@ -2014,6 +2084,7 @@ export function createInitialDatabase(): DatabaseState {
     salesOrders,
     supplierTypes: DEFAULT_SUPPLIER_TYPES.map((value) => ({ ...value })),
     materialCategories: DEFAULT_MATERIAL_CATEGORIES.map((value) => ({ ...value })),
+    presentationTypes: DEFAULT_PRESENTATION_TYPES.map((value) => ({ ...value })),
     suppliers,
     supplierPrices,
     deliveryNotes,
@@ -2026,6 +2097,7 @@ export function createInitialDatabase(): DatabaseState {
     accounts: DEFAULT_ACCOUNTS.map((account) => ({...account})),
     accountingEntries: [],
     accountingPeriods: [],
+    accountingOpening: createDefaultAccountingOpening(exchangeRates.currentUsd || 48.35),
     fiscalSettings,
     fiscalObligations: createInitialFiscalObligations(),
     fiscalObligationHistory: [],
@@ -2047,6 +2119,10 @@ export class ErpDatabase {
     if (persisted) {
       this.state = {
         ...persisted,
+        presentationTypes:
+          persisted.presentationTypes?.length > 0
+            ? persisted.presentationTypes
+            : DEFAULT_PRESENTATION_TYPES.map((value) => ({ ...value })),
         fiscalObligations:
           persisted.fiscalObligations?.length > 0
             ? persisted.fiscalObligations
@@ -2060,6 +2136,9 @@ export class ErpDatabase {
             : DEFAULT_ACCOUNTS.map((account) => ({...account})),
         accountingEntries: persisted.accountingEntries || [],
         accountingPeriods: persisted.accountingPeriods || [],
+        accountingOpening:
+          persisted.accountingOpening ||
+          createDefaultAccountingOpening(persisted.exchangeRates?.currentUsd || 48.35),
         fiscalSettings: {
           ...persisted.fiscalSettings,
           accountingEnabled: persisted.fiscalSettings.accountingEnabled ?? true,
@@ -2091,13 +2170,17 @@ export class ErpDatabase {
       const materialsChanged = ensureProductionSheetMaterials(this.state);
       const finishedGoodsChanged = ensurePresentationFinishedGoods(this.state);
       const phaseZeroChanged = ensureFiscalPhaseZeroSeeds(this.state);
+      const openingMissing =
+        !persisted.accountingOpening ||
+        persisted.accountingOpening.updatedAt === new Date(0).toISOString();
       if (
         !persisted.fiscalObligations?.length ||
         !persisted.accounts?.length ||
         catalogsChanged ||
         materialsChanged ||
         finishedGoodsChanged ||
-        phaseZeroChanged
+        phaseZeroChanged ||
+        openingMissing
       ) {
         this.persist();
       }
@@ -2109,6 +2192,10 @@ export class ErpDatabase {
     this.state = legacy
       ? {
           ...legacy,
+          presentationTypes:
+            legacy.presentationTypes?.length > 0
+              ? legacy.presentationTypes
+              : DEFAULT_PRESENTATION_TYPES.map((value) => ({ ...value })),
           fiscalObligations:
             legacy.fiscalObligations?.length > 0
               ? legacy.fiscalObligations
@@ -2124,6 +2211,9 @@ export class ErpDatabase {
               : DEFAULT_ACCOUNTS.map((account) => ({...account})),
           accountingEntries: legacy.accountingEntries || [],
           accountingPeriods: legacy.accountingPeriods || [],
+          accountingOpening:
+            legacy.accountingOpening ||
+            createDefaultAccountingOpening(legacy.exchangeRates?.currentUsd || 48.35),
           fiscalSettings: {
             ...legacy.fiscalSettings,
             accountingEnabled: legacy.fiscalSettings.accountingEnabled ?? true,
@@ -2156,6 +2246,7 @@ export class ErpDatabase {
     ensureProductionSheetMaterials(this.state);
     ensurePresentationFinishedGoods(this.state);
     ensureFiscalPhaseZeroSeeds(this.state);
+    this.backfillAccountingHashes();
     this.persist();
   }
 
@@ -2246,11 +2337,86 @@ export class ErpDatabase {
     return this.state.finishedGoods;
   }
 
-  public updateFinishedGood(id: string, updates: Partial<FinishedGood>): FinishedGood | null {
+  public addFinishedGood(
+    data: Omit<FinishedGood, 'id' | 'createdAt' | 'status'> & { status?: FinishedGood['status'] },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): FinishedGood {
+    const actor = this.manualOrderActor(actorInput);
+    const code = data.code.trim();
+    if (this.state.finishedGoods.some((item) => item.code.toLowerCase() === code.toLowerCase())) {
+      throw new Error(`Ya existe un producto terminado con el código ${code}`);
+    }
+    if (data.presentation === 'otra') {
+      const label = data.presentationLabel?.trim().toLowerCase();
+      if (!label) {
+        throw new Error('La presentación "otra" requiere una etiqueta propia');
+      }
+      if (
+        this.state.finishedGoods.some(
+          (item) =>
+            item.presentation === 'otra' &&
+            item.presentationLabel?.trim().toLowerCase() === label
+        )
+      ) {
+        throw new Error(`Ya existe un producto con la presentación "${data.presentationLabel}"`);
+      }
+    }
+    const product: FinishedGood = {
+      ...data,
+      code,
+      status: data.status || 'borrador',
+      id: `fg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: new Date().toISOString(),
+    };
+    this.state.finishedGoods.push(product);
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'producto_terminado_creado',
+      title: `Producto terminado ${code} registrado`,
+      description: `${product.flavor} · ${product.presentationLabel}. Estado: ${product.status}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: {
+        targetId: product.id,
+        targetCode: code,
+        itemName: product.flavor,
+        status: product.status,
+      },
+    });
+    return product;
+  }
+
+  public updateFinishedGood(
+    id: string,
+    updates: Partial<FinishedGood>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): FinishedGood | null {
     const idx = this.state.finishedGoods.findIndex(f => f.id === id);
     if (idx === -1) return null;
-    this.state.finishedGoods[idx] = { ...this.state.finishedGoods[idx], ...updates };
-    return this.state.finishedGoods[idx];
+    const previous = this.state.finishedGoods[idx];
+    const updated = { ...previous, ...updates };
+    this.state.finishedGoods[idx] = updated;
+    if (updates.status && updates.status !== previous.status) {
+      const actor = this.manualOrderActor(actorInput);
+      this.addAuditLog({
+        module: 'inventario',
+        actionType: 'producto_terminado_actualizado',
+        title: `Producto terminado ${updated.code} actualizado`,
+        description: `Estado cambiado de ${previous.status || 'activo'} a ${updates.status}.`,
+        userId: actor.userId,
+        userName: actor.userName,
+        userRole: actor.userRole,
+        severity: 'info',
+        details: {
+          targetId: updated.id,
+          targetCode: updated.code,
+          changes: ['status'],
+        },
+      });
+    }
+    return updated;
   }
 
   // --- RECIPES (BOM) ---
@@ -2259,9 +2425,30 @@ export class ErpDatabase {
   }
 
   public addRecipe(rec: Omit<RecipeBOM, 'id'>): RecipeBOM {
+    const code = rec.code.trim();
+    if (this.state.recipes.some((item) => item.code.toLowerCase() === code.toLowerCase())) {
+      throw new Error(`Ya existe una receta con el código ${code}`);
+    }
+    if (rec.presentation === 'otra') {
+      const label = rec.presentationLabel?.trim().toLowerCase();
+      if (!label) {
+        throw new Error('La presentación "otra" requiere una etiqueta propia');
+      }
+      if (
+        this.state.recipes.some(
+          (item) =>
+            item.presentation === 'otra' &&
+            item.presentationLabel?.trim().toLowerCase() === label
+        )
+      ) {
+        throw new Error(`Ya existe una receta con la presentación "${rec.presentationLabel}"`);
+      }
+    }
     const newRec: RecipeBOM = {
       ...rec,
-      id: 'rec-' + Date.now(),
+      code,
+      presentationLabel: rec.presentationLabel?.trim(),
+      id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     };
     this.state.recipes.push(newRec);
     return newRec;
@@ -3356,6 +3543,7 @@ export class ErpDatabase {
     input: {
       lotNumber: string;
       productionDate: string;
+      ingredientMaterialIds?: ManualSheetIngredientMaterialIds;
       marmitas: ProductionMarmitaSheetRow[];
       packaging: {
         presentationKg: number;
@@ -3669,6 +3857,7 @@ export class ErpDatabase {
     const materialSpecs: {
       label: string;
       quantity: number;
+      key?: ManualSheetIngredientKey;
       ids: string[];
       codes: string[];
       pattern: RegExp;
@@ -3690,6 +3879,7 @@ export class ErpDatabase {
       {
         label: 'almidón',
         quantity: totals.starchKg,
+        key: 'starchKg',
         ids: ['rm-20'],
         codes: ['MP-ADI-02'],
         pattern: /almid[oó]n/i,
@@ -3697,6 +3887,7 @@ export class ErpDatabase {
       {
         label: 'químico',
         quantity: totals.chemicalG,
+        key: 'chemicalG',
         ids: ['rm-3'],
         codes: ['MP-QUI-01'],
         pattern: /pectina/i,
@@ -3704,6 +3895,7 @@ export class ErpDatabase {
       {
         label: 'ácido',
         quantity: totals.acidG,
+        key: 'acidG',
         ids: ['rm-4'],
         codes: ['MP-QUI-02'],
         pattern: /[aá]cido c[ií]trico/i,
@@ -3719,17 +3911,26 @@ export class ErpDatabase {
 
     for (const spec of materialSpecs) {
       if (spec.quantity <= 0) continue;
-      const material = this.findSheetRawMaterial(
-        spec.ids,
-        spec.codes,
-        spec.pattern
-      );
+      const material = spec.key
+        ? resolveManualSheetIngredientMaterial(
+            this.state.rawMaterials,
+            spec.key,
+            input.ingredientMaterialIds?.[spec.key]
+          )
+        : this.findSheetRawMaterial(spec.ids, spec.codes, spec.pattern);
       if (!material) {
         throw new Error(
           `No se encontró la materia prima de ${spec.label}. Regístrela en inventario antes de guardar la planilla.`
         );
       }
-      addConsumption(material, spec.quantity, spec.label);
+      const quantity = spec.key
+        ? normalizeManualSheetIngredientQuantity(
+            spec.key,
+            spec.quantity,
+            material.unit
+          )
+        : spec.quantity;
+      addConsumption(material, quantity, spec.label);
     }
 
     let packagingCost = 0;
@@ -3885,6 +4086,7 @@ export class ErpDatabase {
       mode: 'manual',
       manualSheet: {
         productionDate: input.productionDate,
+        ingredientMaterialIds: input.ingredientMaterialIds,
         marmitas,
         packaging: {
           presentationKg,
@@ -3946,6 +4148,7 @@ export class ErpDatabase {
     input: {
       lotNumber: string;
       productionDate: string;
+      ingredientMaterialIds?: ManualSheetIngredientMaterialIds;
       marmitas: ProductionMarmitaSheetRow[];
       packaging: {
         presentationKg: number;
@@ -4247,6 +4450,143 @@ export class ErpDatabase {
       module: 'inventario',
       actionType: 'categoria_materia_prima_eliminada',
       title: `Categoría de materia prima ${value.code} eliminada`,
+      description: `${value.label} (${value.code}) fue eliminada del catálogo.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: { targetId: value.id, targetCode: value.code },
+    });
+    return true;
+  }
+
+  // --- EDITABLE CATALOG: PRESENTATIONS ---
+  public getPresentationTypes(): PresentationTypeConfig[] {
+    if (!this.state.presentationTypes?.length) {
+      this.state.presentationTypes = DEFAULT_PRESENTATION_TYPES.map((value) => ({ ...value }));
+    }
+    return this.state.presentationTypes;
+  }
+
+  public addPresentationType(
+    data: {
+      code: string;
+      label: string;
+      weightGrams: number;
+      packagingMaterialId?: string;
+      active?: boolean;
+    },
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): PresentationTypeConfig {
+    const actor = this.manualOrderActor(actorInput);
+    const code = data.code.trim();
+    const label = data.label.trim();
+    if (!code || !label) throw new Error('Código y etiqueta son obligatorios');
+    if (this.getPresentationTypes().some((value) => value.code.toLowerCase() === code.toLowerCase())) {
+      throw new Error(`Ya existe una presentación con el código ${code}`);
+    }
+    if (data.packagingMaterialId && !this.getRawMaterials().some((item) => item.id === data.packagingMaterialId)) {
+      throw new Error('El material de empaque indicado no existe en el maestro de insumos');
+    }
+    const now = new Date().toISOString();
+    const value: PresentationTypeConfig = {
+      id: `pt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      code,
+      label,
+      weightGrams: data.weightGrams,
+      packagingMaterialId: data.packagingMaterialId || undefined,
+      active: data.active !== false,
+      isSystem: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.getPresentationTypes().push(value);
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'presentacion_creada',
+      title: `Presentación ${code} registrada`,
+      description: `${label} · ${value.weightGrams} g. Los códigos nuevos se conservan como "otra" en los documentos.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: value.id, targetCode: code, itemName: label },
+    });
+    return value;
+  }
+
+  public updatePresentationType(
+    id: string,
+    updates: Partial<{
+      label: string;
+      weightGrams: number;
+      packagingMaterialId?: string;
+      active: boolean;
+    }>,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): PresentationTypeConfig {
+    const actor = this.manualOrderActor(actorInput);
+    const value = this.getPresentationTypes().find((entry) => entry.id === id);
+    if (!value) throw new Error('Presentación no encontrada');
+    if (updates.packagingMaterialId && !this.getRawMaterials().some((item) => item.id === updates.packagingMaterialId)) {
+      throw new Error('El material de empaque indicado no existe en el maestro de insumos');
+    }
+    const changed: string[] = [];
+    for (const key of ['label', 'weightGrams', 'packagingMaterialId', 'active'] as const) {
+      const next = updates[key];
+      if (next !== undefined && value[key] !== next) {
+        (value as unknown as Record<string, unknown>)[key] = next;
+        changed.push(key);
+      }
+    }
+    if (changed.length) value.updatedAt = new Date().toISOString();
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'presentacion_actualizada',
+      title: `Presentación ${value.code} actualizada`,
+      description: `Se actualizaron ${changed.length} campo(s): ${changed.join(', ') || 'sin cambios'}.`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'info',
+      details: { targetId: value.id, targetCode: value.code, changes: changed },
+    });
+    return value;
+  }
+
+  public deletePresentationType(
+    id: string,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): boolean {
+    const actor = this.manualOrderActor(actorInput);
+    const values = this.getPresentationTypes();
+    const index = values.findIndex((entry) => entry.id === id);
+    if (index === -1) throw new Error('Presentación no encontrada');
+    const value = values[index];
+    if (value.isSystem) throw new Error('No se puede eliminar una presentación base del catálogo');
+    const presentation = presentationTypeForCode(value.code);
+    const inUse = [
+      ...this.getFinishedGoods().filter(
+        (item) =>
+          item.presentation === presentation &&
+          (presentation !== 'otra' || item.presentationLabel === value.label)
+      ),
+      ...this.getRecipes().filter(
+        (item) =>
+          item.presentation === presentation &&
+          (presentation !== 'otra' || item.name.includes(value.label))
+      ),
+    ];
+    if (inUse.length) {
+      throw new Error(
+        `No se puede eliminar la presentación ${value.code}: está asociada a ${inUse.length} registro(s)`
+      );
+    }
+    values.splice(index, 1);
+    this.addAuditLog({
+      module: 'inventario',
+      actionType: 'presentacion_eliminada',
+      title: `Presentación ${value.code} eliminada`,
       description: `${value.label} (${value.code}) fue eliminada del catálogo.`,
       userId: actor.userId,
       userName: actor.userName,
@@ -4748,6 +5088,7 @@ export class ErpDatabase {
       bankCode: string;
       bankName: string;
       paymentMethod: NonNullable<SalesOrder['collection']>['paymentMethod'];
+      accountCode?: string;
       reference: string;
       amountUsd?: number;
       exchangeRateUsed?: number;
@@ -4790,6 +5131,7 @@ export class ErpDatabase {
       bankCode: data.bankCode,
       bankName: data.bankName,
       paymentMethod: data.paymentMethod,
+      accountCode: this.resolveCashAccountCode(data.accountCode, '1.01.02'),
       reference,
       amountUsd,
       amountBs: Number((amountUsd * rate).toFixed(2)),
@@ -7205,6 +7547,7 @@ export class ErpDatabase {
       bankCode: string;
       bankName: string;
       paymentMethod: PayablePayment['paymentMethod'];
+      accountCode?: string;
       reference: string;
       amountUsd?: number;
       exchangeRateUsed?: number;
@@ -7287,6 +7630,7 @@ export class ErpDatabase {
       bankCode: data.bankCode,
       bankName: data.bankName,
       paymentMethod: data.paymentMethod,
+      accountCode: this.resolveCashAccountCode(data.accountCode, '1.01.02'),
       reference,
       amountUsd,
       amountBs: Number((amountUsd * rate).toFixed(2)),
@@ -7442,12 +7786,228 @@ export class ErpDatabase {
       : DEFAULT_ACCOUNTS.map((account) => ({...account}));
     this.state.accountingEntries = this.state.accountingEntries || [];
     this.state.accountingPeriods = this.state.accountingPeriods || [];
+    this.state.accountingOpening =
+      this.state.accountingOpening ||
+      createDefaultAccountingOpening(this.state.exchangeRates?.currentUsd || 48.35);
   }
 
   private assertAccountingEnabled(): void {
     if (this.state.fiscalSettings?.accountingEnabled === false) {
       throw new Error('El módulo Contabilidad está deshabilitado');
     }
+  }
+
+  // --- APERTURA PROVISIONAL #13 ---
+
+  public getAccountingOpening(): AccountingOpeningDraft {
+    this.assertAccountingEnabled();
+    this.ensureAccountingState();
+    return this.state.accountingOpening;
+  }
+
+  private normalizeOpeningInput(input: AccountingOpeningInput): AccountingOpeningDraft {
+    const fallbackRate = this.state.exchangeRates?.currentUsd || 48.35;
+    const amount = <T extends {exchangeRateUsed?: number; rateSource?: OpeningShareholder['rateSource']}>(
+      item: T
+    ) => normalizeOpeningAmount(item, fallbackRate);
+    const trim = (value: string | undefined): string => (value || '').trim();
+
+    return {
+      id: 'apertura-13',
+      status: 'borrador',
+      postingStatus: 'borrador_provisional',
+      legalEntity: {
+        currentName: trim(input.legalEntity?.currentName),
+        convertedName: trim(input.legalEntity?.convertedName),
+        legalForm: trim(input.legalEntity?.legalForm),
+        reconversionInstrument: trim(input.legalEntity?.reconversionInstrument),
+        reconversionDate: trim(input.legalEntity?.reconversionDate),
+        notes: input.legalEntity?.notes || '',
+      },
+      cutoffDate: trim(input.cutoffDate),
+      shareholders: (input.shareholders || []).map((item) => ({
+        id: item.id || newOpeningRowId('ob-acc'),
+        name: trim(item.name),
+        taxId: trim(item.taxId),
+        contributionType: trim(item.contributionType),
+        accountCode: trim(item.accountCode) || '3.01',
+        ...amount(item),
+      })),
+      generalBalances: (input.generalBalances || []).map((item) => ({
+        id: item.id || newOpeningRowId('ob-gen'),
+        accountCode: trim(item.accountCode),
+        memo: trim(item.memo),
+        ...amount(item),
+      })),
+      auxiliaryBalances: (input.auxiliaryBalances || []).map((item) => ({
+        id: item.id || newOpeningRowId('ob-aux'),
+        kind: item.kind || 'banco',
+        name: trim(item.name),
+        accountCode: trim(item.accountCode),
+        memo: trim(item.memo),
+        ...amount(item),
+      })),
+      adjustments: (this.state.accountingOpening?.adjustments || []).map((item) => ({...item})),
+      openingEntryId: this.state.accountingOpening?.openingEntryId,
+      notes: input.notes || '',
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'sistema',
+    };
+  }
+
+  private validateOpeningAccounts(opening: AccountingOpeningDraft): void {
+    const codes = [
+      ...opening.generalBalances.map((item) => item.accountCode),
+      ...opening.auxiliaryBalances.map((item) => item.accountCode),
+      ...opening.shareholders.map((item) => item.accountCode || '3.01'),
+      ...opening.adjustments.map((item) => item.accountCode),
+    ];
+    for (const code of codes.filter(Boolean)) {
+      const account = this.getAccountByCode(code.trim());
+      if (!account || !account.active) {
+        throw new Error(`La cuenta de apertura ${code} no existe o está inactiva`);
+      }
+    }
+  }
+
+  /** Recrea/actualiza el asiento borrador sin nunca confirmarlo ni cuadrarlo automáticamente. */
+  private syncOpeningEntry(
+    opening: AccountingOpeningDraft,
+    actor?: { userId?: string; userName?: string; userRole?: string }
+  ): void {
+    const reconciliation = summarizeOpening(opening, this.getAccounts());
+    const today = new Date().toISOString().slice(0, 10);
+    const validCutoff = /^\d{4}-\d{2}-\d{2}$/.test(opening.cutoffDate)
+      ? opening.cutoffDate
+      : today;
+    const cutoffClosed =
+      this.state.accountingPeriods?.find((period) => period.key === validCutoff.slice(0, 7))
+        ?.status === 'cerrado';
+    const entryDate = cutoffClosed ? today : validCutoff;
+    const cutoffLabel = opening.cutoffDate || 'fecha de corte pendiente';
+    const description = `Asiento de apertura provisional #13 · Corte ${cutoffLabel}`;
+    const fallbackRate = this.state.exchangeRates?.currentUsd || 48.35;
+    let entry = opening.openingEntryId
+      ? this.getAccountingEntry(opening.openingEntryId)
+      : undefined;
+    if (!entry) {
+      entry = this.state.accountingEntries.find(
+        (item) => item.sourceType === 'apertura' && item.sourceId === opening.id
+      );
+    }
+
+    if (!entry) {
+      const created = this.createAccountingEntry(
+        {
+          date: entryDate,
+          description,
+          sourceType: 'apertura',
+          sourceId: opening.id,
+          status: 'borrador',
+          allowUnbalanced: true,
+          exchangeRateUsed: fallbackRate,
+          lines: reconciliation.entryLines,
+        },
+        actor
+      );
+      opening.openingEntryId = created.id;
+      return;
+    }
+
+    const now = new Date().toISOString();
+    entry.date = entryDate;
+    entry.periodKey = entryDate.slice(0, 7);
+    entry.description = description;
+    entry.status = 'borrador';
+    entry.confirmedAt = undefined;
+    entry.exchangeRateUsed = fallbackRate;
+    entry.lines = reconciliation.entryLines.map((line, index) => {
+      const account = this.accountForCode(line.accountCode);
+      return {
+        id: `ail-apertura-${index}`,
+        accountId: account.id,
+        accountCode: account.code,
+        accountName: account.name,
+        debit: line.debit,
+        credit: line.credit,
+        memo: line.memo,
+      };
+    });
+    entry.totalDebit = reconciliation.debitsUsd;
+    entry.totalCredit = reconciliation.creditsUsd;
+    entry.updatedAt = now;
+  }
+
+  /** Actualiza todo el borrador y mantiene el asiento provisional sincronizado. */
+  public updateAccountingOpening(
+    input: AccountingOpeningInput,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingOpeningDraft {
+    this.assertAccountingEnabled();
+    this.ensureAccountingState();
+    const opening = this.normalizeOpeningInput(input);
+    this.validateOpeningAccounts(opening);
+    this.state.accountingOpening = opening;
+    this.syncOpeningEntry(opening, actorInput);
+    const actor = this.manualOrderActor(actorInput);
+    opening.updatedBy = actor.userName;
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'apertura_actualizada',
+      title: 'Borrador de apertura #13 actualizado',
+      description: `Corte ${opening.cutoffDate || 'pendiente'} · asiento ${opening.status}/${opening.postingStatus}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        cutoffDate: opening.cutoffDate,
+        openingEntryId: opening.openingEntryId,
+        balances: opening.generalBalances.length + opening.auxiliaryBalances.length,
+      },
+    });
+    return opening;
+  }
+
+  /** Registra un ajuste financiero de apertura y lo suma al cuadre/asiento borrador. */
+  public recordOpeningAdjustment(
+    input: OpeningAdjustmentInput,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingOpeningDraft {
+    this.assertAccountingEnabled();
+    this.ensureAccountingState();
+    const opening = this.state.accountingOpening;
+    const adjustment: OpeningAdjustment = {
+      id: newOpeningRowId('ob-ajuste'),
+      date: input.date,
+      accountCode: input.accountCode.trim(),
+      description: input.description.trim(),
+      direction: input.direction,
+      ...normalizeOpeningAmount(input, this.state.exchangeRates?.currentUsd || 48.35),
+    };
+    opening.adjustments = [...(opening.adjustments || []), adjustment];
+    this.validateOpeningAccounts(opening);
+    this.syncOpeningEntry(opening, actorInput);
+    opening.updatedAt = new Date().toISOString();
+    const actor = this.manualOrderActor(actorInput);
+    opening.updatedBy = actor.userName;
+    this.addAuditLog({
+      module: 'contabilidad',
+      actionType: 'apertura_ajuste_registrado',
+      title: 'Ajuste financiero de apertura #13 registrado',
+      description: `${adjustment.description} · ${adjustment.direction} USD ${adjustment.amountUsd.toFixed(2)} / Bs. ${adjustment.amountBs.toFixed(2)}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      userRole: actor.userRole,
+      severity: 'warning',
+      details: {
+        adjustmentId: adjustment.id,
+        accountCode: adjustment.accountCode,
+        exchangeRateUsed: adjustment.exchangeRateUsed,
+        rateSource: adjustment.rateSource,
+      },
+    });
+    return opening;
   }
 
   private accountForCode(code: string): Account {
@@ -7464,6 +8024,20 @@ export class ErpDatabase {
 
   public getAccountByCode(code: string): Account | undefined {
     return this.getAccounts().find((item) => item.code === code);
+  }
+
+  /**
+   * Resuelve la cuenta de efectivo/banco elegida por transacción. Si no viene
+   * informada se conserva el código fijo histórico, de modo que los registros
+   * antiguos y los clientes que aún no envían el selector sigan funcionando.
+   */
+  private resolveCashAccountCode(code: string | undefined, fallback: string): string {
+    if (!code) return fallback;
+    const account = this.getAccountByCode(code.trim());
+    if (!account || !account.active || account.type !== 'activo') {
+      throw new Error(`La cuenta contable ${code} no existe, está inactiva o no es de activo`);
+    }
+    return account.code;
   }
 
   public addAccount(
@@ -7483,11 +8057,15 @@ export class ErpDatabase {
       ...data,
       id: `acc-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`,
       code: data.code.trim(),
+      kind: data.kind || 'otra',
       level: data.parentCode
         ? (this.getAccountByCode(data.parentCode)?.level || 0) + 1
         : 1,
       active: data.active !== false,
       isSystem: false,
+      referenceBalanceUsd: data.referenceBalanceUsd ?? 0,
+      referenceBalanceUpdatedAt:
+        data.referenceBalanceUsd !== undefined ? now : undefined,
       createdAt: now,
       updatedAt: now,
     };
@@ -7509,7 +8087,21 @@ export class ErpDatabase {
 
   public updateAccount(
     id: string,
-    updates: Partial<Pick<Account, 'name' | 'description' | 'active'>>,
+    updates: Partial<
+      Pick<
+        Account,
+        | 'name'
+        | 'description'
+        | 'active'
+        | 'kind'
+        | 'bankCode'
+        | 'bankName'
+        | 'accountNumber'
+        | 'currency'
+        | 'referenceBalanceUsd'
+        | 'referenceBalanceNote'
+      >
+    >,
     actorInput?: { userId?: string; userName?: string; userRole?: string }
   ): Account | null {
     this.assertAccountingEnabled();
@@ -7519,13 +8111,28 @@ export class ErpDatabase {
     if (updates.name !== undefined) account.name = updates.name.trim();
     if (updates.description !== undefined) account.description = updates.description;
     if (updates.active !== undefined) account.active = updates.active;
+    if (updates.kind !== undefined) account.kind = updates.kind;
+    if (updates.bankCode !== undefined) account.bankCode = updates.bankCode;
+    if (updates.bankName !== undefined) account.bankName = updates.bankName;
+    if (updates.accountNumber !== undefined) account.accountNumber = updates.accountNumber;
+    if (updates.currency !== undefined) account.currency = updates.currency;
+    if (updates.referenceBalanceUsd !== undefined) {
+      account.referenceBalanceUsd = updates.referenceBalanceUsd;
+      account.referenceBalanceUpdatedAt = new Date().toISOString();
+    }
+    if (updates.referenceBalanceNote !== undefined) {
+      account.referenceBalanceNote = updates.referenceBalanceNote;
+    }
     account.updatedAt = new Date().toISOString();
     const actor = this.manualOrderActor(actorInput);
     this.addAuditLog({
       module: 'contabilidad',
       actionType: 'cuenta_actualizada',
       title: `Cuenta contable actualizada: ${account.code}`,
-      description: `${account.code} · ${account.name}`,
+      description:
+        updates.referenceBalanceUsd !== undefined
+          ? `${account.code} · ${account.name} · saldo provisional $${updates.referenceBalanceUsd.toFixed(2)}`
+          : `${account.code} · ${account.name}`,
       userId: actor.userId,
       userName: actor.userName,
       userRole: actor.userRole,
@@ -7667,6 +8274,120 @@ export class ErpDatabase {
     return period;
   }
 
+  /**
+   * Orden estable de la cadena. Se usa el mismo criterio que `getAccountingEntries()`
+   * para que la verificación sea determinista entre reinicios.
+   */
+  private orderedAccountingEntries(): AccountingEntry[] {
+    return [...this.state.accountingEntries].sort((a, b) =>
+      `${a.date}${a.entryNumber}`.localeCompare(`${b.date}${b.entryNumber}`)
+    );
+  }
+
+  /** Carga útil canonical del hash: incluye estado, montos, tasa y líneas. */
+  private computeEntryHash(entry: AccountingEntry, previousHash: string): string {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          entryNumber: entry.entryNumber,
+          date: entry.date,
+          description: entry.description,
+          status: entry.status,
+          totalDebit: entry.totalDebit,
+          totalCredit: entry.totalCredit,
+          exchangeRateUsed: entry.exchangeRateUsed,
+          lines: entry.lines.map((line) => ({
+            accountCode: line.accountCode,
+            debit: line.debit,
+            credit: line.credit,
+            memo: line.memo ?? '',
+          })),
+          previousHash,
+        })
+      )
+      .digest('hex');
+  }
+
+  /**
+   * Recalcula y persiste la cadena hash desde el asiento indicado. Como el estado
+   * es mutable (confirmar/anular cambia el payload), se re-encadena el resto de
+   * la cadena para mantener la integridad de todos los eslabonamientos.
+   */
+  private rechainAccountingEntries(): void {
+    const ordered = this.orderedAccountingEntries();
+    let previousHash = '';
+    ordered.forEach((entry, index) => {
+      entry.hashSequence = index + 1;
+      entry.previousHash = previousHash;
+      entry.entryHash = this.computeEntryHash(entry, previousHash);
+      previousHash = entry.entryHash;
+    });
+  }
+
+  /** Backfill inicial: asigna hashes a los asientos históricos que no los tienen. */
+  private backfillAccountingHashes(): void {
+    if (this.state.accountingEntries?.length) {
+      this.rechainAccountingEntries();
+      this.persist();
+    }
+  }
+
+  /** Verifica la cadena y, si se solicita, repara los eslabones rotos. */
+  public verifyAccountingHashes(
+    repair = false,
+    actorInput?: { userId?: string; userName?: string; userRole?: string }
+  ): AccountingHashVerification {
+    this.assertAccountingEnabled();
+    const ordered = this.orderedAccountingEntries();
+    let previousHash = '';
+    let checked = 0;
+    let repaired = 0;
+    let firstBrokenEntryId: string | undefined;
+    for (let index = 0; index < ordered.length; index++) {
+      const entry = ordered[index];
+      const expectedPrevious = previousHash;
+      const expectedHash = this.computeEntryHash(entry, expectedPrevious);
+      const isBroken =
+        (entry.previousHash || '') !== expectedPrevious ||
+        (entry.entryHash || '') !== expectedHash ||
+        entry.hashSequence !== index + 1;
+      if (isBroken) {
+        repaired += 1;
+        firstBrokenEntryId = firstBrokenEntryId || entry.id;
+        if (repair) {
+          entry.hashSequence = index + 1;
+          entry.previousHash = expectedPrevious;
+          entry.entryHash = expectedHash;
+        }
+      }
+      previousHash = entry.entryHash || expectedHash;
+      checked += 1;
+    }
+    if (repair && repaired > 0) {
+      const actor = this.manualOrderActor(actorInput);
+      this.addAuditLog({
+        module: 'contabilidad',
+        actionType: 'cadena_hash_reparada',
+        title: `Cadena hash reparada: ${repaired} asiento(s)`,
+        description: `Se recalculó la cadena hash autorizada de asientos (#13).`,
+        userId: actor.userId,
+        userName: actor.userName,
+        userRole: actor.userRole,
+        severity: 'warning',
+        details: {repairedEntries: repaired, firstBrokenEntryId},
+      });
+      this.persist();
+    }
+    return {
+      valid: repair ? true : repaired === 0,
+      checkedEntries: checked,
+      repairedEntries: repaired,
+      firstBrokenEntryId,
+      lastHash: previousHash,
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
   public createAccountingEntry(
     data: {
       date: string;
@@ -7675,6 +8396,7 @@ export class ErpDatabase {
       sourceId?: string;
       exchangeRateUsed?: number;
       status?: 'borrador' | 'confirmado';
+      allowUnbalanced?: boolean;
       lines: {accountCode: string; debit?: number; credit?: number; memo?: string}[];
     },
     actorInput?: { userId?: string; userName?: string; userRole?: string }
@@ -7689,7 +8411,11 @@ export class ErpDatabase {
     if (period.status === 'cerrado') {
       throw new Error(`El período ${periodKey} está cerrado`);
     }
-    if (!data.lines || data.lines.length < 2) {
+    const isDraftOpening =
+      data.allowUnbalanced === true &&
+      data.sourceType === 'apertura' &&
+      data.status !== 'confirmado';
+    if (!data.lines || data.lines.length < (isDraftOpening ? 0 : 2)) {
       throw new Error('El asiento requiere al menos dos líneas contables');
     }
     const actor = this.manualOrderActor(actorInput);
@@ -7715,7 +8441,7 @@ export class ErpDatabase {
     });
     const totalDebit = Number(lines.reduce((sum, line) => sum + line.debit, 0).toFixed(2));
     const totalCredit = Number(lines.reduce((sum, line) => sum + line.credit, 0).toFixed(2));
-    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    if (Math.abs(totalDebit - totalCredit) > 0.01 && !isDraftOpening) {
       throw new Error(
         `El asiento no está balanceado: débitos $${totalDebit.toFixed(2)} vs créditos $${totalCredit.toFixed(2)}`
       );
@@ -7746,6 +8472,7 @@ export class ErpDatabase {
       confirmedAt: status === 'confirmado' ? now : undefined,
     };
     this.state.accountingEntries.push(entry);
+    this.rechainAccountingEntries();
     this.addAuditLog({
       module: 'contabilidad',
       actionType: status === 'confirmado' ? 'asiento_automatico' : 'asiento_creado',
@@ -7767,6 +8494,11 @@ export class ErpDatabase {
     this.assertAccountingEnabled();
     const entry = this.getAccountingEntry(id);
     if (!entry) throw new Error('Asiento contable no encontrado');
+    if (entry.sourceType === 'apertura') {
+      throw new Error(
+        'El asiento de apertura #13 requiere autorización contable expresa; no se confirma desde esta vista'
+      );
+    }
     if (this.ensureAccountingPeriod(entry.periodKey).status === 'cerrado') {
       throw new Error(`El período ${entry.periodKey} está cerrado`);
     }
@@ -7775,6 +8507,7 @@ export class ErpDatabase {
     entry.status = 'confirmado';
     entry.confirmedAt = new Date().toISOString();
     entry.updatedAt = entry.confirmedAt;
+    this.rechainAccountingEntries();
     this.addAuditLog({
       module: 'contabilidad',
       actionType: 'asiento_confirmado',
@@ -7807,6 +8540,7 @@ export class ErpDatabase {
     entry.annulledAt = new Date().toISOString();
     entry.annulmentReason = reason.trim();
     entry.updatedAt = entry.annulledAt;
+    this.rechainAccountingEntries();
     this.addAuditLog({
       module: 'contabilidad',
       actionType: 'asiento_anulado',
@@ -7868,11 +8602,12 @@ export class ErpDatabase {
     if (tax > 0 && expense.fiscalBookEligible) {
       lines.push({accountCode: '1.04.01', debit: tax});
     }
+    const cashFallback =
+      expense.paymentMethod === 'efectivo_usd' || expense.paymentMethod === 'efectivo_bs'
+        ? '1.01.01'
+        : '1.01.02';
     lines.push({
-      accountCode:
-        expense.paymentMethod === 'efectivo_usd' || expense.paymentMethod === 'efectivo_bs'
-          ? '1.01.01'
-          : '1.01.02',
+      accountCode: this.resolveCashAccountCode(expense.paymentAccountCode, cashFallback),
       credit: Number((Math.max(0, net) + (tax > 0 && expense.fiscalBookEligible ? tax : 0)).toFixed(2)),
     });
     if (lines[lines.length - 1].credit === 0) return;
@@ -7893,14 +8628,17 @@ export class ErpDatabase {
     // evita asientos 2.01.01 sin CxP en importaciones directas.
     const purchaseOnCredit =
       movement.type === 'entrada' && movement.paymentCondition === 'credito';
-    const cashAccount =
+    const cashFallback =
       movement.paymentMethod === 'efectivo_usd' ||
       movement.paymentMethod === 'efectivo_bs'
         ? '1.01.01'
         : '1.01.02';
+    const cashAccount = purchaseOnCredit
+      ? '2.01.01'
+      : this.resolveCashAccountCode(movement.paymentAccountCode, cashFallback);
     const codes =
       movement.type === 'entrada'
-        ? {debit: '1.03.01', credit: purchaseOnCredit ? '2.01.01' : cashAccount}
+        ? {debit: '1.03.01', credit: cashAccount}
         : movement.type === 'salida_produccion'
           ? {debit: '6.01.01', credit: '1.03.01'}
           : {debit: '5.01.02', credit: '1.03.01'};
@@ -7957,7 +8695,7 @@ export class ErpDatabase {
       date: collection.collectedAt.slice(0, 10),
       description: `Cobro ${order.orderNumber} · Ref. ${collection.reference}`,
       lines: [
-        {accountCode: '1.01.02', debit: amount},
+        {accountCode: collection.accountCode || '1.01.02', debit: amount},
         {accountCode: '1.02.01', credit: amount},
       ],
       exchangeRateUsed: collection.exchangeRateUsed,
@@ -7978,7 +8716,7 @@ export class ErpDatabase {
       description: `Pago CxP ${payable.payableNumber} · Ref. ${payment.reference}`,
       lines: [
         {accountCode: '2.01.01', debit: amount},
-        {accountCode: '1.01.02', credit: amount},
+        {accountCode: payment.accountCode || '1.01.02', credit: amount},
       ],
       exchangeRateUsed: payment.exchangeRateUsed,
     });

@@ -8,6 +8,7 @@ import {DeliveryNote, FiscalPaymentMethod, FiscalSaleCondition, FinishedGood, Pr
 import {VeCurrencyPipe, VeNumberPipe, formatVeNumber} from '../../core/pipes/ve-currency.pipe';
 import {VENEZUELAN_BANKS, bankLabel, findBank} from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel, exportToPdf, downloadDeliveryNotePdf} from '../../core/utils/export.utils';
+import {defaultDocumentRate} from '../../core/utils/exchange-rate.utils';
 import {FiscalInvoicesComponent} from '../fiscal-invoices/fiscal-invoices';
 import {AccountsReceivableComponent} from '../accounts-receivable/accounts-receivable';
 import {outstandingForOrder} from './sales-collections';
@@ -90,7 +91,7 @@ export class SalesComponent {
   public isProductDropdownOpen = signal<boolean>(false);
   public selectedPriceTier = signal<PriceTierType>('mayorista');
   public currentUnitPrice = signal<number>(1.65);
-  public currentExchangeRate = signal<number>(48.35);
+  public currentExchangeRate = signal<number>(defaultDocumentRate(this.api.exchangeRates()));
 
   // Carrito de borrador: un pedido puede contener varios productos
   public draftOrderItems = signal<DraftOrderItem[]>([]);
@@ -126,7 +127,7 @@ export class SalesComponent {
     saleCondition: new FormControl<FiscalSaleCondition>('contado', {nonNullable: true}),
     creditDays: new FormControl<number>(0, {nonNullable: true, validators: [Validators.min(0), Validators.max(365)]}),
     paymentMethod: new FormControl<FiscalPaymentMethod>('transferencia_bancaria', {nonNullable: true}),
-    exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
+    exchangeRateUsed: new FormControl<number>(defaultDocumentRate(this.api.exchangeRates()), {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     deliveryDate: new FormControl<string>(new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10), {nonNullable: true}),
     notes: new FormControl<string>('', {nonNullable: true}),
   });
@@ -169,6 +170,7 @@ export class SalesComponent {
       nonNullable: true,
       validators: [Validators.required],
     }),
+    accountCode: new FormControl<string>('1.01.02', {nonNullable: true}),
     paymentMethod: new FormControl<
       'transferencia_bancaria' | 'pago_movil' | 'tarjeta' | 'zelle'
     >('transferencia_bancaria', {nonNullable: true}),
@@ -180,7 +182,7 @@ export class SalesComponent {
       nonNullable: true,
       validators: [Validators.required, Validators.min(0.01)],
     }),
-    exchangeRateUsed: new FormControl<number>(48.35, {
+    exchangeRateUsed: new FormControl<number>(defaultDocumentRate(this.api.exchangeRates()), {
       nonNullable: true,
       validators: [Validators.required, Validators.min(1)],
     }),
@@ -189,7 +191,10 @@ export class SalesComponent {
   public customers = computed(() => this.api.customers());
   public salesOrders = computed(() => this.api.salesOrders());
   public deliveryNotes = computed(() => this.api.deliveryNotes());
-  public finishedGoods = computed(() => this.api.finishedGoods());
+  /** Solo productos activos (o legados sin estado) pueden venderse. */
+  public finishedGoods = computed(() =>
+    this.api.finishedGoods().filter((item) => !item.status || item.status === 'activo')
+  );
   public fiscalSettings = computed(() => this.api.fiscalSettings());
 
   // Filtered finished goods for autocomplete dropdown
@@ -305,7 +310,7 @@ export class SalesComponent {
   public openNewOrderModal() {
     const custs = this.customers();
     const fgs = this.finishedGoods();
-    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const rate = defaultDocumentRate(this.api.exchangeRates());
     const initialFg = fgs[0];
     const initialPrice = initialFg ? initialFg.suggestedWholesalePrice : 1.65;
 
@@ -443,7 +448,7 @@ export class SalesComponent {
 
   public onExchangeRateInput(event: Event) {
     const input = event.target as HTMLInputElement;
-    const rate = parseFloat(input.value) || 48.35;
+    const rate = parseFloat(input.value) || defaultDocumentRate(this.api.exchangeRates());
     this.currentExchangeRate.set(rate);
     this.newOrderForm.patchValue({ exchangeRateUsed: rate }, { emitEvent: false });
   }
@@ -677,6 +682,7 @@ export class SalesComponent {
     this.collectingBalance.set(balance);
     this.collectForm.reset({
       bankCode: '',
+      accountCode: '1.01.02',
       paymentMethod: 'transferencia_bancaria',
       reference: '',
       amountUsd: balance,
@@ -731,6 +737,7 @@ export class SalesComponent {
 
     await this.api.collectSalesOrder(order.id, {
       bankCode: bank.code,
+      accountCode: v.accountCode || undefined,
       paymentMethod: v.paymentMethod,
       reference: v.reference,
       amountUsd: Number(v.amountUsd),

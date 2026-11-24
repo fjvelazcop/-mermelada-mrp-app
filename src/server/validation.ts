@@ -66,6 +66,7 @@ const auditActionSchema = z.enum([
   'entrada_materia_prima',
   'salida_produccion',
   'ajuste_merma',
+  'ajuste_existencia',
   'reabastecimiento_alerta',
   'orden_produccion_creada',
   'orden_produccion_procesada',
@@ -75,6 +76,11 @@ const auditActionSchema = z.enum([
   'orden_manual_procesada',
   'orden_manual_anulada',
   'receta_bom_creada',
+  'presentacion_creada',
+  'presentacion_actualizada',
+  'presentacion_eliminada',
+  'producto_terminado_creado',
+  'producto_terminado_actualizado',
   'alerta_stock_critico',
   'gasto_registrado',
   'gasto_eliminado',
@@ -115,6 +121,8 @@ const auditActionSchema = z.enum([
   'valor_fiscal_referencia_anulado',
   'valor_fiscal_referencia_vigencia_cerrada',
   'configuracion_libros_actualizada',
+  'apertura_actualizada',
+  'apertura_ajuste_registrado',
 ]);
 const documentTypeSchema = z.enum([
   'factura_fiscal',
@@ -143,6 +151,8 @@ const money = z.coerce.number().finite().min(0);
 const positive = z.coerce.number().finite().positive();
 const integer = z.coerce.number().int();
 const dateLike = z.string().trim().min(1).max(40);
+/** Código del plan de cuentas usado por los asientos automáticos (#13). */
+const transactionAccountCode = z.string().trim().min(1).max(30).regex(/^\d+(\.\d+)*$/);
 
 export const rawMaterialSchema = z.object({
   code: z.string().trim().min(1).max(60),
@@ -153,6 +163,11 @@ export const rawMaterialSchema = z.object({
   unit: unitSchema,
   costPerUnit: money,
   supplier: z.string().trim().max(200).optional(),
+  supplierId: z.string().trim().max(200).optional(),
+  supplierTaxId: z.string().trim().max(60).optional(),
+  paymentCondition: z.enum(['contado', 'credito']).optional(),
+  creditDays: z.number().int().min(0).max(365).optional(),
+  paymentDueDate: z.string().trim().max(40).optional(),
   lastRestockDate: dateLike,
   notes: z.string().max(1000).optional(),
 });
@@ -182,6 +197,27 @@ export const inventoryMovementSchema = z.object({
   date: dateLike,
   performedBy: z.string().trim().min(1).max(200),
   notes: z.string().max(1000).optional(),
+  paymentAccountCode: transactionAccountCode.optional(),
+});
+
+const finishedGoodStatusSchema = z.enum(['borrador', 'activo', 'inactivo']);
+
+export const finishedGoodCreateSchema = z.object({
+  code: z.string().trim().min(1).max(60),
+  flavor: z.string().trim().min(1).max(120),
+  presentation: presentationSchema,
+  presentationLabel: z.string().trim().min(1).max(120),
+  weightGrams: z.coerce.number().finite().positive(),
+  stockUnits: money.default(0),
+  reservedUnits: money.default(0),
+  availableUnits: money.default(0),
+  baseCost: money,
+  suggestedWholesalePrice: money,
+  suggestedRetailPrice: money,
+  suggestedSpecialPrice: money,
+  minStock: money,
+  status: finishedGoodStatusSchema.default('borrador'),
+  notes: z.string().max(2000).optional(),
 });
 
 export const finishedGoodUpdateSchema = z
@@ -190,7 +226,7 @@ export const finishedGoodUpdateSchema = z
     flavor: z.string().trim().min(1).max(120),
     presentation: presentationSchema,
     presentationLabel: z.string().trim().min(1).max(120),
-    weightGrams: money,
+    weightGrams: z.coerce.number().finite().positive(),
     stockUnits: money,
     reservedUnits: money,
     availableUnits: money,
@@ -199,6 +235,8 @@ export const finishedGoodUpdateSchema = z
     suggestedRetailPrice: money,
     suggestedSpecialPrice: money,
     minStock: money,
+    status: finishedGoodStatusSchema,
+    notes: z.string().max(2000).optional(),
   })
   .partial();
 
@@ -220,6 +258,8 @@ export const recipeSchema = z.object({
   directLaborMinutes: money,
   estimatedUtilityCost: money,
   instructions: z.string().max(4000).optional(),
+  presentationLabel: z.string().trim().min(1).max(120).optional(),
+  weightGrams: z.coerce.number().finite().positive().max(1_000_000).optional(),
 });
 
 export const productionOrderSchema = z.object({
@@ -265,6 +305,15 @@ export const manualProductionSheetPresentationSchema = z.object({
   packagingUnitCost: money.optional(),
 });
 
+const sheetIngredientMaterialIdSchema = z.string().trim().min(1).max(200);
+const sheetIngredientMaterialIdsSchema = z
+  .object({
+    starchKg: sheetIngredientMaterialIdSchema.optional(),
+    chemicalG: sheetIngredientMaterialIdSchema.optional(),
+    acidG: sheetIngredientMaterialIdSchema.optional(),
+  })
+  .optional();
+
 export const manualProductionSheetRowSchema = z.object({
   number: z.coerce.number().int().min(1).max(6),
   basketsBase: money,
@@ -288,6 +337,7 @@ export const manualProductionSheetRowSchema = z.object({
 export const manualProductionSheetOrderSchema = z.object({
   lotNumber: z.string().trim().min(1).max(80),
   productionDate: dateLike,
+  ingredientMaterialIds: sheetIngredientMaterialIdsSchema,
   marmitas: z.array(manualProductionSheetRowSchema).length(6),
   packaging: z.object({
     presentationKg: positive,
@@ -349,6 +399,16 @@ export const supplierTypeSchema = catalogValueSchema;
 export const supplierTypeUpdateSchema = catalogValueSchema.partial();
 export const materialCategorySchemaInput = catalogValueSchema;
 export const materialCategoryUpdateSchema = catalogValueSchema.partial();
+
+const presentationTypeValueSchema = z.object({
+  code: catalogCodeSchema,
+  label: z.string().trim().min(1).max(120),
+  weightGrams: z.coerce.number().finite().positive().max(1_000_000),
+  packagingMaterialId: z.string().trim().min(1).max(200).optional(),
+  active: z.boolean().optional(),
+});
+export const presentationTypeSchemaInput = presentationTypeValueSchema;
+export const presentationTypeUpdateSchema = presentationTypeValueSchema.partial();
 
 export const supplierPriceSchema = z.object({
   // The supplier is taken from the `/api/suppliers/:id/prices` route; the body
@@ -473,6 +533,7 @@ export const salesCollectionSchema = z
   .object({
     bankCode: z.string().trim().min(1).max(10),
     paymentMethod: paymentMethodSchema,
+    accountCode: transactionAccountCode.optional(),
     reference: z.string().trim().min(1).max(200),
     amountUsd: positive.optional(),
     exchangeRateUsed: positive.optional(),
@@ -578,6 +639,7 @@ export const expenseSchema = z
     paymentReference: z.string().trim().max(120).optional(),
     issuingBankCode: z.string().trim().max(10).optional(),
     issuingBankName: z.string().trim().max(200).optional(),
+    paymentAccountCode: transactionAccountCode.optional(),
     notes: z.string().max(2000).optional(),
     registeredBy: z.string().trim().min(1).max(200),
     taxCategory: taxCategorySchema,
@@ -655,6 +717,7 @@ export const payablePaymentSchema = z
     bankCode: z.string().trim().min(1).max(10),
     bankName: z.string().trim().min(1).max(200).optional(),
     paymentMethod: paymentMethodSchema,
+    accountCode: transactionAccountCode.optional(),
     reference: z.string().trim().min(1).max(200),
     amountUsd: positive.optional(),
     exchangeRateUsed: positive.optional(),
@@ -896,6 +959,8 @@ export const accountingBookSettingsSchema = z.object({
   pagination: z.string().trim().max(500),
   signatureText: z.string().trim().max(500),
   signatureRole: z.string().trim().max(200),
+  accountantSigner: z.string().trim().max(200).optional(),
+  partnerSigners: z.string().trim().max(500).optional(),
   exchangeRatePolicy: z.literal('documento_con_fallback'),
   notes: z.string().trim().max(4000),
   approvedAt: optionalFiscalReferenceDateSchema,
@@ -1110,6 +1175,9 @@ export const accountTypeSchema = z.enum([
   'costo',
 ]);
 
+export const accountKindSchema = z.enum(['banco', 'caja', 'otra']);
+export const accountCurrencySchema = z.enum(['USD', 'Bs', 'AMBAS']);
+
 export const accountSchema = z.object({
   code: accountCodeLike,
   name: z.string().trim().min(1).max(200),
@@ -1118,6 +1186,13 @@ export const accountSchema = z.object({
   parentCode: accountCodeLike.optional(),
   description: z.string().max(1000).optional(),
   active: z.boolean().optional(),
+  kind: accountKindSchema.optional(),
+  bankCode: z.string().trim().max(10).optional(),
+  bankName: z.string().trim().max(200).optional(),
+  accountNumber: z.string().trim().max(60).optional(),
+  currency: accountCurrencySchema.optional(),
+  referenceBalanceUsd: money.optional(),
+  referenceBalanceNote: z.string().max(500).optional(),
 });
 
 export const accountUpdateSchema = z
@@ -1125,10 +1200,83 @@ export const accountUpdateSchema = z
     name: z.string().trim().min(1).max(200).optional(),
     description: z.string().max(1000).optional(),
     active: z.boolean().optional(),
+    kind: accountKindSchema.optional(),
+    bankCode: z.string().trim().max(10).optional(),
+    bankName: z.string().trim().max(200).optional(),
+    accountNumber: z.string().trim().max(60).optional(),
+    currency: accountCurrencySchema.optional(),
+    referenceBalanceUsd: money.optional(),
+    referenceBalanceNote: z.string().max(500).optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Debe enviar al menos un campo para actualizar',
   });
+
+// --- APERTURA PROVISIONAL #13 (USD + Bs con tasa por línea) ---
+const openingDateLike = z
+  .string()
+  .trim()
+  .refine((value) => value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value), {
+    message: 'Use el formato YYYY-MM-DD o deje el campo vacío',
+  });
+
+const openingAmountSchema = z.object({
+  amountUsd: money.optional(),
+  amountBs: money.optional(),
+  exchangeRateUsed: positive.optional(),
+  rateSource: z.enum(['currentUsd (referencia)', 'Tasa capturada en apertura']).optional(),
+});
+
+export const accountingOpeningUpdateSchema = z.object({
+  legalEntity: z.object({
+    currentName: z.string().trim().max(200),
+    convertedName: z.string().trim().max(200),
+    legalForm: z.string().trim().max(120),
+    reconversionInstrument: z.string().trim().max(300),
+    reconversionDate: openingDateLike,
+    notes: z.string().max(2000),
+  }),
+  cutoffDate: openingDateLike,
+  generalBalances: z
+    .array(
+      openingAmountSchema.extend({
+        id: z.string().trim().max(80).optional(),
+        accountCode: accountCodeLike,
+        memo: z.string().trim().max(300).optional(),
+      })
+    )
+    .max(200),
+  auxiliaryBalances: z
+    .array(
+      openingAmountSchema.extend({
+        id: z.string().trim().max(80).optional(),
+        kind: z.enum(['banco', 'clientes', 'proveedores']),
+        name: z.string().trim().min(1).max(200),
+        accountCode: accountCodeLike,
+        memo: z.string().trim().max(300).optional(),
+      })
+    )
+    .max(200),
+  shareholders: z
+    .array(
+      openingAmountSchema.extend({
+        id: z.string().trim().max(80).optional(),
+        name: z.string().trim().min(1).max(200),
+        taxId: z.string().trim().max(40).optional(),
+        contributionType: z.string().trim().max(120).optional(),
+        accountCode: accountCodeLike.optional(),
+      })
+    )
+    .max(200),
+  notes: z.string().max(2000),
+});
+
+export const accountingOpeningAdjustmentSchema = openingAmountSchema.extend({
+  date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD'),
+  accountCode: accountCodeLike,
+  description: z.string().trim().min(1).max(500),
+  direction: z.enum(['debito', 'credito']),
+});
 
 const accountingEntrySourceSchema = z.enum([
   'manual',
@@ -1141,6 +1289,7 @@ const accountingEntrySourceSchema = z.enum([
   'nota_credito',
   'nota_debito',
   'retencion',
+  'apertura',
 ]);
 
 export const accountingEntryLineSchema = z.object({

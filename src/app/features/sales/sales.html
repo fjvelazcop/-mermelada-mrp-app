@@ -1165,16 +1165,20 @@
                   </span>
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-amber-900 mb-1">Tasa del Día (Bs./USD)</label>
+                  <label class="block text-xs font-medium text-amber-900 mb-1">Tasa Bs./USD (editable)</label>
                   <div class="relative">
                     <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-xs">Bs.</span>
                     <input
                       type="number"
                       step="0.01"
+                      min="1"
                       [value]="currentExchangeRate()"
                       (input)="onExchangeRateInput($event)"
                       class="w-full bg-amber-50/40 border border-amber-300 rounded-lg pl-8 pr-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-800 font-mono font-bold"
                     />
+                    <span class="text-[10px] text-stone-500">
+                      Por defecto la tasa actual o la de la fecha; cambiarla manualmente si aplica.
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1420,6 +1424,18 @@
                 El banco receptor es obligatorio para todo cobro bancario.
               </span>
             }
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-stone-700 mb-1">Cuenta contable del asiento</label>
+            <select
+              formControlName="accountCode"
+              class="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              @for (account of api.cashAccounts(); track account.id) {
+                <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+              }
+            </select>
           </div>
 
           <div>

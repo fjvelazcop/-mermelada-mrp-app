@@ -9,6 +9,8 @@
 | [DEPLOYMENT.md](../DEPLOYMENT.md) | DevOps | Docker, systemd, PM2, túnel y backups en producción. |
 | [Despliegue paso a paso](./DESPLIEGUE-PASO-A-PASO.md) | DevOps | Mapa de carpetas, comandos copiar/pegar para PM2 y Docker, verificación, recuperación de contraseña y rollback del estado actual. |
 | [README.md](../README.md) | Desarrollo | Arquitectura, API, agentes, variables y pruebas. |
+| [Requerimientos Funcionales v2 (23/11/2026)](./REQUERIMIENTOS-FUNCIONALES-2026-11-23.md) | Dirección, contabilidad y desarrollo | RF-01 a RF-11 vigentes y RF-12 a RF-16 del issue #13; estado, verificaciones y pendientes de la versión fechada. |
+| [Cuestionario para el contador (#13)](./CUESTIONARIO-CONTADOR-ISSUE13.md) | Contabilidad y dirección | Respuestas, estados validados (IVA/UT/IGTF), política de tasa de cambio y listado de lo pendiente por el contador. |
 
 ## Estado fiscal
 
@@ -18,7 +20,13 @@ requiere validación de un contador público y no implica autorización del SENI
 Los cambios de configuración fiscal también quedan registrados en auditoría.
 El administrador dispone de una sección para registrar obligaciones confirmadas
 por el contador y consultar su historial; guardarlas no activa módulos fiscales.
-Retenciones, contabilidad formal, régimen SPE, IGTF y facturación digital se
-definirán con el contador en el issue [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13);
-su implementación, si aplica, se planificará en issues separados vinculados al
+
+**Validado (23/11/2026):** IVA 16 %, UT Bs. 43,00 desde 02/06/2025, IGTF no aplica
+según condición actual y política de tasa por documento con fallback a `currentUsd`.
+**Pendiente por el contador:** ratificación documental del régimen ordinario/no SPE,
+precisar si aplican exento 0 %/8 % y conceptos ISLR, apertura y formatos/firmas del
+cierre [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13). Retenciones,
+contabilidad formal, régimen SPE y facturación digital permanecen apagados; todo el
+cierre se mantiene en BORRADOR/PRUEBA hasta la ratificación. Su implementación, si
+aplica, se planificará en issues separados vinculados al
 issue [#11](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/11).

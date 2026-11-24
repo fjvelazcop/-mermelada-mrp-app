@@ -4,17 +4,33 @@ import {FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators} from
 import {MatIconModule} from '@angular/material/icon';
 import {ModuleHelpComponent} from '../../shared/components/module-help/module-help';
 import {LEGAL_ENTITY_DRAFT} from '../../core/config/legal-entity-draft';
-import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   Account,
   AccountingBookReport,
   AccountingBookType,
   AccountingEntry,
+  AccountingOpeningDraft,
   AccountType,
+  createDefaultAccountingOpening,
+  newOpeningRowId,
+  normalizeOpeningAmount,
+  OpeningAdjustmentDirection,
+  OpeningAuxiliaryKind,
+  OpeningReconciliation,
+  summarizeOpening,
 } from '../../core/models/erp.models';
+import {
+  AccountingOpeningPayload,
+  ErpApiService,
+  OpeningAdjustmentPayload,
+} from '../../core/services/erp-api.service';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
+import {
+  defaultDocumentRate,
+  resolveDocumentRate,
+} from '../../core/utils/exchange-rate.utils';
 
-type AccountingTab = 'accounts' | 'entries' | 'books' | 'periods' | 'withholdings';
+type AccountingTab = 'accounts' | 'opening' | 'entries' | 'books' | 'periods' | 'withholdings';
 
 @Component({
   selector: 'app-accounting',
@@ -38,12 +54,62 @@ export class AccountingComponent {
   public showEntryModal = signal<boolean>(false);
   public showAnnulModal = signal<boolean>(false);
 
+  /** Snapshot en vivo del formulario de apertura para el cuadre inmediato. */
+  public openingLive = signal<AccountingOpeningDraft | null>(null);
+  private hydratedOpeningAt = '';
+
+  public openingForm = new FormGroup({
+    currentName: new FormControl('', {nonNullable: true}),
+    convertedName: new FormControl('', {nonNullable: true}),
+    legalForm: new FormControl('', {nonNullable: true}),
+    reconversionInstrument: new FormControl('', {nonNullable: true}),
+    reconversionDate: new FormControl('', {nonNullable: true}),
+    cutoffDate: new FormControl('', {nonNullable: true}),
+    notes: new FormControl('', {nonNullable: true}),
+  });
+
+  public openingGeneralRows = new FormArray<FormGroup>([]);
+  public openingAuxRows = new FormArray<FormGroup>([]);
+  public openingShareholderRows = new FormArray<FormGroup>([]);
+
+  public openingAdjustmentForm = new FormGroup({
+    date: new FormControl(new Date().toISOString().slice(0, 10), {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
+    accountCode: new FormControl('3.01', {nonNullable: true, validators: [Validators.required]}),
+    description: new FormControl('', {nonNullable: true, validators: [Validators.required]}),
+    direction: new FormControl<OpeningAdjustmentDirection>('credito', {nonNullable: true}),
+    amountUsd: new FormControl(0, {nonNullable: true, validators: [Validators.min(0)]}),
+    amountBs: new FormControl(0, {nonNullable: true, validators: [Validators.min(0)]}),
+    exchangeRateUsed: new FormControl(defaultDocumentRate(this.api.exchangeRates()), {
+      nonNullable: true,
+      validators: [Validators.min(0)],
+    }),
+  });
+
   public bookType = signal<AccountingBookType>('diario');
   public bookYear = signal<number>(new Date().getFullYear());
   public bookMonth = signal<number>(new Date().getMonth() + 1);
   public bookLoading = signal<boolean>(false);
 
   constructor() {
+    const initialOpening =
+      this.api.accountingOpening() ||
+      createDefaultAccountingOpening(defaultDocumentRate(this.api.exchangeRates()));
+    this.hydrateOpening(initialOpening);
+    this.openingForm.valueChanges.subscribe(() => this.syncOpeningLive());
+    this.openingGeneralRows.valueChanges.subscribe(() => this.syncOpeningLive());
+    this.openingAuxRows.valueChanges.subscribe(() => this.syncOpeningLive());
+    this.openingShareholderRows.valueChanges.subscribe(() => this.syncOpeningLive());
+
+    effect(() => {
+      const opening = this.api.accountingOpening();
+      if (opening && opening.updatedAt !== this.hydratedOpeningAt) {
+        this.hydrateOpening(opening);
+      }
+    });
+
     effect(() => {
       const requested = this.api.requestedAccountingBookType();
       if (!requested) return;
@@ -59,7 +125,7 @@ export class AccountingComponent {
     {id: 'mayor', label: 'Mayor'},
     {id: 'balance_comprobacion', label: 'Balance de comprobación'},
     {id: 'balance_general', label: 'Balance general'},
-    {id: 'inventario', label: 'Inventario (borrador/prueba)'},
+    {id: 'inventario', label: 'Inventario (VEN-NIF)'},
     {id: 'estado_resultados', label: 'Estado de resultados'},
     {id: 'compras', label: 'Compras'},
     {id: 'ventas', label: 'Ventas'},
@@ -78,16 +144,29 @@ export class AccountingComponent {
     'costo',
   ];
 
+  public accountKinds: NonNullable<Account['kind']>[] = ['otra', 'caja', 'banco'];
+  public accountCurrencies: NonNullable<Account['currency']>[] = ['USD', 'Bs', 'AMBAS'];
+
   public accountForm = new FormGroup({
     code: new FormControl('', {
       nonNullable: true,
       validators: [Validators.required, Validators.pattern(/^\d+(\.\d+)*$/)],
     }),
     name: new FormControl('', {nonNullable: true, validators: [Validators.required]}),
-    type: new FormControl<AccountType>('gasto', {nonNullable: true}),
+    type: new FormControl<AccountType>('activo', {nonNullable: true}),
     nature: new FormControl<'debito' | 'credito'>('debito', {nonNullable: true}),
     parentCode: new FormControl('', {nonNullable: true}),
     description: new FormControl('', {nonNullable: true}),
+    kind: new FormControl<NonNullable<Account['kind']>>('otra', {nonNullable: true}),
+    bankCode: new FormControl('', {nonNullable: true}),
+    bankName: new FormControl('', {nonNullable: true}),
+    accountNumber: new FormControl('', {nonNullable: true}),
+    currency: new FormControl<NonNullable<Account['currency']>>('USD', {nonNullable: true}),
+    referenceBalanceUsd: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.min(0)],
+    }),
+    referenceBalanceNote: new FormControl('', {nonNullable: true}),
   });
 
   private newEntryLine(): FormGroup {
@@ -105,6 +184,10 @@ export class AccountingComponent {
       validators: [Validators.required],
     }),
     description: new FormControl('', {nonNullable: true, validators: [Validators.required]}),
+    exchangeRateUsed: new FormControl(defaultDocumentRate(this.api.exchangeRates()), {
+      nonNullable: true,
+      validators: [Validators.min(1)],
+    }),
     lines: new FormArray<FormGroup>([this.newEntryLine(), this.newEntryLine()]),
   });
 
@@ -149,6 +232,294 @@ export class AccountingComponent {
     this.api.accountingPeriods().filter((period) => period.status === 'abierto').length
   );
 
+  // --- APERTURA #13 ---
+
+  private amountGroup(amount: {
+    amountUsd?: number;
+    amountBs?: number;
+    exchangeRateUsed?: number;
+    rateSource?: string;
+  }): FormGroup {
+    return new FormGroup({
+      amountUsd: new FormControl(Number(amount.amountUsd) || 0, {
+        nonNullable: true,
+        validators: [Validators.min(0)],
+      }),
+      amountBs: new FormControl(Number(amount.amountBs) || 0, {
+        nonNullable: true,
+        validators: [Validators.min(0)],
+      }),
+      exchangeRateUsed: new FormControl(Number(amount.exchangeRateUsed) || 0, {
+        nonNullable: true,
+        validators: [Validators.min(0)],
+      }),
+      rateSource: new FormControl(
+        (amount.rateSource as 'currentUsd (referencia)' | 'Tasa capturada en apertura') ||
+          'currentUsd (referencia)',
+        {nonNullable: true}
+      ),
+    });
+  }
+
+  private generalRow(id: string, accountCode: string, amountUsd = 0): FormGroup {
+    const fallbackRate = defaultDocumentRate(this.api.exchangeRates());
+    const amount = normalizeOpeningAmount({amountUsd, exchangeRateUsed: fallbackRate}, fallbackRate);
+    return new FormGroup({
+      id: new FormControl(id, {nonNullable: true}),
+      accountCode: new FormControl(accountCode, {nonNullable: true, validators: [Validators.required]}),
+      memo: new FormControl('', {nonNullable: true}),
+      ...this.amountGroup(amount).controls,
+    });
+  }
+
+  private auxRow(
+    id: string,
+    kind: OpeningAuxiliaryKind,
+    name: string,
+    accountCode: string,
+    amountUsd = 0
+  ): FormGroup {
+    const fallbackRate = defaultDocumentRate(this.api.exchangeRates());
+    const amount = normalizeOpeningAmount({amountUsd, exchangeRateUsed: fallbackRate}, fallbackRate);
+    return new FormGroup({
+      id: new FormControl(id, {nonNullable: true}),
+      kind: new FormControl(kind, {nonNullable: true}),
+      name: new FormControl(name, {nonNullable: true, validators: [Validators.required]}),
+      accountCode: new FormControl(accountCode, {nonNullable: true, validators: [Validators.required]}),
+      memo: new FormControl('', {nonNullable: true}),
+      ...this.amountGroup(amount).controls,
+    });
+  }
+
+  private shareholderRow(name: string, amountUsd = 0): FormGroup {
+    const fallbackRate = defaultDocumentRate(this.api.exchangeRates());
+    const amount = normalizeOpeningAmount({amountUsd, exchangeRateUsed: fallbackRate}, fallbackRate);
+    return new FormGroup({
+      id: new FormControl(newOpeningRowId('ob-acc'), {nonNullable: true}),
+      name: new FormControl(name, {nonNullable: true, validators: [Validators.required]}),
+      taxId: new FormControl('', {nonNullable: true}),
+      contributionType: new FormControl('', {nonNullable: true}),
+      accountCode: new FormControl('3.01', {nonNullable: true}),
+      ...this.amountGroup(amount).controls,
+    });
+  }
+
+  private hydrateOpening(opening: AccountingOpeningDraft): void {
+    this.hydratedOpeningAt = opening.updatedAt;
+    this.openingForm.patchValue(
+      {
+        currentName: opening.legalEntity.currentName,
+        convertedName: opening.legalEntity.convertedName,
+        legalForm: opening.legalEntity.legalForm,
+        reconversionInstrument: opening.legalEntity.reconversionInstrument,
+        reconversionDate: opening.legalEntity.reconversionDate,
+        cutoffDate: opening.cutoffDate,
+        notes: `${opening.notes}\n\n${opening.legalEntity.notes}`.trim(),
+      },
+      {emitEvent: false}
+    );
+    this.openingGeneralRows.clear({emitEvent: false});
+    for (const balance of opening.generalBalances) {
+      this.openingGeneralRows.push(this.generalRow(balance.id, balance.accountCode), {emitEvent: false});
+      this.openingGeneralRows.at(-1)!.patchValue(
+        {
+          memo: balance.memo || '',
+          amountUsd: balance.amountUsd,
+          amountBs: balance.amountBs,
+          exchangeRateUsed: balance.exchangeRateUsed,
+          rateSource: balance.rateSource,
+        },
+        {emitEvent: false}
+      );
+    }
+    this.openingAuxRows.clear({emitEvent: false});
+    for (const balance of opening.auxiliaryBalances) {
+      this.openingAuxRows.push(
+        this.auxRow(balance.id, balance.kind, balance.name, balance.accountCode),
+        {emitEvent: false}
+      );
+      this.openingAuxRows.at(-1)!.patchValue(
+        {
+          memo: balance.memo || '',
+          amountUsd: balance.amountUsd,
+          amountBs: balance.amountBs,
+          exchangeRateUsed: balance.exchangeRateUsed,
+          rateSource: balance.rateSource,
+        },
+        {emitEvent: false}
+      );
+    }
+    this.openingShareholderRows.clear({emitEvent: false});
+    for (const shareholder of opening.shareholders) {
+      this.openingShareholderRows.push(this.shareholderRow(shareholder.name), {emitEvent: false});
+      this.openingShareholderRows.at(-1)!.patchValue(
+        {
+          id: shareholder.id,
+          taxId: shareholder.taxId || '',
+          contributionType: shareholder.contributionType || '',
+          accountCode: shareholder.accountCode || '3.01',
+          amountUsd: shareholder.amountUsd,
+          amountBs: shareholder.amountBs,
+          exchangeRateUsed: shareholder.exchangeRateUsed,
+          rateSource: shareholder.rateSource,
+        },
+        {emitEvent: false}
+      );
+    }
+    this.syncOpeningLive();
+  }
+
+  private buildOpeningPayload(): AccountingOpeningPayload {
+    const value = this.openingForm.getRawValue();
+    const fallbackRate = defaultDocumentRate(this.api.exchangeRates());
+    const notes = value.notes.split('\n\nReferencia del acta:')[0]!.trim();
+    return {
+      legalEntity: {
+        currentName: value.currentName,
+        convertedName: value.convertedName,
+        legalForm: value.legalForm,
+        reconversionInstrument: value.reconversionInstrument,
+        reconversionDate: value.reconversionDate,
+        notes: value.notes.includes('Referencia del acta:')
+          ? `Referencia del acta:${value.notes.split('Referencia del acta:')[1]}`
+          : '',
+      },
+      cutoffDate: value.cutoffDate,
+      generalBalances: this.openingGeneralRows.getRawValue().map((row) => ({
+        id: row['id'],
+        accountCode: row['accountCode'],
+        memo: row['memo'],
+        ...normalizeOpeningAmount(row, fallbackRate),
+      })),
+      auxiliaryBalances: this.openingAuxRows.getRawValue().map((row) => ({
+        id: row['id'],
+        kind: row['kind'],
+        name: row['name'],
+        accountCode: row['accountCode'],
+        memo: row['memo'],
+        ...normalizeOpeningAmount(row, fallbackRate),
+      })),
+      shareholders: this.openingShareholderRows.getRawValue().map((row) => ({
+        id: row['id'],
+        name: row['name'],
+        taxId: row['taxId'],
+        contributionType: row['contributionType'],
+        accountCode: row['accountCode'],
+        ...normalizeOpeningAmount(row, fallbackRate),
+      })),
+      notes,
+    };
+  }
+
+  private syncOpeningLive(): void {
+    const base = this.api.accountingOpening() || createDefaultAccountingOpening();
+    const payload = this.buildOpeningPayload();
+    this.openingLive.set({
+      ...base,
+      status: 'borrador',
+      postingStatus: 'borrador_provisional',
+      legalEntity: payload.legalEntity,
+      cutoffDate: payload.cutoffDate,
+      generalBalances: payload.generalBalances,
+      auxiliaryBalances: payload.auxiliaryBalances,
+      shareholders: payload.shareholders,
+      notes: payload.notes,
+      updatedAt: base.updatedAt,
+      updatedBy: base.updatedBy,
+    });
+  }
+
+  public openingDraft = computed(
+    () =>
+      this.openingLive() ||
+      this.api.accountingOpening() ||
+      createDefaultAccountingOpening(defaultDocumentRate(this.api.exchangeRates()))
+  );
+
+  public openingReconciliation = computed<OpeningReconciliation>(() =>
+    summarizeOpening(this.openingDraft(), this.api.accounts())
+  );
+
+  public openingAccountOptions = computed(() =>
+    this.api.accounts().filter((account) => account.active && account.level >= 2)
+  );
+  public openingBankAccounts = computed(() =>
+    this.openingAccountOptions().filter((account) => account.kind === 'banco' || account.code.startsWith('1.01'))
+  );
+  public openingReceivableAccounts = computed(() =>
+    this.openingAccountOptions().filter((account) => account.code.startsWith('1.02'))
+  );
+  public openingPayableAccounts = computed(() =>
+    this.openingAccountOptions().filter((account) => account.code.startsWith('2.01'))
+  );
+  public openingCapitalAccounts = computed(() =>
+    this.openingAccountOptions().filter((account) => account.code.startsWith('3'))
+  );
+
+  public addGeneralRow(): void {
+    this.openingGeneralRows.push(this.generalRow(newOpeningRowId('ob-gen'), ''));
+  }
+
+  public addAuxRow(kind: OpeningAuxiliaryKind): void {
+    const account = kind === 'banco' ? '1.01.02' : kind === 'clientes' ? '1.02.01' : '2.01.01';
+    this.openingAuxRows.push(this.auxRow(newOpeningRowId('ob-aux'), kind, kind, account));
+  }
+
+  public addShareholderRow(): void {
+    this.openingShareholderRows.push(this.shareholderRow(''));
+  }
+
+  public removeRow(array: FormArray<FormGroup>, index: number): void {
+    array.removeAt(index);
+  }
+
+  public async saveOpening(): Promise<void> {
+    if (this.openingForm.invalid) {
+      this.openingForm.markAllAsTouched();
+      return;
+    }
+    try {
+      await this.api.updateAccountingOpening(this.buildOpeningPayload());
+    } catch {
+      // El servicio ya mostró el error.
+    }
+  }
+
+  public async addOpeningAdjustment(): Promise<void> {
+    if (this.openingAdjustmentForm.invalid) {
+      this.openingAdjustmentForm.markAllAsTouched();
+      return;
+    }
+    const value = this.openingAdjustmentForm.getRawValue();
+    if (!Number(value.amountUsd) && !Number(value.amountBs)) {
+      this.api.showToast('Ingresa un monto USD o Bs. para el ajuste.', 'error');
+      return;
+    }
+    const payload: OpeningAdjustmentPayload = {
+      date: value.date,
+      accountCode: value.accountCode,
+      description: value.description,
+      direction: value.direction,
+      amountUsd: value.amountUsd,
+      amountBs: value.amountBs,
+      exchangeRateUsed: resolveDocumentRate(
+        this.api.exchangeRates(),
+        value.date,
+        value.exchangeRateUsed
+      ).rate,
+    };
+    try {
+      await this.api.recordOpeningAdjustment(payload);
+      this.openingAdjustmentForm.patchValue({description: '', amountUsd: 0, amountBs: 0});
+    } catch {
+      // El servicio ya mostró el error.
+    }
+  }
+
+  public openingMoney(value: number, currency: 'USD' | 'BS'): string {
+    return `${currency === 'USD' ? 'USD' : 'Bs.'} ${Number(value || 0).toFixed(2)}`;
+  }
+
   public get lineGroups(): FormGroup[] {
     return this.entryForm.controls.lines.controls;
   }
@@ -161,10 +532,17 @@ export class AccountingComponent {
     this.accountForm.reset({
       code: '',
       name: '',
-      type: 'gasto',
+      type: 'activo',
       nature: 'debito',
-      parentCode: '',
+      parentCode: '1.01',
       description: '',
+      kind: 'otra',
+      bankCode: '',
+      bankName: '',
+      accountNumber: '',
+      currency: 'USD',
+      referenceBalanceUsd: 0,
+      referenceBalanceNote: '',
     });
     this.showAccountModal.set(true);
   }
@@ -184,6 +562,13 @@ export class AccountingComponent {
         parentCode: value.parentCode || undefined,
         description: value.description || undefined,
         active: true,
+        kind: value.kind,
+        bankCode: value.bankCode || undefined,
+        bankName: value.bankName || undefined,
+        accountNumber: value.accountNumber || undefined,
+        currency: value.currency,
+        referenceBalanceUsd: value.referenceBalanceUsd,
+        referenceBalanceNote: value.referenceBalanceNote || undefined,
       });
       this.showAccountModal.set(false);
     } catch {
@@ -199,10 +584,29 @@ export class AccountingComponent {
     }
   }
 
+  /** Actualiza el saldo provisional (#13) sin generar asiento contable. */
+  public async updateAccountBalance(account: Account, rawValue: string | number): Promise<void> {
+    const referenceBalanceUsd = Number(rawValue);
+    if (!Number.isFinite(referenceBalanceUsd) || referenceBalanceUsd < 0) {
+      this.api.showToast('El saldo provisional debe ser un número mayor o igual a cero.', 'error');
+      return;
+    }
+    try {
+      await this.api.updateAccount(account.id, {referenceBalanceUsd});
+      this.api.showToast(
+        `Saldo provisional de ${account.code} actualizado (referencia #13, sin asiento).`
+      );
+    } catch {
+      // El servicio ya mostró el error.
+    }
+  }
+
   public openEntryModal(): void {
+    const date = new Date().toISOString().slice(0, 10);
     this.entryForm.reset({
-      date: new Date().toISOString().slice(0, 10),
+      date,
       description: '',
+      exchangeRateUsed: defaultDocumentRate(this.api.exchangeRates(), date),
     });
     this.entryForm.setControl('lines', new FormArray<FormGroup>([this.newEntryLine(), this.newEntryLine()]));
     this.showEntryModal.set(true);
@@ -243,6 +647,11 @@ export class AccountingComponent {
       const entry = await this.api.createAccountingEntry({
         date: value.date,
         description: value.description,
+        exchangeRateUsed: resolveDocumentRate(
+          this.api.exchangeRates(),
+          value.date,
+          value.exchangeRateUsed
+        ).rate,
         lines: value.lines
           .map((line) => ({
             accountCode: line['accountCode'],
@@ -281,6 +690,22 @@ export class AccountingComponent {
       this.showAnnulModal.set(false);
     } catch {
       // El servicio ya mostró el error.
+    }
+  }
+
+  public async verifyHashChain(): Promise<void> {
+    try {
+      await this.api.verifyAccountingHash();
+    } catch {
+      // El servicio ya mostró el error en un toast.
+    }
+  }
+
+  public async rebuildHashChain(): Promise<void> {
+    try {
+      await this.api.rebuildAccountingHash();
+    } catch {
+      // El servicio ya mostró el error en un toast.
     }
   }
 
@@ -382,7 +807,7 @@ export class AccountingComponent {
     }
     await exportToPdf({
       title: report.title,
-      subtitle: `Período ${report.metadata.periodLabel} · PROVISIONAL · ${report.metadata.hash}`,
+      subtitle: `Período ${report.metadata.periodLabel} · ${report.metadata.provisional ? 'PROVISIONAL' : 'VEN-NIF'} · ${report.metadata.hash}`,
       empresa: report.metadata.companyName,
       rif: report.metadata.taxId,
       exchangeRateUsed: report.metadata.exchangeRateUsed,

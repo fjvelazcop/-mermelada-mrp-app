@@ -12,6 +12,7 @@ import {
   findBank,
 } from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel, exportToPdf} from '../../core/utils/export.utils';
+import {defaultDocumentRate} from '../../core/utils/exchange-rate.utils';
 import {
   buildPayableRows,
   computePayableTotals,
@@ -163,7 +164,7 @@ export class AccountsPayableComponent {
     }),
     dueDate: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
     amountUsd: new FormControl<number>(0, {nonNullable: true, validators: [Validators.min(0.01), Validators.required]}),
-    exchangeRateUsed: new FormControl<number>(this.api.exchangeRates()?.currentUsd || 48.35, {
+    exchangeRateUsed: new FormControl<number>(defaultDocumentRate(this.api.exchangeRates()), {
       nonNullable: true,
       validators: [Validators.min(0.01)],
     }),
@@ -174,10 +175,11 @@ export class AccountsPayableComponent {
 
   public payForm = new FormGroup({
     bankCode: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
+    accountCode: new FormControl<string>('1.01.02', {nonNullable: true}),
     paymentMethod: new FormControl<string>('transferencia_bancaria', {nonNullable: true}),
     reference: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
     amountUsd: new FormControl<number>(0, {nonNullable: true, validators: [Validators.min(0.01)]}),
-    exchangeRateUsed: new FormControl<number>(this.api.exchangeRates()?.currentUsd || 48.35, {
+    exchangeRateUsed: new FormControl<number>(defaultDocumentRate(this.api.exchangeRates()), {
       nonNullable: true,
       validators: [Validators.min(0.01)],
     }),
@@ -241,8 +243,8 @@ export class AccountsPayableComponent {
 
   public openCreateModal(): void {
     if (!this.canCreate()) return;
-    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
     const issueDate = new Date().toISOString().slice(0, 10);
+    const rate = defaultDocumentRate(this.api.exchangeRates(), issueDate);
     this.createForm.reset({
       supplierId: '',
       supplierName: '',
@@ -305,6 +307,7 @@ export class AccountsPayableComponent {
     const rate = payable.exchangeRateUsed || this.api.exchangeRates()?.currentUsd || 48.35;
     this.payForm.reset({
       bankCode: '',
+      accountCode: '1.01.02',
       paymentMethod: 'transferencia_bancaria',
       reference: '',
       amountUsd: this.outstandingFor(payable),
@@ -347,6 +350,7 @@ export class AccountsPayableComponent {
       const result = await this.api.payPayable(payable.id, {
         bankCode: bank.code,
         bankName: bank.name,
+        accountCode: value.accountCode || undefined,
         paymentMethod: value.paymentMethod as PayablePayment['paymentMethod'],
         reference: value.reference.trim(),
         amountUsd: Number(value.amountUsd),

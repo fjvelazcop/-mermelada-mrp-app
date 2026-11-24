@@ -210,17 +210,17 @@ describe('read-only endpoints', () => {
     expect((body['metadata'] as Record<string, unknown>)['provisional']).toBe(true);
   });
 
-  it('GET /api/accounting/books generates the draft inventory book', async () => {
+  it('GET /api/accounting/books generates the VEN-NIF inventory book', async () => {
     const { response, body } = await jsonRequest(
       '/api/accounting/books?type=inventario&year=2026&month=11',
       'GET'
     );
     expect(response.status).toBe(200);
     expect(body['type']).toBe('inventario');
-    expect(String(body['title'])).toContain('BORRADOR / PRUEBA');
-    expect((body['notes'] as unknown[]).join(' ')).toContain(
-      'PENDIENTE DE VALIDACIÓN CONTABLE'
-    );
+    expect(String(body['title'])).toContain('VEN-NIF');
+    expect(String(body['title'])).not.toContain('BORRADOR');
+    expect((body['notes'] as unknown[]).join(' ')).toContain('Firmantes: Contador y socios');
+    expect((body['metadata'] as Record<string, unknown>)['provisional']).toBe(false);
   });
 
   it('GET /api/reports/dashboard returns metrics', async () => {
@@ -466,6 +466,126 @@ describe('mutating endpoints', () => {
     );
     expect(response.status).toBe(200);
     expect(body['minStock']).toBe(4);
+  });
+
+  it('creates a finished good in draft and supports logical deactivation', async () => {
+    const { response, body } = await jsonRequest('/api/inventory/finished-goods', 'POST', {
+      code: 'PT-API-AREQUIPE',
+      flavor: 'Arequipe',
+      presentation: 'otra',
+      presentationLabel: 'Tarro 500 g',
+      weightGrams: 500,
+      baseCost: 2.1,
+      suggestedWholesalePrice: 3,
+      suggestedRetailPrice: 3.8,
+      suggestedSpecialPrice: 2.7,
+      minStock: 10,
+      notes: 'Borrador/prueba #13',
+    });
+    expect(response.status).toBe(201);
+    expect(body['status']).toBe('borrador');
+    expect(body['stockUnits']).toBe(0);
+    expect(body['presentationLabel']).toBe('Tarro 500 g');
+    expect(body['weightGrams']).toBe(500);
+
+    const deactivated = await jsonRequest(
+      `/api/inventory/finished-goods/${body['id']}`,
+      'PUT',
+      {status: 'inactivo'}
+    );
+    expect(deactivated.response.status).toBe(200);
+    expect(deactivated.body['status']).toBe('inactivo');
+
+    const logs = (await (
+      await fetch(`${baseUrl}/api/audit-logs?module=inventario`)
+    ).json()) as { actionType: string }[];
+    expect(logs.map((log) => log.actionType)).toContain('producto_terminado_creado');
+    expect(logs.map((log) => log.actionType)).toContain('producto_terminado_actualizado');
+  });
+
+  it('rejects duplicate custom presentation labels for draft products', async () => {
+    const payload = {
+      code: 'PT-API-AREQUIPE-DUP',
+      flavor: 'Arequipe',
+      presentation: 'otra',
+      presentationLabel: 'Tarro 500 g',
+      weightGrams: 500,
+      baseCost: 2.1,
+      suggestedWholesalePrice: 3,
+      suggestedRetailPrice: 3.8,
+      suggestedSpecialPrice: 2.7,
+      minStock: 10,
+    };
+    const { response } = await jsonRequest('/api/inventory/finished-goods', 'POST', payload);
+    expect(response.status).toBe(400);
+  });
+
+  it('manages the editable presentation catalog', async () => {
+    const initial = (await (
+      await fetch(`${baseUrl}/api/presentation-types`)
+    ).json()) as { id: string; code: string }[];
+    expect(initial.some((item) => item.code === 'pequena_250g')).toBe(true);
+
+    const created = await jsonRequest('/api/presentation-types', 'POST', {
+      code: 'frasco_api_500g',
+      label: 'Frasco API 500 g',
+      weightGrams: 500,
+      active: true,
+    });
+    expect(created.response.status).toBe(201);
+    expect(created.body['isSystem']).toBe(false);
+
+    const updated = await jsonRequest(
+      `/api/presentation-types/${created.body['id']}`,
+      'PUT',
+      {label: 'Frasco API 500 g (editado)'}
+    );
+    expect(updated.response.status).toBe(200);
+    expect(updated.body['label']).toBe('Frasco API 500 g (editado)');
+
+    const deleted = await jsonRequest(
+      `/api/presentation-types/${created.body['id']}`,
+      'DELETE'
+    );
+    expect(deleted.response.status).toBe(200);
+  });
+
+  it('creates a BOM recipe preserving a custom presentation label and weight', async () => {
+    const materials = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; name: string; unit: string }[];
+    const material = materials[0];
+
+    const { response, body } = await jsonRequest('/api/recipes', 'POST', {
+      code: 'REC-API-AREQUIPE',
+      name: 'Arequipe industrial',
+      flavor: 'Arequipe',
+      presentation: 'otra',
+      presentationLabel: 'Tarro API 500 g',
+      weightGrams: 500,
+      batchSizeUnits: 40,
+      items: [
+        {
+          materialId: material.id,
+          materialName: material.name,
+          quantity: 10,
+          unit: material.unit,
+          estimatedCost: 12.5,
+        },
+      ],
+      directLaborMinutes: 45,
+      estimatedUtilityCost: 3,
+      instructions: 'Cocción lenta.',
+    });
+    expect(response.status).toBe(201);
+    expect(body['presentation']).toBe('otra');
+    expect(body['presentationLabel']).toBe('Tarro API 500 g');
+    expect(body['weightGrams']).toBe(500);
+
+    const recipes = (await (
+      await fetch(`${baseUrl}/api/recipes`)
+    ).json()) as { code: string; presentationLabel?: string }[];
+    expect(recipes.some((recipe) => recipe.code === 'REC-API-AREQUIPE')).toBe(true);
   });
 
   it('records inventory movements and updates stock', async () => {

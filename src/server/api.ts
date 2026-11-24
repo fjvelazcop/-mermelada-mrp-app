@@ -86,6 +86,8 @@ import {
   accountUpdateSchema,
   accountingBookQuerySchema,
   accountingBookSettingsSchema,
+  accountingOpeningAdjustmentSchema,
+  accountingOpeningUpdateSchema,
   accountingEntryAnnulmentSchema,
   accountingEntrySchema,
   accountingPeriodKeySchema,
@@ -105,6 +107,7 @@ import {
   expenseCategoryUpdateSchema,
   expenseFiscalEligibilitySchema,
   expenseSchema,
+  finishedGoodCreateSchema,
   finishedGoodUpdateSchema,
   fiscalSettingsSchema,
   fiscalObligationParamsSchema,
@@ -142,6 +145,8 @@ import {
   salesOrderStatusUpdateSchema,
   materialCategorySchemaInput,
   materialCategoryUpdateSchema,
+  presentationTypeSchemaInput,
+  presentationTypeUpdateSchema,
   supplierTypeSchema,
   supplierTypeUpdateSchema,
   supplierPriceSchema,
@@ -223,6 +228,18 @@ function auditActor(req: Request): AuditActor {
     userName: req.header('x-demo-user-name') || 'Administrador (demo)',
     userRole: req.header('x-demo-role') || 'admin',
   };
+}
+
+/** Valida la cuenta elegida para un asiento automático antes de mutar. */
+function rejectInvalidCashAccount(code: string | undefined, res: Response): boolean {
+  if (!code) return false;
+  const account = dbInstance.getAccountByCode(code);
+  if (account?.active && account.type === 'activo') return false;
+  res.status(422).json({
+    error: 'La cuenta contable elegida no existe, está inactiva o no es de activo',
+    code: 'ACCOUNT_NOT_AVAILABLE',
+  });
+  return true;
 }
 
 /**
@@ -651,6 +668,7 @@ export function createApiApp(): express.Express {
         res.status(400).json({error: 'Proveedor no encontrado', code: 'INVALID_SUPPLIER'});
         return;
       }
+      if (rejectInvalidCashAccount(req.body.paymentAccountCode, res)) return;
       const isPurchase = req.body.type === 'entrada';
       // Compatibilidad: las entradas antiguas sin condición explícita se
       // registran de contado y no generan CxP; el crédito siempre es explícito.
@@ -777,12 +795,21 @@ export function createApiApp(): express.Express {
     })
   );
 
+  app.post(
+    '/api/inventory/finished-goods',
+    validateBody(finishedGoodCreateSchema),
+    mutation((req, res) => {
+      const created = dbInstance.addFinishedGood(req.body, auditActor(req));
+      res.status(201).json(created);
+    })
+  );
+
   app.put(
     '/api/inventory/finished-goods/:id',
     validateParams(idParamsSchema),
     validateBody(finishedGoodUpdateSchema),
     mutation((req, res) => {
-      const updated = dbInstance.updateFinishedGood(routeId(req), req.body);
+      const updated = dbInstance.updateFinishedGood(routeId(req), req.body, auditActor(req));
       if (!updated) {
         res.status(404).json({ error: 'Producto no encontrado', code: 'NOT_FOUND' });
         return;
@@ -973,6 +1000,42 @@ export function createApiApp(): express.Express {
     mutation((req, res) => {
       dbInstance.deleteSupplierType(routeId(req), auditActor(req));
       res.json({ success: true, message: 'Tipo de proveedor eliminado' });
+    })
+  );
+
+  // --- EDITABLE CATALOGS: PRESENTATIONS ---
+  app.get(
+    '/api/presentation-types',
+    query((req, res) => {
+      res.json(dbInstance.getPresentationTypes());
+    })
+  );
+
+  app.post(
+    '/api/presentation-types',
+    validateBody(presentationTypeSchemaInput),
+    mutation((req, res) => {
+      const created = dbInstance.addPresentationType(req.body, auditActor(req));
+      res.status(201).json(created);
+    })
+  );
+
+  app.put(
+    '/api/presentation-types/:id',
+    validateParams(idParamsSchema),
+    validateBody(presentationTypeUpdateSchema),
+    mutation((req, res) => {
+      const updated = dbInstance.updatePresentationType(routeId(req), req.body, auditActor(req));
+      res.json(updated);
+    })
+  );
+
+  app.delete(
+    '/api/presentation-types/:id',
+    validateParams(idParamsSchema),
+    mutation((req, res) => {
+      dbInstance.deletePresentationType(routeId(req), auditActor(req));
+      res.json({ success: true, message: 'Presentación eliminada' });
     })
   );
 
@@ -1190,6 +1253,7 @@ export function createApiApp(): express.Express {
     validateParams(idParamsSchema),
     validateBody(salesCollectionSchema),
     mutation((req, res) => {
+      if (rejectInvalidCashAccount(req.body.accountCode, res)) return;
       const bank = findBank(req.body.bankCode);
       if (!bank) {
         res.status(422).json({
@@ -1410,6 +1474,7 @@ export function createApiApp(): express.Express {
     '/api/expenses',
     validateBody(expenseSchema),
     mutation((req, res) => {
+      if (rejectInvalidCashAccount(req.body.paymentAccountCode, res)) return;
       if (
         req.body.supplierId &&
         !dbInstance.getSuppliers().some((s) => s.id === req.body.supplierId)
@@ -1500,6 +1565,30 @@ export function createApiApp(): express.Express {
     })
   );
 
+  // --- APERTURA PROVISIONAL #13 ---
+  app.get(
+    '/api/accounting/opening',
+    query((req, res) => res.json(dbInstance.getAccountingOpening()))
+  );
+
+  app.patch(
+    '/api/accounting/opening',
+    requireRole('admin', 'master'),
+    validateBody(accountingOpeningUpdateSchema),
+    mutation((req, res) => {
+      res.json(dbInstance.updateAccountingOpening(req.body, auditActor(req)));
+    })
+  );
+
+  app.post(
+    '/api/accounting/opening/adjustments',
+    requireRole('admin', 'master'),
+    validateBody(accountingOpeningAdjustmentSchema),
+    mutation((req, res) => {
+      res.status(201).json(dbInstance.recordOpeningAdjustment(req.body, auditActor(req)));
+    })
+  );
+
   app.get(
     '/api/accounting/entries',
     query((req, res) => res.json(dbInstance.getAccountingEntries()))
@@ -1533,6 +1622,17 @@ export function createApiApp(): express.Express {
         dbInstance.annulAccountingEntry(routeId(req), req.body.reason, auditActor(req))
       );
     })
+  );
+
+  app.get(
+    '/api/accounting/hash/verify',
+    query((req, res) => res.json(dbInstance.verifyAccountingHashes(false, auditActor(req))))
+  );
+
+  app.post(
+    '/api/accounting/hash/rebuild',
+    requireRole('admin', 'master'),
+    mutation((req, res) => res.json(dbInstance.verifyAccountingHashes(true, auditActor(req))))
   );
 
   app.get(
@@ -1642,6 +1742,7 @@ export function createApiApp(): express.Express {
     validateParams(idParamsSchema),
     validateBody(payablePaymentSchema),
     mutation((req, res) => {
+      if (rejectInvalidCashAccount(req.body.accountCode, res)) return;
       const bank = findBank(req.body.bankCode);
       if (!bank) {
         res.status(422).json({

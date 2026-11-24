@@ -12,6 +12,7 @@ import {
   findBank,
 } from '../../core/data/venezuelan-banks';
 import {exportToCsv, exportToExcel} from '../../core/utils/export.utils';
+import {defaultDocumentRate} from '../../core/utils/exchange-rate.utils';
 import {AuditLog} from '../../shared/components/audit-log/audit-log';
 import {
   SupplierAutocompleteComponent,
@@ -110,7 +111,7 @@ export class ExpensesComponent {
     // local rate so both amounts always stay coherent.
     amountBs: new FormControl<number>(0, {nonNullable: true, validators: [Validators.required, Validators.min(0.01)]}),
     amountUsd: new FormControl<number>(0, {nonNullable: true}),
-    exchangeRateUsed: new FormControl<number>(48.35, {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
+    exchangeRateUsed: new FormControl<number>(defaultDocumentRate(this.api.exchangeRates()), {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     supplierOrBeneficiary: new FormControl<string>('', {nonNullable: true, validators: [Validators.required]}),
     supplierId: new FormControl<string>('', {nonNullable: true}),
     taxId: new FormControl<string>('', {nonNullable: true}),
@@ -118,6 +119,7 @@ export class ExpensesComponent {
     documentNumber: new FormControl<string>('', {nonNullable: true}),
     paymentMethod: new FormControl<'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta'>('transferencia_bancaria', {nonNullable: true}),
     issuingBankCode: new FormControl<string>('', {nonNullable: true}),
+    paymentAccountCode: new FormControl<string>('1.01.02', {nonNullable: true}),
     paymentReference: new FormControl<string>('', {nonNullable: true}),
     taxCategory: new FormControl<ExpenseTaxCategory>('con_factura_iva', {nonNullable: true}),
     taxRatePercent: new FormControl<number>(16.0, {nonNullable: true}),
@@ -132,7 +134,7 @@ export class ExpensesComponent {
     const syncUsd = () => {
       const bs = Number(this.expenseForm.controls.amountBs.value) || 0;
       const rate =
-        Number(this.expenseForm.controls.exchangeRateUsed.value) || 48.35;
+        defaultDocumentRate(this.api.exchangeRates(), undefined, this.expenseForm.controls.exchangeRateUsed.value);
       const usd = Number((bs / rate).toFixed(2));
       if (this.expenseForm.controls.amountUsd.value !== usd) {
         this.expenseForm.controls.amountUsd.setValue(usd, {emitEvent: false});
@@ -195,7 +197,7 @@ export class ExpensesComponent {
     const month = this.selectedMonthFilter();
     const allExpenses = this.expensesList();
     const categories = this.api.expenseCategories();
-    const rate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const rate = defaultDocumentRate(this.api.exchangeRates());
 
     // Filter expenses by selected month (or all)
     const monthExpenses = month === 'all'
@@ -444,7 +446,7 @@ export class ExpensesComponent {
   }
 
   public openCreateModal() {
-    const activeRate = this.api.exchangeRates()?.currentUsd || 48.35;
+    const activeRate = defaultDocumentRate(this.api.exchangeRates());
     const defaultCat = this.api.expenseCategories()[0]?.id || 'alquiler_instalaciones';
     this.expenseForm.reset({
       concept: '',
@@ -459,6 +461,7 @@ export class ExpensesComponent {
       documentNumber: '',
       paymentMethod: 'transferencia_bancaria',
       issuingBankCode: '',
+      paymentAccountCode: '1.01.02',
       paymentReference: '',
       taxCategory: 'con_factura_iva',
       taxRatePercent: 16.0,
@@ -588,7 +591,7 @@ export class ExpensesComponent {
       return;
     }
     const bank = v.issuingBankCode ? findBank(v.issuingBankCode) : undefined;
-    const rate = Number(v.exchangeRateUsed) || 48.35;
+    const rate = defaultDocumentRate(this.api.exchangeRates(), undefined, v.exchangeRateUsed);
     // Bolívares is the source of truth: USD is derived from the local rate.
     const amountBs = Number(v.amountBs) || 0;
     const amountUsd = Number((amountBs / rate).toFixed(2));
@@ -621,6 +624,7 @@ export class ExpensesComponent {
       paymentMethod: v.paymentMethod,
       issuingBankCode: bank?.code,
       issuingBankName: bank?.name,
+      paymentAccountCode: v.paymentAccountCode || undefined,
       paymentReference: v.paymentReference || undefined,
       notes: v.notes || undefined,
       registeredBy: `${this.api.currentUser().fullName} (${this.api.currentUser().roleName})`,

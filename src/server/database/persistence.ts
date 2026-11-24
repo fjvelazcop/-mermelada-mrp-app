@@ -5,6 +5,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import type { DatabaseState } from '../erp-database.js';
 import {
   DEFAULT_MATERIAL_CATEGORIES,
+  DEFAULT_PRESENTATION_TYPES,
   DEFAULT_SUPPLIER_TYPES,
 } from '../../app/core/models/erp.models.js';
 
@@ -104,6 +105,11 @@ function migrate(db: SqliteDatabase): void {
       unit TEXT NOT NULL,
       cost_per_unit REAL NOT NULL,
       supplier TEXT,
+      supplier_id TEXT,
+      supplier_tax_id TEXT,
+      payment_condition TEXT,
+      credit_days INTEGER,
+      payment_due_date TEXT,
       last_restock_date TEXT NOT NULL,
       notes TEXT
     );
@@ -153,7 +159,9 @@ function migrate(db: SqliteDatabase): void {
       batch_size_units INTEGER NOT NULL,
       direct_labor_minutes INTEGER NOT NULL,
       estimated_utility_cost REAL NOT NULL,
-      instructions TEXT
+      instructions TEXT,
+      presentation_label TEXT,
+      weight_grams REAL
     );
 
     CREATE TABLE IF NOT EXISTS recipe_items (
@@ -636,6 +644,18 @@ function migrate(db: SqliteDatabase): void {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS presentation_types (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      weight_grams REAL NOT NULL,
+      packaging_material_id TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS suppliers (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
@@ -951,12 +971,26 @@ function migrate(db: SqliteDatabase): void {
       updated_at TEXT NOT NULL,
       updated_by TEXT NOT NULL DEFAULT ''
     );
+
+    -- Borrador editable de apertura #13. Se guarda como snapshot JSON para no
+    -- alterar la versión v16 del esquema relacional ni crear una v17.
+    CREATE TABLE IF NOT EXISTS accounting_opening (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      state_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT ''
+    );
   `);
 
   // Apply additive column migrations for databases created before the
   // newer modules existed. SQLite does not support ADD COLUMN IF NOT EXISTS.
   ensureColumn(db, 'auth_users', 'password_changed_at', 'TEXT');
   ensureColumn(db, 'auth_users', 'avatar_bg', 'TEXT');
+  ensureColumn(db, 'raw_materials', 'supplier_id', 'TEXT');
+  ensureColumn(db, 'raw_materials', 'supplier_tax_id', 'TEXT');
+  ensureColumn(db, 'raw_materials', 'payment_condition', "TEXT NOT NULL DEFAULT 'contado'");
+  ensureColumn(db, 'raw_materials', 'credit_days', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'raw_materials', 'payment_due_date', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'production_orders', 'mode', "TEXT NOT NULL DEFAULT 'automatico'");
   ensureColumn(db, 'production_orders', 'formulas_json', 'TEXT');
   ensureColumn(db, 'production_orders', 'manual_sheet_json', 'TEXT');
@@ -1034,6 +1068,31 @@ function migrate(db: SqliteDatabase): void {
   ensureColumn(db, 'inventory_movements', 'payable_id', 'TEXT');
   ensureColumn(db, 'inventory_movements', 'payable_number', 'TEXT');
   ensureColumn(db, 'inventory_movements', 'notes', 'TEXT');
+  // Cuenta contable elegida por transacción para los asientos automáticos.
+  // Columnas aditivas, sin cambio de versión de DB.
+  ensureColumn(db, 'inventory_movements', 'payment_account_code', 'TEXT');
+  ensureColumn(db, 'expenses', 'payment_account_code', 'TEXT');
+  ensureColumn(db, 'payable_payments', 'account_code', 'TEXT');
+  // Cuentas contables: clasificación, datos bancarios y saldo provisional #13.
+  ensureColumn(db, 'accounts', 'kind', "TEXT NOT NULL DEFAULT 'otra'");
+  ensureColumn(db, 'accounts', 'bank_code', 'TEXT');
+  ensureColumn(db, 'accounts', 'bank_name', 'TEXT');
+  ensureColumn(db, 'accounts', 'account_number', 'TEXT');
+  ensureColumn(db, 'accounts', 'currency', 'TEXT');
+  ensureColumn(db, 'accounts', 'reference_balance_usd', 'REAL NOT NULL DEFAULT 0');
+  ensureColumn(db, 'accounts', 'reference_balance_updated_at', 'TEXT');
+  ensureColumn(db, 'accounts', 'reference_balance_note', 'TEXT');
+  // Catálogo de presentaciones y maestro de productos terminados (#13).
+  // Columnas aditivas para no alterar el esquema histórico de la DB v16.
+  ensureColumn(db, 'finished_goods', 'status', "TEXT NOT NULL DEFAULT 'activo'");
+  ensureColumn(db, 'finished_goods', 'notes', 'TEXT');
+  ensureColumn(db, 'finished_goods', 'created_at', 'TEXT');
+  ensureColumn(db, 'recipes', 'presentation_label', 'TEXT');
+  ensureColumn(db, 'recipes', 'weight_grams', 'REAL');
+  // Cadena hash autorizada de asientos (#13). Columnas aditivas: no se cambia la versión de DB.
+  ensureColumn(db, 'accounting_entries', 'previous_hash', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'accounting_entries', 'entry_hash', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'accounting_entries', 'hash_sequence', 'INTEGER NOT NULL DEFAULT 0');
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_payable
       ON expenses(payable_id) WHERE payable_id IS NOT NULL;
@@ -1273,6 +1332,29 @@ function migrate(db: SqliteDatabase): void {
     // Tablas creadas arriba; solo se registra la versión y se deja el
     // camino abierto a futuros backfills.
     insert.run(16, new Date().toISOString());
+  }
+  if (currentVersion < 17) {
+    // Catálogo editable de presentaciones. Se siembra una sola vez para no
+    // sobrescribir códigos creados por el usuario en bases existentes.
+    const now = new Date().toISOString();
+    const seedPresentation = db.prepare(`
+      INSERT OR IGNORE INTO presentation_types
+        (id, code, label, weight_grams, packaging_material_id, active, is_system, created_at, updated_at)
+      VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)
+    `);
+    for (const value of DEFAULT_PRESENTATION_TYPES) {
+      seedPresentation.run(
+        value.id,
+        value.code,
+        value.label,
+        value.weightGrams,
+        value.active ? 1 : 0,
+        value.isSystem ? 1 : 0,
+        now,
+        now
+      );
+    }
+    insert.run(17, now);
   }
 }
 

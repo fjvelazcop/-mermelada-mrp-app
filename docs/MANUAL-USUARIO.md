@@ -129,6 +129,10 @@ procesarla, anularla o eliminarla:
    referencia de compromiso.
 2. Complete las seis marmitas fijas con cestas/base, guayaba, azúcar, almidón,
    químico (g), ácido (g), agua/gasoil, hora finalizada y marca de reproceso.
+   Justo encima de la tabla puede **discriminar el insumo concreto** para
+   almidón, químico y ácido. Por defecto se usan los insumos históricos
+   (`rm-20`, `rm-3`, `rm-4`); si elige otro del maestro, el costo y el descuento
+   de stock se convierten automáticamente entre `g` y `kg`.
    **Kilos totales** se estima como *insumos (guayaba + azúcar + almidón +
    químico + ácido) × rendimiento*; el agua/gasoil es consumo de proceso y no
    suma masa. **Cant. obtenida** se calcula como *kilos totales ÷ peso por
@@ -169,7 +173,12 @@ Las órdenes manuales cargadas por fórmulas BOM siguen disponibles con el botó
 
 ### 4.4. Inventario y almacén
 
-- **Materia prima:** stock actual, mínimo, unidad, costo y proveedor.
+- **Materia prima:** stock actual, mínimo, unidad, costo y proveedor. En el modal
+  **Registrar Nuevo Insumo / Materia Prima**, el campo **Proveedor Habitual** es un
+  autocomplete sobre el maestro de proveedores. Al elegirlo se deriva su condición
+  de pago: si `paymentTerms` indica días, se muestra **Crédito** con días y fecha
+  de pago precargados y ajustables; si no, solo se muestra **Contado**. Estos datos
+  quedan guardados en el insumo.
 - **Producto terminado:** unidades disponibles y reservadas por pedidos.
 - **Movimientos:** entradas, salidas, ajustes y mermas. Cada movimiento guarda
   quién lo realizó. En el modal **Registrar Movimiento de Inventario**, el campo
@@ -178,11 +187,64 @@ Las órdenes manuales cargadas por fórmulas BOM siguen disponibles con el botó
   el `supplierId` y una copia de la razón social y el RIF/Cédula vigentes, que
   aparecen en el listado, detalle y exportaciones. Si el proveedor no existe,
   puede crearlo desde **+ Registrar nuevo proveedor** sin salir del modal.
+- **Entrada con nota y sin factura (ej. azúcar):** en el modal de movimientos
+  capture el número en **Factura o nota (N.º / referencia)** —por ejemplo
+  `NOTA-0001`, deje **Proveedor de la factura** vacío y seleccione **Contado**.
+  El número queda en el movimiento y en la auditoría. No se genera CxP y, al
+  alimentarse el Libro de Compras al pagar la CxP, esa entrada no se incorpora
+  automáticamente a dicho libro mientras se mantiene el modo borrador/prueba
+  (#13). Para compras a crédito sí son obligatorios el proveedor y el número de
+  factura.
+- **Fijar existencia (ej. químicos ya registrados):** en la tabla de materia
+  prima, use el botón **Fijar** del insumo. Indique la nueva existencia, un
+  **motivo obligatorio** y una referencia opcional (por ejemplo `CONTEO-1123`).
+  La acción actualiza el stock sin crear movimiento, CxP ni asiento; deja en la
+  bitácora la existencia anterior, la nueva, el motivo, la referencia y el
+  usuario. No modifica `Último reabastecimiento`, porque no es una compra.
 - **Condición / CxP:** el historial muestra `Contado` (con banco y referencia de
   pago cuando se capturaron) o `Crédito` (con número de CxP y vencimiento).
   Las entradas antiguas sin dato se muestran como `Contado (legacy)`. El
   buscador también encuentra movimientos por número de CxP, referencia o banco.
 - **Alertas:** los insumos por debajo del mínimo se resaltan para reposición.
+- **Varios aditivos o químicos:** cada componente se gestiona como un insumo
+  independiente (una fila con su propio código, stock, costo y proveedor), aunque
+  comparta categoría. Cree uno por cada aditivo/químico desde **Registrar Nuevo
+  Insumo / Materia Prima**; si necesita más detalle, añada categorías en
+  **Configuración → Catálogo de Categorías de Materia Prima**. El Consolidado
+  agrupa por categoría, pero la tabla y el historial siempre muestran cada
+  componente por separado.
+- **Consolidado y trazabilidad — Reporte Oficial:** toma las cantidades del
+  maestro completo de insumos, sin aplicar el buscador ni el filtro de categoría
+  de la tabla. Muestra cuántos insumos consolidó y se sincroniza
+  automáticamente cada 30 s mientras la pantalla esté abierta; también puede
+  pulsar **Actualizar** para forzar la sincronización con la base de datos.
+  Solo los insumos en `kg`/`g` aportan al **Total kilos**; las demás unidades
+  (unidades, cajas, litros…) aportan a la valoración USD/Bs. Las exportaciones
+  de la tabla sí respetan el filtro activo.
+- **Catálogo de presentaciones:** en *Configuración → Presentaciones* el
+  Administrador puede crear, editar y desactivar presentaciones. El catálogo
+  alimenta la planilla de marmitas, el alta de recetas y el alta de productos
+  terminados. Las presentaciones base no se pueden eliminar. Los códigos nuevos
+  se documentan como `otra` en recetas y productos, conservando la **etiqueta**
+  y el **peso en gramos** capturados; no se modifica el enum de libros ni el
+  estado borrador/prueba #13. La etiqueta de una presentación `otra` debe ser
+  única entre recetas y, por separado, entre productos terminados.
+- **Producto terminado nuevo (ej. arequipe):** en *Inventario → Stock*, pulse
+  **Nuevo producto terminado**. Se registra en `borrador` con stock inicial 0 y
+  la nota `Borrador/prueba #13 – pendiente de validación con el contador.`
+  No crea movimiento, CxP ni asiento. El panel **Preparar producto nuevo**
+  resume la secuencia: registrar en borrador → validar etiqueta, peso y costo
+  con el contador → activar solo cuando proceda. Para dar de baja un producto,
+  use **Dar de baja**: es una baja lógica (`status = inactivo`), deja rastro en
+  la bitácora y lo oculta de Ventas y de la valoración de la planilla. La
+  casilla **Ver inactivos** permite consultarlos desde Inventario; **Activar**
+  revierte la baja.
+- **Receta BOM nueva:** en *Producción → Recetas*, el Administrador y el Master
+  pueden usar **Nueva receta BOM**. Capture código, nombre, sabor, presentación
+  del catálogo, unidades por lote, mano de obra, servicios e instrucciones. La
+  tabla dinámica toma los insumos del maestro; al elegir uno se precargan su
+  nombre, unidad y costo, que puede ajustarse por fila. El guardado usa el
+  endpoint `POST /api/recipes` y queda auditado como `receta_bom_creada`.
 
 Buenas prácticas:
 
@@ -424,9 +486,15 @@ automáticamente «Sujeto Pasivo Especial», «Agente de Retención de IVA» y
 «Agente de Retención de ISLR» como condición declarativa. No enciende los cálculos
 de retención: `vatWithholdingEnabled` e `islrWithholdingEnabled` permanecen en
 `false` hasta la validación contable. El usuario confirmó que hoy somos
-contribuyentes **ordinarios** (fabricación de mermelada): IVA 16% de referencia
-general para mermelada procesada/envasada, exentos/8% y conceptos de ISLR
-pendientes del contador, y UT de referencia Bs. 43,00.
+contribuyentes **ordinarios** (fabricación de mermelada), condición que sigue
+**pendiente de ratificación documental con fecha del contador**. Ya están
+**validados (23/11/2026)**: IVA 16% general para mermelada procesada/envasada,
+UT Bs. 43,00 desde 02/06/2025 e IGTF no aplica según la condición actual.
+Siguen **por precisar si aplica**: exentos 0%, 8% y los conceptos de ISLR.
+
+La tasa de cambio de cada documento toma por defecto la tasa actual o la de la
+fecha de guardado, aparece visible y editable en los formularios y permite ajuste
+manual; si no se modifica, se conserva ese valor con fallback a la tasa actual.
 
 En **Configuración → Datos Fiscales** puede guardar, sin activar emisión real,
 los datos de facturación digital: proveedor autorizado, RIF del proveedor, URL

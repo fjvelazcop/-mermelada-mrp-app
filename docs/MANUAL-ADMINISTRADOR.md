@@ -595,17 +595,35 @@ Tipos disponibles: `diario`, `mayor`, `balance_comprobacion`,
 `balance_general`, `inventario`, `estado_resultados`, `compras`, `ventas`,
 `retenciones`, `caja_banco`, `auxiliar_cxc` y `auxiliar_cxp`.
 
-`inventario` valora el stock actual con las cuentas provisionales `1.03.01`
-(Materia Prima) y `1.03.02` (Producto Terminado) del plan base. No es un
-inventario formal: no incluye apertura auditada ni ajustes de cierre.
+`inventario` valora el stock actual con el **plan VEN-NIF de 167 cuentas**:
+`1.1.04.02` (Inventario de Materia Prima) y `1.1.04.04` (Inventario de
+Productos Terminados), correlacionados con los códigos provisionales `1.03.01`
+y `1.03.02` del plan base. Es el único libro que deja de ser borrador; sigue
+sin incluir apertura auditada ni ajustes de cierre. Firmantes: **Contador y
+socios**. La paginación `1 al 99` y la firma al final de cada cierre siguen
+pendientes de definir.
 
 Cada respuesta incluye razón social, RIF, dirección fiscal, período, estado,
 moneda USD y Bs. (columnas pareadas), tasa por documento con fallback a
 `currentUsd`, columnas finales `Tasa Bs./USD` y `Origen de la tasa`, usuario,
-saldo de control en ambas monedas, hash, leyenda
-**BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13)** y
-firma. `retenciones` devuelve `SIN OPERACIONES`: las banderas
-`vatWithholdingEnabled` e `islrWithholdingEnabled` siguen en `false`.
+saldo de control en ambas monedas, hash y firma. Todos los libros excepto
+`inventario` llevan la leyenda **BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE
+DE VALIDACIÓN CONTABLE (#13)**; `inventario` se rotula **LIBRO DEFINITIVO —
+PLAN VEN-NIF DE 167 CUENTAS**. `retenciones` devuelve `SIN OPERACIONES`: las
+banderas `vatWithholdingEnabled` e `islrWithholdingEnabled` siguen en `false`.
+
+### 9.7.1. Cadena hash de asientos
+
+Autorizada y activada (#13). Cada asiento guarda `previousHash`, `entryHash` y
+`hashSequence` sobre número, fecha, descripción, estado, totales, tasa y
+líneas, con SHA-256. El backfill cubre los asientos históricos al iniciar; las
+altas, confirmaciones y anulaciones re-encadenan toda la cadena para conservar
+la integridad. `GET /api/accounting/hash/verify` informa `valid`,
+`checkedEntries`, `lastHash` y el primer asiento roto;
+`POST /api/accounting/hash/rebuild` (admin/master) repara y registra el evento
+en auditoría. La pestaña **Asientos / Diario** muestra el número de secuencia y
+los primeros caracteres del hash por asiento, con botones **Verificar cadena**
+y **Recalcular cadena**.
 
 ### 9.8. Configuración de facturación digital (preparación)
 
@@ -622,15 +640,16 @@ guardar campos parciales como borrador. En ningún caso se emite un documento
 digital ni se contacta al SENIAT. La transición a emisión real requiere licencia,
 proveedor autorizado, integración y validación contable.
 
-### 9.9. Fase 0: histórico de IVA/UT y parámetros pendientes
+### 9.9. Fase 0: histórico de IVA/UT y estado de validación (#13)
 
 **Migración v16.** Backup previo:
 `backups/mermelada-2026-11-22T04-41-19-913Z.db`. La migración crea
 `fiscal_reference_values` e `accounting_book_settings` y siembra IVA 16% desde
 `2020-01-01` y UT Bs. 43,00 desde `2025-06-02`, ambos en estado `referencia`,
-`confirmedByAccountant=false`. IGTF queda confirmado como **no aplica**
-(`false`) con referencia G.O.E. 6.687 / Decreto 4.972; no existe campo de
-cálculo activo.
+`confirmedByAccountant=false` como soporte documental. **IVA 16%, UT Bs. 43,00
+e IGTF no aplica están validados desde el 23/11/2026**; IGTF queda confirmado
+como **no aplica** (`false`) con referencia G.O.E. 6.687 / Decreto 4.972 y no
+existe campo de cálculo activo.
 
 Ruta: **Configuración → IVA / UT e Historial (#13)** (solo admin/master).
 Pestañas IVA/UT con:
@@ -642,15 +661,20 @@ Pestañas IVA/UT con:
 - formulario de parámetros de libros: formato aprobado `xlsx,pdf`, CSV auxiliar,
   paginación, firma, política de tasa y notas.
 
-Los valores son **solo referencia/consulta**: no modifican
+El historial es **solo referencia/consulta**: no modifica
 `fiscalSettings.taxRatePercent`, retenciones ni cálculos de facturas/libros
-hasta cerrar la Fase 0 / #13. Los eventos quedan en `GET /api/audit-logs`.
+hasta cerrar la Fase 0 / #13. Los estados validados se muestran en la pantalla,
+pero no sustituyen la ratificación documental pendiente. Los eventos quedan en
+`GET /api/audit-logs`.
 
-**Criterios confirmados por el usuario (2026-11-22)**, registrados también en
-**Configuración → Datos Fiscales → Obligaciones y validaciones**:
+**Criterios registrados en Configuración → Datos Fiscales → Obligaciones y validaciones**:
 
-- Contribuyente **ordinario**, giro **fabricación de mermelada**; SPE `no_aplica`
-  mientras se mantenga esa condición.
+- **VALIDADO (23/11/2026):** IVA **16%** general, UT **Bs. 43,00** desde
+  `2025-06-02` e IGTF `no_aplica` según la condición actual. Exento 0%, 8% y
+  conceptos ISLR siguen **por precisar si aplica**.
+- **PENDIENTE POR EL CONTADOR:** contribuyente **ordinario**, giro **fabricación
+  de mermelada**; SPE `no_aplica` mientras se mantenga esa condición, pero falta
+  ratificación documental con instrumento y fecha.
 - Retenciones **practicadas** `no_aplica` (`vatWithholdingEnabled=false` e
   `islrWithholdingEnabled=false`): no se retiene al pagar. Solo se contempla el
   **registro/control de comprobantes de retención recibidos de clientes SPE al
@@ -672,7 +696,11 @@ hasta cerrar la Fase 0 / #13. Los eventos quedan en `GET /api/audit-logs`.
   v14): `1.01.01` Caja, `1.01.02` Bancos, `1.02.01` Clientes, `2.01.01`
   Proveedores, `1.03.01` Materia Prima, `1.03.02` Producto Terminado,
   `1.04.01` Crédito Fiscal IVA, `2.02.01` IVA por Pagar y `2.02.02` Retenciones
-  por Pagar (practicadas). No existe cuenta dedicada a **retenciones recibidas**
+  por Pagar (practicadas). Catálogo VEN-NIF de 167 cuentas disponible en
+  `src/app/core/data/ven-nif-accounts.ts` y usado por el Libro de Inventario:
+  `1.03.01` → `1.1.04.02`, `1.03.02` → `1.1.04.04`, IVA crédito fiscal
+  `1.1.05.01`, IVA débito fiscal `2.1.04.01`, CxC `1.1.03.01`, CxP
+  `2.1.02.01`, Caja `1.1.01.01`, Bancos `1.1.01.03`. No existe cuenta dedicada a **retenciones recibidas**
   de comprobantes que emitan clientes SPE al cobrar. Saldos de apertura, fecha
   de corte, formatos legales, firma definitiva y numeración de libro/página se
   ajustan con el contador al cerrar la Fase 0.
@@ -747,6 +775,8 @@ cuestionario pendiente: `docs/MATRIZ-OBLIGACIONES-FISCALES.md` y
       `accounts`.
 - [ ] Migración v15 aplicada con respaldo previo; columnas de facturación digital
       presentes en `fiscal_settings` y casilla en modo preparación.
+- [ ] Migración v17 aplicada con respaldo previo; tabla `presentation_types`
+      sembrada y catálogo revisado en **Configuración → Presentaciones**.
 - [ ] Módulo **Contabilidad** visible solo para roles con permiso; admin/master
       confirman/anulan asientos y cierran períodos.
 - [ ] Plan de cuentas base, cuentas de control de IVA/retenciones y asientos

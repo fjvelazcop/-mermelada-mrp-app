@@ -75,6 +75,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Registrar entradas, consumos de cocción y ajustes de merma.',
           'Ver el historial de movimientos de un insumo con el botón Movimientos.',
           'Distinguir compras de contado y de crédito, con su CxP y vencimiento.',
+          'Buscar el proveedor habitual de un insumo en el maestro y guardar su condición de pago y fecha de pago.',
         ],
       },
       {
@@ -90,7 +91,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         bullets: [
           'Los movimientos conservan razón social y RIF del proveedor cuando se registran con factura.',
           'Los asientos automáticos de inventario se confirman solos y alimentan Diario y Mayor; la presentación de libros sigue en borrador/prueba hasta validar #13.',
-          'El Libro de Compras se alimenta al pagar la CxP (gasto fiscalmente elegible), no al registrar la entrada. Criterio pago vs. devengo pendiente de validar con el contador (#13).',
+          'El Libro de Compras se alimenta al pagar la CxP (gasto fiscalmente elegible), no al registrar la entrada.',
         ],
       },
     ],
@@ -233,7 +234,10 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
       {
         title: 'Qué puedes hacer',
         bullets: [
-          'Consultar el plan base de 35 cuentas y crear cuentas adicionales con permiso.',
+          'Consultar el plan base de 35 cuentas y crear cuentas adicionales con permiso, incluidas cuentas bancarias con su banco y número de cuenta.',
+          'Capturar y editar un saldo provisional por cuenta como referencia de conciliación (#13), sin generar asiento.',
+          'Gestionar la Apertura (#13): reconversión, fecha de corte, accionistas, saldos generales y por auxiliar en USD/Bs con tasa por línea, con cuadre en tiempo real y asiento siempre borrador.',
+          'Elegir la cuenta de efectivo/banco en cobros, pagos CxP, gastos y compras de inventario para los asientos automáticos.',
           'Revisar asientos automáticos, crear asientos manuales y anular con motivo.',
           'Generar libros y reportes en modo BORRADOR / PRUEBA.',
         ],
@@ -242,6 +246,10 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         title: 'Puntos de atención',
         bullets: [
           'El plan de cuentas y las cuentas de control son provisionales hasta la validación contable (#13).',
+          'El saldo provisional no es saldo contable: no alimenta libros ni estados financieros; las transacciones sin cuenta elegida siguen usando Caja (1.01.01) o Bancos (1.01.02).',
+          'La apertura se guarda en borrador/provisional y su asiento no se puede confirmar sin autorización contable expresa; la cadena hash, retenciones y facturación digital permanecen apagadas.',
+          'IVA 16 %, UT Bs. 43,00 e IGTF no aplica están validados; el régimen ordinario/no SPE requiere ratificación documental con fecha del contador.',
+          'La tasa de los documentos es visible y editable: por defecto usa la actual o la de la fecha de guardado, con fallback a `currentUsd` si no se modifica.',
           'No hay cuenta dedicada a retenciones recibidas de clientes SPE; tampoco se han creado cuentas nuevas.',
         ],
       },
@@ -295,7 +303,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         title: 'Qué puedes hacer',
         bullets: [
           'Gestionar usuarios, matriz de permisos y simulador de accesos.',
-          'Consultar datos fiscales y el histórico de IVA/UT con permiso de administrador.',
+          'Consultar datos fiscales y el histórico de IVA/UT con permiso de administrador; IVA 16 %, UT Bs. 43,00 e IGTF no aplica están validados (#13).',
           'Administrar correos, tipos de proveedor, categorías y reset operativo.',
         ],
       },
@@ -303,7 +311,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         title: 'Puntos de atención',
         bullets: [
           'Las opciones fiscales y catálogos se muestran solo a admin/master o a roles con permiso.',
-          'Los valores de IVA/UT son referencia: no modifican cálculos hasta cerrar #13.',
+          'El histórico de IVA/UT es soporte documental: no modifica cálculos; la ratificación del régimen ordinario/no SPE y el resto del cierre #13 siguen pendientes.',
         ],
       },
     ],
@@ -390,12 +398,13 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
   },
   fiscal_reference_values: {
     title: 'IVA / UT e historial (#13)',
-    summary: 'Valores de referencia con vigencia, instrumento y soporte documental.',
+    summary: 'Valores con vigencia e instrumento: IVA/UT/IGTF validados y política de tasa por documento.',
     sections: [
       {
         title: 'Qué puedes hacer',
         bullets: [
-          'Consultar el IVA 16% desde 2020-01-01 y la UT Bs. 43,00 desde 2025-06-02.',
+          'Consultar el IVA 16% desde 2020-01-01 y la UT Bs. 43,00 desde 2025-06-02, ambos validados, e IGTF no aplica según la condición actual.',
+          'Revisar la política de tasa validada: actual o histórica por fecha de guardado, visible y editable en los formularios, con fallback a currentUsd.',
           'Registrar cambios de vigencia, con cierre automático del registro anterior.',
           'Dar de baja valores con motivo, sin borrado físico.',
         ],
@@ -404,7 +413,8 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         title: 'Puntos de atención',
         bullets: [
           'Solo admin/master puede consultar o modificar estos parámetros.',
-          'Los registros quedan en referencia y sin confirmación contable hasta cerrar #13.',
+          'El régimen ordinario/no SPE sigue pendiente de ratificación documental con fecha; exento 0%, 8% y conceptos ISLR están por precisar si aplica.',
+          'El histórico es soporte documental: no modifica cálculos ni activa retenciones, facturación digital ni cadena hash.',
         ],
       },
     ],

@@ -10,6 +10,7 @@ import {
   ProductionOrder,
   ProductionMarmitaSheetRow,
   ProductionSheetPresentationLine,
+  PresentationTypeConfig,
   Customer,
   SalesOrder,
   SalesCollection,
@@ -46,8 +47,16 @@ import {
   AccountingBookSettings,
   AccountingBookSettingsInput,
   AccountingBookType,
+  AccountingHashVerification,
   AccountingEntry,
+  AccountingOpeningDraft,
   AccountingPeriod,
+  OpeningAdjustment,
+  OpeningAmountInput,
+  OpeningAuxiliaryBalance,
+  OpeningGeneralBalance,
+  OpeningLegalEntityDraft,
+  OpeningShareholder,
   Expense,
   ExpenseCategoryConfig,
   Payable,
@@ -64,7 +73,25 @@ import {
   LicenseAlert,
 } from '../models/erp.models';
 import {formatVeCurrency} from '../pipes/ve-currency.pipe';
+import type {ManualSheetIngredientMaterialIds} from '../utils/manual-sheet-ingredients';
 import {computed} from '@angular/core';
+
+/** Cuerpo enviado al guardar el borrador de apertura #13. */
+export interface AccountingOpeningPayload {
+  legalEntity: OpeningLegalEntityDraft;
+  cutoffDate: string;
+  generalBalances: OpeningGeneralBalance[];
+  auxiliaryBalances: OpeningAuxiliaryBalance[];
+  shareholders: OpeningShareholder[];
+  notes: string;
+}
+
+export type OpeningAdjustmentPayload = OpeningAmountInput & {
+  date: string;
+  accountCode: string;
+  description: string;
+  direction: OpeningAdjustment['direction'];
+};
 
 @Injectable({
   providedIn: 'root',
@@ -890,6 +917,7 @@ export class ErpApiService {
   public supplierPrices = signal<SupplierPrice[]>([]);
   public supplierTypes = signal<SupplierTypeConfig[]>([]);
   public materialCategories = signal<MaterialCategoryConfig[]>([]);
+  public presentationTypes = signal<PresentationTypeConfig[]>([]);
   public deliveryNotes = signal<DeliveryNote[]>([]);
   public employees = signal<Employee[]>([]);
   public payrollWeeks = signal<PayrollWeek[]>([]);
@@ -898,8 +926,18 @@ export class ErpApiService {
   public payables = signal<Payable[]>([]);
   public payablePayments = signal<PayablePayment[]>([]);
   public accounts = signal<Account[]>([]);
+  /** Cuentas de disponible elegibles para asientos automáticos (#13). */
+  public cashAccounts = computed(() =>
+    this.accounts().filter(
+      (account) =>
+        account.active && account.type === 'activo' && account.code.startsWith('1.01')
+    )
+  );
   public accountingEntries = signal<AccountingEntry[]>([]);
   public accountingPeriods = signal<AccountingPeriod[]>([]);
+
+  public accountingHashVerification = signal<AccountingHashVerification | null>(null);
+  public accountingOpening = signal<AccountingOpeningDraft | null>(null);
   public accountingBook = signal<AccountingBookReport | null>(null);
   public costStructure = signal<CostStructureAnalysis | null>(null);
   public fiscalSettings = signal<FiscalSettings | null>(null);
@@ -1196,6 +1234,7 @@ export class ErpApiService {
         supplierPriceList,
         supplierTypeList,
         materialCategoryList,
+        presentationList,
         dNotes,
         staff,
         weeks,
@@ -1206,6 +1245,7 @@ export class ErpApiService {
         accountsList,
         entriesList,
         periodsList,
+        opening,
         costing,
         fiscal,
         invoices,
@@ -1226,6 +1266,7 @@ export class ErpApiService {
         firstValueFrom(this.http.get<SupplierPrice[]>('/api/suppliers/prices')).catch(() => []),
         firstValueFrom(this.http.get<SupplierTypeConfig[]>('/api/supplier-types')).catch(() => []),
         firstValueFrom(this.http.get<MaterialCategoryConfig[]>('/api/material-categories')).catch(() => []),
+        firstValueFrom(this.http.get<PresentationTypeConfig[]>('/api/presentation-types')).catch(() => []),
         firstValueFrom(this.http.get<DeliveryNote[]>('/api/sales/delivery-notes')),
         firstValueFrom(this.http.get<Employee[]>('/api/payroll/employees')),
         firstValueFrom(this.http.get<PayrollWeek[]>('/api/payroll/weeks')),
@@ -1236,6 +1277,7 @@ export class ErpApiService {
         firstValueFrom(this.http.get<Account[]>('/api/accounting/accounts')).catch(() => []),
         firstValueFrom(this.http.get<AccountingEntry[]>('/api/accounting/entries')).catch(() => []),
         firstValueFrom(this.http.get<AccountingPeriod[]>('/api/accounting/periods')).catch(() => []),
+        firstValueFrom(this.http.get<AccountingOpeningDraft>('/api/accounting/opening')).catch(() => null),
         firstValueFrom(this.http.get<CostStructureAnalysis>('/api/costing/summary')),
         firstValueFrom(this.http.get<FiscalSettings>('/api/fiscal-settings')),
         firstValueFrom(this.http.get<FiscalInvoice[]>('/api/fiscal-invoices')).catch(() => []),
@@ -1261,6 +1303,7 @@ export class ErpApiService {
       this.supplierPrices.set(supplierPriceList || []);
       this.supplierTypes.set(supplierTypeList || []);
       this.materialCategories.set(materialCategoryList || []);
+      this.presentationTypes.set(presentationList || []);
       this.deliveryNotes.set(dNotes);
       this.employees.set(staff);
       this.payrollWeeks.set(weeks);
@@ -1271,6 +1314,7 @@ export class ErpApiService {
       this.accounts.set(accountsList || []);
       this.accountingEntries.set(entriesList || []);
       this.accountingPeriods.set(periodsList || []);
+      this.accountingOpening.set(opening);
       this.costStructure.set(costing);
       this.fiscalSettings.set(fiscal);
       this.fiscalInvoices.set(invoices || []);
@@ -1288,6 +1332,30 @@ export class ErpApiService {
     } finally {
       this.isLoading.set(false);
     }
+  }
+
+  /**
+   * Sincronización ligera de inventario: maestro, movimientos, categorías,
+   * tasas y bitácora. Evita recargar todo el ERP en cada sondeo.
+   */
+  public async refreshInventoryData(): Promise<void> {
+    const [materials, movements, categories, rates, audit] = await Promise.all([
+      firstValueFrom(this.http.get<RawMaterial[]>('/api/inventory/raw-materials')),
+      firstValueFrom(this.http.get<InventoryMovement[]>('/api/inventory/movements')),
+      firstValueFrom(this.http.get<MaterialCategoryConfig[]>('/api/material-categories')).catch(
+        () => []
+      ),
+      firstValueFrom(this.http.get<DailyExchangeRates>('/api/exchange-rates')).catch(
+        () => null
+      ),
+      firstValueFrom(this.http.get<AuditLogEntry[]>('/api/audit-logs')).catch(() => []),
+    ]);
+
+    this.rawMaterials.set(materials || []);
+    this.inventoryMovements.set(movements || []);
+    this.materialCategories.set(categories || []);
+    if (rates) this.exchangeRates.set(rates);
+    if (Array.isArray(audit)) this.auditLogs.set(audit);
   }
 
   // --- EXCHANGE RATES METHODS ---
@@ -1350,6 +1418,25 @@ export class ErpApiService {
     }
   }
 
+  /** Fija la existencia de un insumo sin generar movimiento, CxP ni asiento. */
+  public async updateRawMaterial(id: string, updates: Partial<RawMaterial>) {
+    try {
+      const res = await firstValueFrom(
+        this.http.put<RawMaterial>(
+          `/api/inventory/raw-materials/${encodeURIComponent(id)}`,
+          updates
+        )
+      );
+      this.rawMaterials.update(list => list.map(item => item.id === id ? res : item));
+      await this.refreshInventoryData();
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar el insumo';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
   public async recordMovement(data: {
     materialId: string;
     type: 'entrada' | 'salida_produccion' | 'ajuste_merma';
@@ -1365,6 +1452,7 @@ export class ErpApiService {
     paymentMethod?: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
     bankCode?: string;
     paymentReference?: string;
+    paymentAccountCode?: string;
     creditDays?: number;
     dueDate?: string;
   }): Promise<{movement: InventoryMovement; payable: Payable | null}> {
@@ -1601,6 +1689,7 @@ export class ErpApiService {
   public async createManualSheetProductionOrder(data: {
     lotNumber: string;
     productionDate: string;
+    ingredientMaterialIds?: ManualSheetIngredientMaterialIds;
     marmitas: ProductionMarmitaSheetRow[];
     packaging: {
       presentationKg: number;
@@ -1911,6 +2000,7 @@ export class ErpApiService {
     data: {
       bankCode: string;
       paymentMethod: 'transferencia_bancaria' | 'pago_movil' | 'efectivo_usd' | 'efectivo_bs' | 'zelle' | 'tarjeta';
+      accountCode?: string;
       reference: string;
       amountUsd?: number;
       exchangeRateUsed?: number;
@@ -2038,7 +2128,15 @@ export class ErpApiService {
 
   // --- CONTABILIDAD (FASE 1) ---
   public async addAccount(
-    data: Omit<Account, 'id' | 'createdAt' | 'updatedAt' | 'isSystem' | 'level'>
+    data: Omit<
+      Account,
+      | 'id'
+      | 'createdAt'
+      | 'updatedAt'
+      | 'isSystem'
+      | 'level'
+      | 'referenceBalanceUpdatedAt'
+    >
   ) {
     try {
       const res = await firstValueFrom(this.http.post<Account>('/api/accounting/accounts', data));
@@ -2054,7 +2152,18 @@ export class ErpApiService {
 
   public async updateAccount(
     id: string,
-    updates: {name?: string; description?: string; active?: boolean}
+    updates: {
+      name?: string;
+      description?: string;
+      active?: boolean;
+      kind?: Account['kind'];
+      bankCode?: string;
+      bankName?: string;
+      accountNumber?: string;
+      currency?: Account['currency'];
+      referenceBalanceUsd?: number;
+      referenceBalanceNote?: string;
+    }
   ) {
     try {
       const res = await firstValueFrom(
@@ -2065,6 +2174,38 @@ export class ErpApiService {
       return res;
     } catch (err: unknown) {
       this.showToast(err instanceof Error ? err.message : 'Error al actualizar la cuenta', 'error');
+      throw err;
+    }
+  }
+
+  /** Guarda el borrador editable de apertura #13 (USD/Bs con tasa por línea). */
+  public async updateAccountingOpening(data: AccountingOpeningPayload) {
+    try {
+      const res = await firstValueFrom(
+        this.http.patch<AccountingOpeningDraft>('/api/accounting/opening', data)
+      );
+      this.accountingOpening.set(res);
+      this.showToast('Borrador de apertura #13 actualizado; el asiento sigue provisional.');
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al actualizar la apertura', 'error');
+      throw err;
+    }
+  }
+
+  /** Registra un ajuste financiero que suma al cuadre y al asiento borrador. */
+  public async recordOpeningAdjustment(data: OpeningAdjustmentPayload) {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<AccountingOpeningDraft>('/api/accounting/opening/adjustments', data)
+      );
+      this.accountingOpening.set(res);
+      this.showToast('Ajuste de apertura registrado en el borrador #13.');
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(err instanceof Error ? err.message : 'Error al registrar el ajuste de apertura', 'error');
       throw err;
     }
   }
@@ -2137,7 +2278,45 @@ export class ErpApiService {
     }
   }
 
-  /** Obtiene un libro contable provisional del período solicitado. */
+  public async verifyAccountingHash() {
+    try {
+      const res = await firstValueFrom(
+        this.http.get<AccountingHashVerification>('/api/accounting/hash/verify')
+      );
+      this.accountingHashVerification.set(res);
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al verificar la cadena hash',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  public async rebuildAccountingHash() {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<AccountingHashVerification>('/api/accounting/hash/rebuild', {})
+      );
+      this.accountingHashVerification.set(res);
+      this.showToast(
+        res.repairedEntries > 0
+          ? `Cadena hash reparada: ${res.repairedEntries} asiento(s).`
+          : 'Cadena hash verificada sin cambios.'
+      );
+      await this.refreshAllData();
+      return res;
+    } catch (err: unknown) {
+      this.showToast(
+        err instanceof Error ? err.message : 'Error al reconstruir la cadena hash',
+        'error'
+      );
+      throw err;
+    }
+  }
+
+  /** Obtiene un libro contable del período solicitado. */
   public async getAccountingBook(type: AccountingBookType, year: number, month: number) {
     try {
       const params = new URLSearchParams({type, year: String(year), month: String(month)});
@@ -2244,6 +2423,7 @@ export class ErpApiService {
       bankCode: string;
       bankName: string;
       paymentMethod: PayablePayment['paymentMethod'];
+      accountCode?: string;
       reference: string;
       amountUsd?: number;
       exchangeRateUsed?: number;
@@ -2424,6 +2604,83 @@ export class ErpApiService {
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al eliminar categoría de materia prima';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async addPresentationType(
+    data: Omit<PresentationTypeConfig, 'id' | 'createdAt' | 'updatedAt' | 'isSystem'>
+  ) {
+    try {
+      const res = await firstValueFrom<PresentationTypeConfig>(
+        this.http.post<PresentationTypeConfig>('/api/presentation-types', data)
+      );
+      this.presentationTypes.update(list => [...list, res]);
+      this.showToast(`Presentación "${res.label}" creada con éxito.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al crear presentación';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updatePresentationType(id: string, data: Partial<PresentationTypeConfig>) {
+    try {
+      const res = await firstValueFrom<PresentationTypeConfig>(
+        this.http.put<PresentationTypeConfig>(`/api/presentation-types/${id}`, data)
+      );
+      this.presentationTypes.update(list => list.map(item => (item.id === id ? res : item)));
+      this.showToast(`Presentación "${res.label}" actualizada.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar presentación';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async deletePresentationType(id: string) {
+    try {
+      await firstValueFrom(this.http.delete(`/api/presentation-types/${id}`));
+      this.presentationTypes.update(list => list.filter(item => item.id !== id));
+      this.showToast('Presentación eliminada exitosamente.');
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar presentación';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async addFinishedGood(
+    data: Omit<FinishedGood, 'id' | 'createdAt' | 'status'> & { status?: FinishedGood['status'] }
+  ) {
+    try {
+      const res = await firstValueFrom<FinishedGood>(
+        this.http.post<FinishedGood>('/api/inventory/finished-goods', data)
+      );
+      this.finishedGoods.update(list => [...list, res]);
+      this.showToast(`Producto "${res.flavor}" registrado en estado ${res.status || 'borrador'}.`);
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al crear producto terminado';
+      this.showToast(msg, 'error');
+      throw err;
+    }
+  }
+
+  public async updateFinishedGood(id: string, data: Partial<FinishedGood>) {
+    try {
+      const res = await firstValueFrom<FinishedGood>(
+        this.http.put<FinishedGood>(`/api/inventory/finished-goods/${id}`, data)
+      );
+      this.finishedGoods.update(list => list.map(item => (item.id === id ? res : item)));
+      this.showToast('Producto terminado actualizado.');
+      return res;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al actualizar producto terminado';
       this.showToast(msg, 'error');
       throw err;
     }

@@ -1488,6 +1488,7 @@ function resolveModule(path: string): ModuleId | null {
   if (path.startsWith('/api/fiscal-adjustment-notes')) return 'sales';
   if (path.startsWith('/api/fiscal-books')) return 'settings';
   if (path.startsWith('/api/fiscal-invoices')) return 'sales';
+  if (path.startsWith('/api/presentation-types')) return 'settings';
   if (path.startsWith('/api/material-categories')) return 'material_categories';
   if (path.startsWith('/api/supplier-types')) return 'supplier_types';
   if (path.startsWith('/api/inventory')) return 'inventory';

@@ -9,6 +9,11 @@
  */
 
 import { createHash } from 'node:crypto';
+import {
+  LEGACY_TO_VEN_NIF,
+  VEN_NIF_ACCOUNT_MAP,
+  findVenNifAccount,
+} from '../app/core/data/ven-nif-accounts.js';
 import type {
   Account,
   AccountingBookMetadata,
@@ -96,7 +101,7 @@ const BOOK_TITLES: Record<AccountingBookType, string> = {
   mayor: 'Libro Mayor',
   balance_comprobacion: 'Balance de Comprobación',
   balance_general: 'Libro de Inventarios y Balances — Balance General',
-  inventario: 'Libro de Inventario — BORRADOR / PRUEBA',
+  inventario: 'Libro de Inventario — VEN-NIF (167 cuentas)',
   estado_resultados: 'Estado de Resultados',
   compras: 'Libro de Compras',
   ventas: 'Libro de Ventas',
@@ -797,9 +802,9 @@ function buildCompras(input: AccountingBookInput): BookContent {
 }
 
 /**
- * Libro de inventario de prueba derivado del stock operativo actual. Usa las
- * cuentas 1.03.01 y 1.03.02 del plan base como control provisional; no calcula
- * impuestos ni constituye un inventario formal a efectos legales.
+ * Libro de Inventario definitivo derivado del stock operativo actual. Opera sobre
+ * el plan VEN-NIF de 167 cuentas; las cuentas base 1.03.01/1.03.02 quedan como
+ * correlación documentada del plan provisional de 35 cuentas.
  */
 function buildInventario(input: AccountingBookInput): {
   headers: string[];
@@ -809,6 +814,8 @@ function buildInventario(input: AccountingBookInput): {
 } {
   const { start, end } = periodBounds(input.year, input.month);
   const rows: AccountingBookRow[] = [];
+  const rawMaterialAccount = findVenNifAccount(VEN_NIF_ACCOUNT_MAP.rawMaterialInventory);
+  const finishedGoodsAccount = findVenNifAccount(VEN_NIF_ACCOUNT_MAP.finishedGoodsInventory);
   const headers = [
     'Código / ID',
     'Concepto',
@@ -816,7 +823,7 @@ function buildInventario(input: AccountingBookInput): {
     'Cantidad',
     'Costo unitario USD',
     'Valor USD',
-    'Cuenta provisional',
+    'Cuenta VEN-NIF',
     'Unidad / Referencia',
     'Observaciones',
   ];
@@ -837,7 +844,7 @@ function buildInventario(input: AccountingBookInput): {
   rows.push(
     row(
       [
-        'Cuentas de control provisionales: 1.03.01 Materia Prima · 1.03.02 Producto Terminado',
+        `Cuentas VEN-NIF: ${VEN_NIF_ACCOUNT_MAP.rawMaterialInventory} ${rawMaterialAccount?.name || 'Inventario de Materia Prima'} · ${VEN_NIF_ACCOUNT_MAP.finishedGoodsInventory} ${finishedGoodsAccount?.name || 'Inventario de Productos Terminados'}`,
         '',
         '',
         '',
@@ -861,7 +868,7 @@ function buildInventario(input: AccountingBookInput): {
         round(material.currentStock),
         round(material.costPerUnit),
         round(material.currentStock * material.costPerUnit),
-        '1.03.01',
+        VEN_NIF_ACCOUNT_MAP.rawMaterialInventory,
         material.unit,
         material.supplier || material.notes || '',
       ])
@@ -884,7 +891,7 @@ function buildInventario(input: AccountingBookInput): {
         round(product.stockUnits),
         round(product.baseCost),
         round(product.stockUnits * product.baseCost),
-        '1.03.02',
+        VEN_NIF_ACCOUNT_MAP.finishedGoodsInventory,
         product.presentationLabel,
         `Reservadas: ${product.reservedUnits}`,
       ])
@@ -915,7 +922,7 @@ function buildInventario(input: AccountingBookInput): {
         round(movement.quantity),
         round(movement.costPerUnit),
         round(movement.totalCost),
-        '1.03.01',
+        VEN_NIF_ACCOUNT_MAP.rawMaterialInventory,
         movement.date,
         movement.referenceDoc || movement.notes || movement.performedBy,
       ])
@@ -925,13 +932,13 @@ function buildInventario(input: AccountingBookInput): {
   rows.push(
     row(
       [
-        'Valoración provisional total',
+        'Valoración total',
         '',
         '',
         '',
         '',
         round(rawMaterialValue + finishedGoodValue),
-        '1.03',
+        findVenNifAccount('1.1.04')?.code || '1.1.04',
         '',
         '',
       ],
@@ -945,13 +952,13 @@ function buildInventario(input: AccountingBookInput): {
     totals: [
       { label: 'Materia prima', value: round(rawMaterialValue) },
       { label: 'Producto terminado', value: round(finishedGoodValue) },
-      { label: 'Valoración provisional', value: round(rawMaterialValue + finishedGoodValue) },
+      { label: 'Valoración VEN-NIF', value: round(rawMaterialValue + finishedGoodValue) },
       { label: 'Movimientos del período', value: movements.length },
     ],
     notes: [
-      'BORRADOR / PRUEBA: valorado con el stock operativo actual y el plan base de 35 cuentas.',
-      'No incluye inventario inicial auditado, ajustes de cierre ni saldos de apertura.',
-      'Las cuentas 1.03.01 y 1.03.02 son provisionales hasta la validación contable (#13).',
+      `Plan VEN-NIF de 167 cuentas. Correlación: 1.03.01 → ${LEGACY_TO_VEN_NIF['1.03.01']} (Materia Prima) y 1.03.02 → ${LEGACY_TO_VEN_NIF['1.03.02']} (Productos Terminados).`,
+      'Firmantes: Contador y socios. Paginación 1 al 99 y firma al final de cada cierre: pendientes.',
+      'No incluye inventario inicial auditado ni ajustes de cierre; el resto del cierre #13 permanece borrador/provisional.',
     ],
   };
 }
@@ -1362,10 +1369,10 @@ function buildMetadata(
     generatedBy: input.actor?.userName || 'sistema',
     totalControl,
     hash,
-    provisional: true,
+    provisional: input.type !== 'inventario',
     signatureLabel:
       input.bookSettings?.signatureText ||
-      'Firma: _______________________   Contador / Representante legal',
+      `Firmantes: ${input.bookSettings?.accountantSigner || 'Contador'} y ${input.bookSettings?.partnerSigners || 'Socios'} · Firma: _______________________`,
   };
 }
 
@@ -1420,9 +1427,16 @@ export function buildAccountingBook(input: AccountingBookInput): AccountingBookR
   const totalControl = calculateTotalControl(content.rows);
   const localized = withSecondaryCurrency(content, input.type, input.exchangeRateUsed);
   const notes = [
-    'BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13).',
-    'Generado con el plan base actual y cuentas de control provisionales; no es evidencia fiscal.',
-    'Saldos de apertura, fecha de corte, formatos legales, firma definitiva y numeración de libro/página: pendientes de ajustar con el contador (#13).',
+    ...(input.type === 'inventario'
+      ? [
+          'LIBRO DEFINITIVO — PLAN VEN-NIF DE 167 CUENTAS.',
+          'Firmantes: Contador y socios. Paginación 1 al 99 y firma al final de cada cierre: pendientes de definir.',
+        ]
+      : [
+          'BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13).',
+          'Generado con el plan base actual y cuentas de control provisionales; no es evidencia fiscal.',
+          'Saldos de apertura, fecha de corte, formatos legales, firma definitiva y numeración de libro/página: pendientes de ajustar con el contador (#13).',
+        ]),
     ...localized.notes,
     ...(input.bookSettings?.notes ? [input.bookSettings.notes] : []),
     ...(input.bookSettings?.pagination

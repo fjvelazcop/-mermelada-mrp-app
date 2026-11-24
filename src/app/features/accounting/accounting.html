@@ -6,7 +6,8 @@
         <h1 class="text-xl sm:text-2xl font-bold text-stone-900">Contabilidad</h1>
       </div>
       <p class="text-sm text-stone-500 mt-1">
-        Plan de cuentas base y asientos de doble entrada; libros en borrador/prueba hasta la validación contable (#13).
+        Plan de cuentas base y asientos de doble entrada; IVA/UT/IGTF validados, resto del cierre #13 en borrador/prueba
+        hasta la ratificación contable.
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
@@ -65,6 +66,17 @@
       }
     </div>
   </header>
+
+  <section class="rounded-xl border border-stone-200 bg-white p-3" aria-label="Estado de validación contable">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]">
+      <span class="font-bold uppercase tracking-wide text-stone-500">Validación contable (#13)</span>
+      <span class="text-emerald-800">✓ IVA 16 % · validado</span>
+      <span class="text-emerald-800">✓ UT Bs. 43,00 · validado</span>
+      <span class="text-emerald-800">✓ IGTF no aplica · validado</span>
+      <span class="text-amber-800">◷ Ordinario / no SPE · pendiente de ratificación documental con fecha</span>
+      <span class="text-stone-600">El resto del cierre permanece en borrador/provisional.</span>
+    </div>
+  </section>
 
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
     <div class="rounded-xl border border-stone-200 bg-white p-4">
@@ -163,6 +175,7 @@
   <nav class="flex flex-wrap gap-2 border-b border-stone-200 pb-2">
     @for (tab of [
       {id: 'accounts', label: 'Plan de cuentas', icon: 'list_alt'},
+      {id: 'opening', label: 'Apertura (#13)', icon: 'playlist_add_check'},
       {id: 'entries', label: 'Asientos / Diario', icon: 'receipt_long'},
       {id: 'books', label: 'Libros', icon: 'menu_book'},
       {id: 'periods', label: 'Períodos', icon: 'calendar_month'},
@@ -181,6 +194,359 @@
       </button>
     }
   </nav>
+
+  @if (activeTab() === 'opening') {
+    <section class="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <mat-icon class="text-amber-700">edit_document</mat-icon>
+            <h2 class="text-base font-bold text-stone-900">Apertura provisional · Saldos iniciales y datos de apertura</h2>
+          </div>
+          <p class="text-xs text-stone-700 mt-1">
+            Edición progresiva y reversible mientras el contador valida el cierre. Toda línea guarda monto en USD,
+            equivalente en Bs. y la tasa usada: por defecto la actual o la de la fecha de guardado, visible y editable
+            para ajuste manual, con fallback a <code>currentUsd</code>.
+          </p>
+        </div>
+        <div class="flex flex-col items-start sm:items-end gap-1">
+          <span class="px-2 py-1 rounded-full bg-amber-600 text-white text-[10px] font-bold uppercase">
+            BORRADOR / PRUEBA – PENDIENTE DE VALIDACIÓN (#13)
+          </span>
+          <span class="text-[11px] text-amber-900 font-mono">
+            Estado: {{ openingDraft().status }} · {{ openingDraft().postingStatus }}
+          </span>
+          @if (openingDraft().openingEntryId) {
+            <span class="text-[10px] text-amber-800">
+              Asiento provisional: {{ openingDraft().openingEntryId }}
+            </span>
+          }
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div class="rounded-lg bg-white/70 p-2 border border-amber-200">
+          <p class="text-[10px] uppercase text-stone-500">Débitos USD</p>
+          <p class="font-mono font-semibold">{{ openingMoney(openingReconciliation().debitsUsd, 'USD') }}</p>
+        </div>
+        <div class="rounded-lg bg-white/70 p-2 border border-amber-200">
+          <p class="text-[10px] uppercase text-stone-500">Créditos USD</p>
+          <p class="font-mono font-semibold">{{ openingMoney(openingReconciliation().creditsUsd, 'USD') }}</p>
+        </div>
+        <div class="rounded-lg bg-white/70 p-2 border border-amber-200">
+          <p class="text-[10px] uppercase text-stone-500">Diferencia USD</p>
+          <p class="font-mono font-semibold" [class.text-red-700]="!openingReconciliation().balanced">
+            {{ openingMoney(openingReconciliation().differenceUsd, 'USD') }}
+          </p>
+        </div>
+        <div class="rounded-lg bg-white/70 p-2 border border-amber-200">
+          <p class="text-[10px] uppercase text-stone-500">Diferencia Bs.</p>
+          <p class="font-mono font-semibold" [class.text-red-700]="!openingReconciliation().balanced">
+            {{ openingMoney(openingReconciliation().differenceBs, 'BS') }}
+          </p>
+        </div>
+      </div>
+      <p
+        class="text-xs font-semibold"
+        [class.text-red-800]="!openingReconciliation().balanced"
+        [class.text-emerald-800]="openingReconciliation().balanced"
+      >
+        {{ openingReconciliation().pendingMessage }}
+      </p>
+    </section>
+
+    <form [formGroup]="openingForm" class="rounded-xl border border-stone-200 bg-white p-4 space-y-5">
+      <div>
+        <h3 class="text-sm font-bold text-stone-800 mb-3">1. Reconversión, fecha de corte y aportes</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="text-xs text-stone-600">
+            Razón social actual
+            <input formControlName="currentName" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+          </label>
+          <label class="text-xs text-stone-600">
+            Razón social convertida (propuesta)
+            <input formControlName="convertedName" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+          </label>
+          <label class="text-xs text-stone-600">
+            Forma jurídica propuesta
+            <input formControlName="legalForm" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+          </label>
+          <label class="text-xs text-stone-600">
+            Instrumento de reconversión
+            <input formControlName="reconversionInstrument" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+          </label>
+          <label class="text-xs text-stone-600">
+            Fecha del instrumento
+            <input type="date" formControlName="reconversionDate" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+          </label>
+          <label class="text-xs text-stone-600">
+            Fecha de corte de saldos
+            <input type="date" formControlName="cutoffDate" class="mt-1 w-full px-2 py-1 border border-amber-300 rounded text-sm" />
+          </label>
+        </div>
+        <label class="block text-xs text-stone-600 mt-3">
+          Notas de apertura
+          <textarea formControlName="notes" rows="3" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm"></textarea>
+        </label>
+        <p class="text-[11px] text-amber-800 mt-2">
+          La transcripción del acta se conserva como referencia; no se aplica conversión automática de reconversión (#13).
+        </p>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <h3 class="text-sm font-bold text-stone-800">2. Saldos iniciales generales</h3>
+          <button
+            type="button"
+            (click)="addGeneralRow()"
+            class="px-2 py-1 rounded border border-stone-300 text-xs font-semibold hover:bg-stone-50"
+          >
+            + Cuenta general
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-xs">
+            <thead class="bg-stone-50 text-left uppercase text-stone-500">
+              <tr>
+                <th class="px-2 py-2">Cuenta</th>
+                <th class="px-2 py-2">USD</th>
+                <th class="px-2 py-2">Bs.</th>
+                <th class="px-2 py-2">Tasa</th>
+                <th class="px-2 py-2">Detalle</th>
+                <th class="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of openingGeneralRows.controls; track $index) {
+                <tr [formGroup]="row" class="border-t border-stone-100">
+                  <td class="px-2 py-1">
+                    <select formControlName="accountCode" class="w-48 px-1 py-1 border border-stone-300 rounded">
+                      @for (account of openingAccountOptions(); track account.id) {
+                        <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+                      }
+                    </select>
+                  </td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="amountUsd" class="w-28 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="amountBs" class="w-28 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="exchangeRateUsed" class="w-24 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input formControlName="memo" class="w-40 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><button type="button" (click)="removeRow(openingGeneralRows, $index)" class="text-red-700 hover:underline">Quitar</button></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h3 class="text-sm font-bold text-stone-800">3. Saldos de apertura por auxiliar</h3>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" (click)="addAuxRow('banco')" class="px-2 py-1 rounded border border-stone-300 text-xs font-semibold hover:bg-stone-50">+ Banco</button>
+            <button type="button" (click)="addAuxRow('clientes')" class="px-2 py-1 rounded border border-stone-300 text-xs font-semibold hover:bg-stone-50">+ Cliente</button>
+            <button type="button" (click)="addAuxRow('proveedores')" class="px-2 py-1 rounded border border-stone-300 text-xs font-semibold hover:bg-stone-50">+ Proveedor</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-xs">
+            <thead class="bg-stone-50 text-left uppercase text-stone-500">
+              <tr>
+                <th class="px-2 py-2">Tipo</th>
+                <th class="px-2 py-2">Auxiliar</th>
+                <th class="px-2 py-2">Cuenta</th>
+                <th class="px-2 py-2">USD</th>
+                <th class="px-2 py-2">Bs.</th>
+                <th class="px-2 py-2">Tasa</th>
+                <th class="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of openingAuxRows.controls; track $index) {
+                <tr [formGroup]="row" class="border-t border-stone-100">
+                  <td class="px-2 py-1 capitalize">{{ row.controls['kind'].value }}</td>
+                  <td class="px-2 py-1"><input formControlName="name" class="w-40 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1">
+                    <select formControlName="accountCode" class="w-44 px-1 py-1 border border-stone-300 rounded">
+                      @for (account of openingAccountOptions(); track account.id) {
+                        <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+                      }
+                    </select>
+                  </td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="amountUsd" class="w-28 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="amountBs" class="w-28 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="exchangeRateUsed" class="w-24 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><button type="button" (click)="removeRow(openingAuxRows, $index)" class="text-red-700 hover:underline">Quitar</button></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[11px] text-stone-500 mt-2">
+          Banco inicial: 30.000,00 USD en la cuenta 1.01.02 (Bancos). Clientes, proveedores y el resto permanecen en 0,00 hasta completarlos.
+        </p>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <h3 class="text-sm font-bold text-stone-800">4. Accionistas / aportes (contrapartida al capital)</h3>
+          <button type="button" (click)="addShareholderRow()" class="px-2 py-1 rounded border border-stone-300 text-xs font-semibold hover:bg-stone-50">+ Accionista</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-xs">
+            <thead class="bg-stone-50 text-left uppercase text-stone-500">
+              <tr>
+                <th class="px-2 py-2">Accionista</th>
+                <th class="px-2 py-2">RIF/C.I.</th>
+                <th class="px-2 py-2">USD</th>
+                <th class="px-2 py-2">Bs.</th>
+                <th class="px-2 py-2">Tasa</th>
+                <th class="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of openingShareholderRows.controls; track $index) {
+                <tr [formGroup]="row" class="border-t border-stone-100">
+                  <td class="px-2 py-1"><input formControlName="name" class="w-44 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input formControlName="taxId" class="w-32 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="amountUsd" class="w-28 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="amountBs" class="w-28 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><input type="number" min="0" step="0.01" formControlName="exchangeRateUsed" class="w-24 px-1 py-1 border border-stone-300 rounded" /></td>
+                  <td class="px-2 py-1"><button type="button" (click)="removeRow(openingShareholderRows, $index)" class="text-red-700 hover:underline">Quitar</button></td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6" class="px-2 py-3 text-center text-stone-500">Sin aportes capturados todavía.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-4">
+        <p class="text-[11px] text-amber-800 max-w-2xl">
+          Guardar actualiza el borrador y su asiento provisional, sin confirmarlo, sin tocar libros y sin activar retenciones,
+          facturación digital ni cadena hash.
+        </p>
+        @if (api.hasPermission('accounting', 'canEdit')) {
+          <button
+            type="button"
+            (click)="saveOpening()"
+            class="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+          >
+            Guardar borrador de apertura
+          </button>
+        }
+      </div>
+    </form>
+
+    <section class="rounded-xl border border-stone-200 bg-white p-4 space-y-4">
+      <h3 class="text-sm font-bold text-stone-800">5. Ajustes financieros posteriores y asiento borrador</h3>
+      <form [formGroup]="openingAdjustmentForm" class="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">
+        <label class="text-xs text-stone-600">Fecha
+          <input type="date" formControlName="date" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+        </label>
+        <label class="text-xs text-stone-600">Cuenta
+          <select formControlName="accountCode" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm">
+            @for (account of openingAccountOptions(); track account.id) {
+              <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+            }
+          </select>
+        </label>
+        <label class="text-xs text-stone-600">Concepto
+          <input formControlName="description" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+        </label>
+        <label class="text-xs text-stone-600">Lado
+          <select formControlName="direction" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm">
+            <option value="debito">Débito</option>
+            <option value="credito">Crédito</option>
+          </select>
+        </label>
+        <label class="text-xs text-stone-600">USD
+          <input type="number" min="0" step="0.01" formControlName="amountUsd" class="mt-1 w-full px-2 py-1 border border-stone-300 rounded text-sm" />
+        </label>
+        <label class="text-xs text-stone-600">Bs. / Tasa
+          <span class="flex gap-1 mt-1">
+            <input type="number" min="0" step="0.01" formControlName="amountBs" class="w-1/2 px-2 py-1 border border-stone-300 rounded text-sm" />
+            <input type="number" min="0" step="0.01" formControlName="exchangeRateUsed" class="w-1/2 px-2 py-1 border border-stone-300 rounded text-sm" />
+          </span>
+          <span class="block text-[10px] font-normal text-stone-500">
+            Tasa actual/fecha por defecto; editable.
+          </span>
+        </label>
+        <div class="sm:col-span-6">
+          @if (api.hasPermission('accounting', 'canCreate')) {
+            <button
+              type="button"
+              (click)="addOpeningAdjustment()"
+              class="px-3 py-2 rounded-lg bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800"
+            >
+              + Registrar ajuste al cuadre
+            </button>
+          }
+        </div>
+      </form>
+
+      @if (openingDraft().adjustments.length) {
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-xs">
+            <thead class="bg-stone-50 text-left uppercase text-stone-500">
+              <tr>
+                <th class="px-2 py-2">Fecha</th>
+                <th class="px-2 py-2">Concepto</th>
+                <th class="px-2 py-2">Cuenta</th>
+                <th class="px-2 py-2">Lado</th>
+                <th class="px-2 py-2">USD</th>
+                <th class="px-2 py-2">Bs.</th>
+                <th class="px-2 py-2">Tasa</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (adjustment of openingDraft().adjustments; track adjustment.id) {
+                <tr class="border-t border-stone-100">
+                  <td class="px-2 py-1">{{ adjustment.date }}</td>
+                  <td class="px-2 py-1">{{ adjustment.description }}</td>
+                  <td class="px-2 py-1 font-mono">{{ adjustment.accountCode }}</td>
+                  <td class="px-2 py-1 capitalize">{{ adjustment.direction }}</td>
+                  <td class="px-2 py-1 font-mono">{{ adjustment.amountUsd.toFixed(2) }}</td>
+                  <td class="px-2 py-1 font-mono">{{ adjustment.amountBs.toFixed(2) }}</td>
+                  <td class="px-2 py-1 font-mono">{{ adjustment.exchangeRateUsed.toFixed(2) }} · {{ adjustment.rateSource }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      <div class="rounded-lg border border-stone-200 overflow-hidden">
+        <p class="px-3 py-2 bg-stone-50 text-xs font-semibold text-stone-700">
+          Asiento de apertura proyectado (borrador, sin efecto en libros)
+        </p>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-xs">
+            <thead class="text-left uppercase text-stone-500">
+              <tr>
+                <th class="px-3 py-2">Cuenta</th>
+                <th class="px-3 py-2">Descripción</th>
+                <th class="px-3 py-2">Débito USD</th>
+                <th class="px-3 py-2">Crédito USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (line of openingReconciliation().entryLines; track $index) {
+                <tr class="border-t border-stone-100">
+                  <td class="px-3 py-1 font-mono">{{ line.accountCode }}</td>
+                  <td class="px-3 py-1">{{ line.memo }}</td>
+                  <td class="px-3 py-1 font-mono">{{ line.debit.toFixed(2) }}</td>
+                  <td class="px-3 py-1 font-mono">{{ line.credit.toFixed(2) }}</td>
+                </tr>
+              } @empty {
+                <tr><td colspan="4" class="px-3 py-4 text-center text-stone-500">Captura saldos para proyectar el asiento.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  }
 
   @if (activeTab() === 'accounts') {
     <div class="rounded-xl border border-stone-200 bg-white overflow-hidden">
@@ -206,6 +572,7 @@
               <th class="px-4 py-2">Naturaleza</th>
               <th class="px-4 py-2">Nivel</th>
               <th class="px-4 py-2">Estado</th>
+              <th class="px-4 py-2">Saldo provisional (#13)</th>
               <th class="px-4 py-2"></th>
             </tr>
           </thead>
@@ -214,15 +581,44 @@
               <tr class="border-t border-stone-100" [class.opacity-50]="!account.active">
                 <td class="px-4 py-2 font-mono text-xs">{{ account.code }}</td>
                 <td class="px-4 py-2">
-                  {{ account.name }}
+                  <div>{{ account.name }}</div>
                   @if (account.isSystem) {
-                    <span class="ml-2 text-[10px] uppercase text-amber-700">base</span>
+                    <span class="text-[10px] uppercase text-amber-700">base</span>
+                  }
+                  @if (account.kind === 'banco' || account.kind === 'caja') {
+                    <span class="ml-2 text-[10px] uppercase text-stone-500">{{ account.kind }}</span>
+                  }
+                  @if (account.bankCode || account.bankName || account.accountNumber) {
+                    <div class="text-[10px] text-stone-500">
+                      {{ account.bankCode }} {{ account.bankName }}
+                      @if (account.accountNumber) { · Cta. {{ account.accountNumber }} }
+                    </div>
                   }
                 </td>
                 <td class="px-4 py-2 capitalize">{{ account.type }}</td>
                 <td class="px-4 py-2 capitalize">{{ account.nature }}</td>
                 <td class="px-4 py-2">{{ account.level }}</td>
                 <td class="px-4 py-2">{{ account.active ? 'Activa' : 'Inactiva' }}</td>
+                <td class="px-4 py-2">
+                  @if (!account.isSystem && api.hasPermission('accounting', 'canEdit')) {
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="w-32 px-2 py-1 border border-amber-300 rounded text-xs"
+                      [value]="account.referenceBalanceUsd ?? 0"
+                      [attr.aria-label]="'Saldo provisional de ' + account.code"
+                      (change)="updateAccountBalance(account, $any($event.target).value)"
+                    />
+                  } @else {
+                    <span class="font-mono text-xs">{{ (account.referenceBalanceUsd ?? 0).toFixed(2) }}</span>
+                  }
+                  @if (account.referenceBalanceUpdatedAt) {
+                    <div class="text-[10px] text-stone-400">
+                      {{ account.referenceBalanceUpdatedAt.slice(0, 10) }}
+                    </div>
+                  }
+                </td>
                 <td class="px-4 py-2 text-right">
                   @if (!account.isSystem && api.hasPermission('accounting', 'canEdit')) {
                     <button
@@ -236,7 +632,7 @@
               </tr>
             } @empty {
               <tr>
-                <td colspan="7" class="px-4 py-6 text-center text-stone-500">
+                <td colspan="8" class="px-4 py-6 text-center text-stone-500">
                   No hay cuentas que coincidan con la búsqueda.
                 </td>
               </tr>
@@ -245,9 +641,51 @@
         </table>
       </div>
     </div>
+    <p class="mt-2 text-[11px] text-amber-800">
+      El saldo provisional es editable y sirve solo como referencia de conciliación (#13):
+      no genera asiento ni modifica los libros. El saldo contable se calcula con asientos confirmados.
+    </p>
   }
 
   @if (activeTab() === 'entries') {
+    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold text-emerald-900">
+            Cadena hash de asientos · activada (#13)
+          </p>
+          <p class="text-xs text-emerald-800 mt-1">
+            Cada asiento enlaza su hash con el anterior, incluidos los históricos. La verificación
+            detecta cualquier cambio en montos, tasa, estado o líneas.
+          </p>
+          @if (api.accountingHashVerification(); as verification) {
+            <p class="text-[11px] text-emerald-900 font-mono mt-2">
+              {{ verification.checkedEntries }} asientos revisados ·
+              {{ verification.valid ? 'cadena íntegra' : 'cadena rota' }} ·
+              último hash {{ verification.lastHash.slice(0, 16) || '—' }} ·
+              {{ verification.checkedAt }}
+            </p>
+          }
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            (click)="verifyHashChain()"
+            class="px-3 py-2 rounded-lg border border-emerald-400 bg-white text-emerald-900 text-sm font-semibold hover:bg-emerald-100"
+          >
+            Verificar cadena
+          </button>
+          @if (api.hasPermission('accounting', 'canEdit')) {
+            <button
+              (click)="rebuildHashChain()"
+              class="px-3 py-2 rounded-lg bg-emerald-800 text-white text-sm font-semibold hover:bg-emerald-900"
+            >
+              Recalcular cadena
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+
     <div class="rounded-xl border border-stone-200 bg-white overflow-hidden">
       <div class="p-4 border-b border-stone-200 flex flex-wrap items-center gap-3">
         <select
@@ -282,6 +720,7 @@
               <th class="px-4 py-2 text-right">Débito</th>
               <th class="px-4 py-2 text-right">Crédito</th>
               <th class="px-4 py-2">Estado</th>
+              <th class="px-4 py-2">Hash</th>
               <th class="px-4 py-2"></th>
             </tr>
           </thead>
@@ -306,6 +745,9 @@
                   >
                     {{ entry.status }}
                   </span>
+                </td>
+                <td class="px-4 py-2 font-mono text-[10px] text-stone-500" title="{{ entry.entryHash || '' }}">
+                  #{{ entry.hashSequence || '—' }} · {{ (entry.entryHash || '—').slice(0, 10) }}
                 </td>
                 <td class="px-4 py-2 text-right space-x-2">
                   @if (entry.status === 'borrador' && api.hasPermission('accounting', 'canEdit')) {
@@ -430,9 +872,21 @@
       </div>
 
       @if (api.accountingBook(); as report) {
-        <div class="p-4 bg-amber-50 border-b border-amber-200 text-xs text-amber-900">
+        <div
+          class="p-4 border-b text-xs"
+          [class.bg-emerald-50]="!report.metadata.provisional"
+          [class.border-emerald-200]="!report.metadata.provisional"
+          [class.text-emerald-900]="!report.metadata.provisional"
+          [class.bg-amber-50]="report.metadata.provisional"
+          [class.border-amber-200]="report.metadata.provisional"
+          [class.text-amber-900]="report.metadata.provisional"
+        >
           <p class="font-semibold">
-            BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13). No constituye un libro oficial.
+            @if (report.metadata.provisional) {
+              BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13). No constituye un libro oficial.
+            } @else {
+              LIBRO DEFINITIVO — PLAN VEN-NIF DE 167 CUENTAS. Firmantes: Contador y socios.
+            }
           </p>
           <p class="mt-1">
             Ficha jurídica y capital del acta en referencia (#13), sin asiento de apertura registrado.
@@ -568,7 +1022,7 @@
 @if (showAccountModal()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 p-4">
     <form
-      class="w-full max-w-lg rounded-xl bg-white p-5 space-y-4"
+      class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 space-y-4"
       [formGroup]="accountForm"
       (ngSubmit)="saveAccount()"
     >
@@ -615,6 +1069,42 @@
           <span class="block text-stone-600 mb-1">Descripción</span>
           <input formControlName="description" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
         </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Clasificación</span>
+          <select formControlName="kind" class="w-full px-3 py-2 border border-stone-300 rounded-lg">
+            @for (kind of accountKinds; track kind) {
+              <option [value]="kind">{{ kind }}</option>
+            }
+          </select>
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Moneda</span>
+          <select formControlName="currency" class="w-full px-3 py-2 border border-stone-300 rounded-lg">
+            @for (currency of accountCurrencies; track currency) {
+              <option [value]="currency">{{ currency }}</option>
+            }
+          </select>
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Código SUDEBAN del banco</span>
+          <input formControlName="bankCode" class="w-full px-3 py-2 border border-stone-300 rounded-lg" maxlength="10" placeholder="0134" />
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Nombre del banco</span>
+          <input formControlName="bankName" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">N.º de cuenta</span>
+          <input formControlName="accountNumber" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Saldo provisional USD (#13)</span>
+          <input type="number" min="0" step="0.01" formControlName="referenceBalanceUsd" class="w-full px-3 py-2 border border-amber-300 rounded-lg" />
+        </label>
+        <label class="text-sm sm:col-span-2">
+          <span class="block text-stone-600 mb-1">Nota del saldo provisional</span>
+          <input formControlName="referenceBalanceNote" class="w-full px-3 py-2 border border-stone-300 rounded-lg" placeholder="Conciliación pendiente con el contador" />
+        </label>
       </div>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" (click)="showAccountModal.set(false)" class="px-4 py-2 rounded-lg border border-stone-300 text-sm">Cancelar</button>
@@ -637,7 +1127,7 @@
           <mat-icon>close</mat-icon>
         </button>
       </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <label class="text-sm">
           <span class="block text-stone-600 mb-1">Fecha</span>
           <input type="date" formControlName="date" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
@@ -645,6 +1135,13 @@
         <label class="text-sm">
           <span class="block text-stone-600 mb-1">Descripción</span>
           <input formControlName="description" class="w-full px-3 py-2 border border-stone-300 rounded-lg" />
+        </label>
+        <label class="text-sm">
+          <span class="block text-stone-600 mb-1">Tasa Bs./USD (editable)</span>
+          <input type="number" min="1" step="0.01" formControlName="exchangeRateUsed" class="w-full px-3 py-2 border border-stone-300 rounded-lg font-mono" />
+          <span class="text-[10px] text-stone-500">
+            Actual o de la fecha; fallback a currentUsd.
+          </span>
         </label>
       </div>
 

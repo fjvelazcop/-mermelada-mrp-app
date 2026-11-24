@@ -52,6 +52,7 @@ describe('normalized SQLite schema', () => {
         'schema_migrations',
         'supplier_types',
         'material_categories',
+        'presentation_types',
         'raw_materials',
         'inventory_movements',
         'finished_goods',
@@ -97,7 +98,7 @@ describe('normalized SQLite schema', () => {
         .all() as { version: number }[]
     ).map((row) => row.version);
 
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
   });
 
   it('persists the fiscal invoice credit days introduced by migration v11', () => {
@@ -287,6 +288,54 @@ describe('normalized SQLite schema', () => {
     expect(origin.linkedMovementCount).toBe(1);
   });
 
+  it('persists bank account metadata, provisional balance and transaction account choice', () => {
+    const account = dbInstance.addAccount({
+      code: '1.01.02.98',
+      name: 'Banco Persistente',
+      type: 'activo',
+      nature: 'debito',
+      parentCode: '1.01.02',
+      active: true,
+      kind: 'banco',
+      bankCode: '0134',
+      bankName: 'Banesco',
+      accountNumber: '778899',
+      currency: 'USD',
+      referenceBalanceUsd: 3456.78,
+      referenceBalanceNote: 'Conciliación pendiente #13',
+    });
+    const material = dbInstance.getRawMaterials()[0];
+    const movement = dbInstance.addInventoryMovement({
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 1,
+      costPerUnit: 10,
+      totalCost: 10,
+      exchangeRateUsed: 50,
+      referenceDoc: 'F-PERSIST-ACCOUNT',
+      date: '2026-07-21',
+      performedBy: 'Prueba',
+      paymentCondition: 'contado',
+      paymentAccountCode: account.code,
+    } as Parameters<typeof dbInstance.addInventoryMovement>[0]);
+    dbInstance.persist();
+
+    const state = loadRelationalState()!;
+    expect(state.accounts.find((item) => item.id === account.id)).toMatchObject({
+      kind: 'banco',
+      bankCode: '0134',
+      bankName: 'Banesco',
+      accountNumber: '778899',
+      currency: 'USD',
+      referenceBalanceUsd: 3456.78,
+      referenceBalanceNote: 'Conciliación pendiente #13',
+    });
+    expect(
+      state.inventoryMovements.find((item) => item.id === movement.id)?.paymentAccountCode
+    ).toBe(account.code);
+  });
+
   it('persists accounts, double-entry lines and periods added by migration v14', () => {
     const account = dbInstance.addAccount({
       code: '5.01.04',
@@ -334,6 +383,7 @@ describe('normalized SQLite schema', () => {
   it('writes the seed data into the relational tables', () => {
     expect(rowCount('supplier_types')).toBe(dbInstance.getSupplierTypes().length);
     expect(rowCount('material_categories')).toBe(dbInstance.getMaterialCategories().length);
+    expect(rowCount('presentation_types')).toBe(dbInstance.getPresentationTypes().length);
     expect(rowCount('raw_materials')).toBe(dbInstance.getRawMaterials().length);
     expect(rowCount('finished_goods')).toBe(dbInstance.getFinishedGoods().length);
 

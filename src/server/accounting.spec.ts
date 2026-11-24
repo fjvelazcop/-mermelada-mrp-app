@@ -182,6 +182,70 @@ describe('Fase 1 — plan de cuentas y asientos', () => {
     expect(entryFor(credit.id).status).toBe('confirmado');
   });
 
+  it('permite saldo provisional editable y usa la cuenta elegida en asientos automáticos', () => {
+    const account = dbInstance.addAccount({
+      code: '1.01.02.99',
+      name: 'Banco Prueba ERP',
+      type: 'activo',
+      nature: 'debito',
+      parentCode: '1.01.02',
+      active: true,
+      kind: 'banco',
+      bankCode: '0134',
+      bankName: 'Banesco',
+      accountNumber: '0001',
+      currency: 'USD',
+      referenceBalanceUsd: 1234.56,
+      description: 'Cuenta de prueba #13',
+    });
+    expect(account.referenceBalanceUsd).toBe(1234.56);
+    expect(account.referenceBalanceUpdatedAt).toBeTruthy();
+    expect(dbInstance.updateAccount(account.id, {referenceBalanceUsd: 2000})?.referenceBalanceUsd).toBe(
+      2000
+    );
+
+    const material = dbInstance.getRawMaterials()[0];
+    const movement = dbInstance.addInventoryMovement({
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 1,
+      costPerUnit: 25,
+      totalCost: 25,
+      exchangeRateUsed: 50,
+      referenceDoc: `F-CONT-CUSTOM-${Date.now().toString(36)}`,
+      date: '2026-08-13',
+      performedBy: 'Prueba',
+      paymentCondition: 'contado',
+      paymentMethod: 'transferencia_bancaria',
+      paymentAccountCode: account.code,
+    } as Parameters<typeof dbInstance.addInventoryMovement>[0]);
+
+    const entry = dbInstance
+      .getAccountingEntries()
+      .find((item) => item.sourceType === 'inventario' && item.sourceId === movement.id)!;
+    expect(entry.lines.map((line) => line.accountCode)).toEqual(['1.03.01', account.code]);
+    expect(entry.status).toBe('confirmado');
+
+    const before = dbInstance.getAccountingEntries().length;
+    expect(() =>
+      dbInstance.addInventoryMovement({
+        materialId: material.id,
+        materialName: material.name,
+        type: 'entrada',
+        quantity: 1,
+        costPerUnit: 1,
+        totalCost: 1,
+        exchangeRateUsed: 50,
+        date: '2026-08-13',
+        performedBy: 'Prueba',
+        paymentCondition: 'contado',
+        paymentAccountCode: '5.01.02',
+      } as Parameters<typeof dbInstance.addInventoryMovement>[0])
+    ).toThrow(/no es de activo/);
+    expect(dbInstance.getAccountingEntries()).toHaveLength(before);
+  });
+
   it('respeta el flag accountingEnabled deshabilitado', () => {
     const fresh = new ErpDatabase();
     const settings = fresh.getFiscalSettings();
@@ -225,16 +289,18 @@ describe('Libros contables provisionales', () => {
     expect(balance.totals.find((item) => item.label === 'Diferencia')?.value).toBe(0);
   });
 
-  it('genera Inventario en modo borrador con cuentas de control provisionales', () => {
+  it('genera Inventario definitivo con cuentas VEN-NIF de 167 cuentas', () => {
     const book = dbInstance.getAccountingBook('inventario', 2026, 11);
     expect(book.type).toBe('inventario');
-    expect(book.title).toContain('BORRADOR / PRUEBA');
-    expect(book.headers).toContain('Cuenta provisional');
-    expect(book.rows.some((item) => item.cells.includes('1.03.01'))).toBe(true);
-    expect(book.rows.some((item) => item.cells.includes('1.03.02'))).toBe(true);
-    expect(book.notes.join(' ')).toContain('PENDIENTE DE VALIDACIÓN CONTABLE');
+    expect(book.title).toContain('VEN-NIF');
+    expect(book.title).not.toContain('BORRADOR');
+    expect(book.headers).toContain('Cuenta VEN-NIF');
+    expect(book.rows.some((item) => item.cells.includes('1.1.04.02'))).toBe(true);
+    expect(book.rows.some((item) => item.cells.includes('1.1.04.04'))).toBe(true);
+    expect(book.notes.join(' ')).toContain('1.03.01 → 1.1.04.02');
+    expect(book.notes.join(' ')).toContain('Firmantes: Contador y socios');
     expect(
-      book.totals.find((item) => item.label === 'Valoración provisional')?.value
+      book.totals.find((item) => item.label === 'Valoración VEN-NIF')?.value
     ).toBeGreaterThan(0);
   });
 

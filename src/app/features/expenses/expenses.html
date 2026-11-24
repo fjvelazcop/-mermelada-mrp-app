@@ -1049,6 +1049,9 @@
             <div>
               <label class="block text-xs font-semibold text-stone-700 mb-1">
                 Tasa de Cambio Utilizada (Bs. / USD) <span class="text-rose-500">*</span>
+                <span class="block text-[10px] font-normal text-stone-500">
+                  Por defecto la tasa actual o la de la fecha; ajustable manualmente.
+                </span>
               </label>
               <div class="relative">
                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-xs">Bs.</span>
@@ -1180,6 +1183,21 @@
                 }
               </div>
             }
+
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-semibold text-stone-700 mb-1">
+                Cuenta contable del asiento
+                <span class="ml-1 text-[10px] font-normal text-stone-400">Plan de cuentas activo</span>
+              </label>
+              <select
+                formControlName="paymentAccountCode"
+                class="w-full bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-400"
+              >
+                @for (account of api.cashAccounts(); track account.id) {
+                  <option [value]="account.code">{{ account.code }} · {{ account.name }}</option>
+                }
+              </select>
+            </div>
 
             <div>
               <label class="block text-xs font-semibold text-stone-700 mb-1">
