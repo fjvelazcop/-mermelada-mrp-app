@@ -276,6 +276,10 @@ export interface InventoryMovement {
   costPerUnitBs?: number; // Costo unitario en Bs.
   totalCostBs?: number; // Total en Bs.
   referenceDoc?: string; // ej: Lote L-2026-10, Factura F-442
+  /** Fecha operativa elegida por el usuario (cuando ocurrió el movimiento). */
+  movementDate?: string;
+  /** Fecha y hora reales de registro, generadas por el servidor. */
+  registeredAt?: string;
   /** Proveedor maestro al que pertenece la factura de compra. */
   supplierId?: string;
   supplierNameSnapshot?: string;
@@ -803,7 +807,12 @@ export type FiscalObligationKey =
   | 'digital_invoicing'
   | 'snat_2026_00093'
   | 'fiscal_documents'
-  | 'fiscal_books';
+  | 'fiscal_books'
+  | 'legal_reconversion'
+  | 'opening_cutoff'
+  | 'accrual_criteria'
+  | 'spe_vouchers'
+  | 'record_retention';
 
 export type FiscalObligationApplicability =
   | 'pendiente'
@@ -852,7 +861,7 @@ export interface FiscalReferenceValuesResponse {
   date: string;
 }
 
-export type FiscalReferenceKind = 'iva' | 'ut';
+export type FiscalReferenceKind = 'iva' | 'ut' | 'islr';
 export type FiscalReferenceValueUnit = 'percent' | 'bs';
 export type FiscalReferenceStatus =
   | 'referencia'
@@ -860,12 +869,17 @@ export type FiscalReferenceStatus =
   | 'historico'
   | 'anulado';
 
-/** Histórico de IVA/UT. Solo referencia hasta cerrar la Fase 0 / issue #13. */
+/** Histórico de IVA/UT/ISLR. Solo consulta; no calcula impuestos ni activa módulos (#13). */
 export interface FiscalReferenceValue {
   id: string;
   kind: FiscalReferenceKind;
   value: number;
   valueUnit: FiscalReferenceValueUnit;
+  /** Rubro ISLR del art. 9 del Decreto 1.808; opcional para IVA/UT. */
+  conceptCode: string;
+  conceptLabel: string;
+  taxpayerType: FiscalReferenceTaxpayerType | '';
+  sustraendoUt: number | null;
   effectiveFrom: string;
   effectiveTo: string;
   instrumentType: string;
@@ -899,18 +913,14 @@ export type FiscalReferenceInput = Omit<
 /** Catálogo de referencia de la Fase 0: clasificación IVA y rubros ISLR. */
 export type FiscalReferenceCatalogGroup = 'iva' | 'islr';
 export type FiscalReferenceTaxpayerType = 'natural' | 'juridica';
-export type FiscalReferenceCatalogApplicability =
-  | 'general'
-  | 'exento'
-  | 'reducido'
-  | 'rubro';
+export type FiscalReferenceApplicability = 'general' | 'exento' | 'reducido' | 'rubro';
 
 export interface FiscalReferenceCatalogEntry {
   id: string;
   group: FiscalReferenceCatalogGroup;
   code: string;
   label: string;
-  applicability: FiscalReferenceCatalogApplicability;
+  applicability: FiscalReferenceApplicability;
   ratePercent: number | null;
   taxpayerTypes: FiscalReferenceTaxpayerType[];
   utReference: number | null;
@@ -938,6 +948,10 @@ export interface AccountingBookSettings {
   /** Firmantes del cierre #13: contador y socios. */
   accountantSigner?: string;
   partnerSigners?: string;
+  /** Numeración de libro/página pendiente para las respuestas 8 y 9. */
+  bookPageNumbering?: string;
+  /** Instrumento y fecha de vigencia formal de las respuestas 8, 9 y 10. */
+  ratificationInstrument?: string;
   exchangeRatePolicy: string;
   notes: string;
   approvedAt: string;
@@ -963,6 +977,11 @@ export const FISCAL_OBLIGATION_DEFINITIONS: readonly Pick<
   { key: 'snat_2026_00093', title: 'Transición a SNAT/2026/00093' },
   { key: 'fiscal_documents', title: 'Requisitos de facturas, notas y leyendas' },
   { key: 'fiscal_books', title: 'Formato y campos de libros fiscales' },
+  { key: 'legal_reconversion', title: 'Reconversión y acta constitutiva (#13)' },
+  { key: 'opening_cutoff', title: 'Fecha de corte y saldos de apertura (#13)' },
+  { key: 'accrual_criteria', title: 'Criterio pago vs. devengo (#13)' },
+  { key: 'spe_vouchers', title: 'Comprobantes SPE y Libro de Retenciones (#13)' },
+  { key: 'record_retention', title: 'Conservación, firmantes y bitácora (#13)' },
 ];
 
 /**
@@ -1437,6 +1456,8 @@ export interface AuditLogDetails {
   wasteKg?: number;
   previousStock?: number;
   newStock?: number;
+  movementDate?: string;
+  registeredAt?: string;
   referenceDoc?: string;
   supplierId?: string;
   supplierName?: string;

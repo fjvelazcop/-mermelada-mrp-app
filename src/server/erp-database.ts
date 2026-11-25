@@ -166,8 +166,8 @@ function createInitialFiscalObligations(): FiscalObligationRecord[] {
     tax_regime: {
       applicability: 'aplica',
       normativeReference: 'Contribuyente ordinario confirmado por el usuario',
-      reviewedAt: '2026-11-22',
-      notes: 'Contribuyente ordinario, giro: fabricación de mermelada. Confirmado por el usuario el 2026-11-22; pendiente de ratificación por el contador en #13.',
+      reviewedAt: '2026-11-25',
+      notes: 'Contribuyente ordinario, giro: fabricación de mermelada. Régimen ordinario adoptado por el usuario (2026-11-22) y confirmado al contador (2026-11-25); cualquier instrumento que remita el contador se cargará al historial sin activar módulos.',
     },
     special_taxpayer: {
       applicability: 'no_aplica',
@@ -179,13 +179,13 @@ function createInitialFiscalObligations(): FiscalObligationRecord[] {
       applicability: 'no_aplica',
       normativeReference: 'Contribuyente ordinario (no agente de retención de IVA)',
       reviewedAt: '2026-11-22',
-      notes: 'Como ordinarios no practicamos retenciones de IVA al pagar (vatWithholdingEnabled=false). Solo se contempla el registro/control de comprobantes de retención que clientes SPE nos practiquen al cobrar; sin cálculo real ni consecutivos hasta cerrar #13. La cuenta definitiva para retenciones recibidas queda pendiente del contador; no se crean cuentas ni se alteran asientos.',
+      notes: 'Como ordinarios no practicamos retenciones de IVA al pagar (vatWithholdingEnabled=false). Solo se contempla el registro/control de comprobantes de retención que clientes SPE nos practiquen al cobrar; sin cálculo real ni consecutivos hasta cerrar #13. La cuenta definitiva para retenciones recibidas tiene correlación VEN-NIF ratificada (respuesta 10), sin adopción operativa; no se crean cuentas ni se alteran asientos.',
     },
     islr_withholding: {
       applicability: 'no_aplica',
       normativeReference: 'Contribuyente ordinario (no agente de retención de ISLR)',
       reviewedAt: '2026-11-22',
-      notes: 'Como ordinarios no practicamos retenciones de ISLR al pagar (islrWithholdingEnabled=false). Solo se contempla el registro/control de comprobantes de retención que clientes SPE nos practiquen al cobrar. Catálogo de referencia: seis rubros del giro con persona natural/jurídica y UT Bs. 43,00; sustraendo y alícuotas del art. 9 del Decreto 1.808 pendientes del contador en #13. La cuenta definitiva para retenciones recibidas de clientes SPE al cobrar queda pendiente; no se crean cuentas ni se alteran asientos.',
+      notes: 'Como ordinarios no practicamos retenciones de ISLR al pagar (islrWithholdingEnabled=false). Solo se contempla el registro/control de comprobantes de retención que clientes SPE nos practiquen al cobrar. Catálogo de referencia: seis rubros del giro con persona natural/jurídica y UT Bs. 43,00; sustraendo y alícuotas del art. 9 del Decreto 1.808 se cargan al histórico cuando el contador las indique. La cuenta definitiva para retenciones recibidas de clientes SPE al cobrar tiene correlación VEN-NIF ratificada (respuesta 10); no se crean cuentas ni se alteran asientos.',
     },
     igtf: {
       applicability: 'no_aplica',
@@ -216,8 +216,10 @@ const DEFAULT_ACCOUNTING_BOOK_SETTINGS: AccountingBookSettings = {
   signatureRole: '',
   accountantSigner: 'Contador',
   partnerSigners: 'Socios',
+  bookPageNumbering: '',
+  ratificationInstrument: '',
   exchangeRatePolicy: 'documento_con_fallback',
-  notes: 'Orden de columnas aprobado. Paginación y firma pendientes de indicar por el contador (#13). Plan base de 35 cuentas y cuenta para retenciones recibidas pendientes de validación; no se crean cuentas ni se alteran asientos.',
+  notes: 'Orden de columnas aprobado, firmantes Contador y socios y firma al final de cada cierre confirmada (#13). Paginación 1 al 99 y numeración pendientes. Plan base de 35 cuentas solo para pruebas; correlaciones VEN-NIF de retenciones recibidas ratificadas (respuesta 10), sin cuentas nuevas ni asientos alterados.',
   approvedAt: '2026-11-22',
   updatedAt: '',
   updatedBy: '',
@@ -226,6 +228,10 @@ const DEFAULT_ACCOUNTING_BOOK_SETTINGS: AccountingBookSettings = {
 function createInitialFiscalReferenceValues(): FiscalReferenceValue[] {
   const now = new Date().toISOString();
   const base = {
+    conceptCode: '',
+    conceptLabel: '',
+    taxpayerType: '' as const,
+    sustraendoUt: null,
     effectiveTo: '',
     status: 'referencia' as const,
     confirmedByAccountant: false,
@@ -300,6 +306,16 @@ function ensureFiscalPhaseZeroSeeds(state: DatabaseState): boolean {
     if (!state.accountingBookSettings.partnerSigners) {
       state.accountingBookSettings.partnerSigners =
         DEFAULT_ACCOUNTING_BOOK_SETTINGS.partnerSigners;
+      changed = true;
+    }
+    if (!state.accountingBookSettings.bookPageNumbering) {
+      state.accountingBookSettings.bookPageNumbering =
+        DEFAULT_ACCOUNTING_BOOK_SETTINGS.bookPageNumbering;
+      changed = true;
+    }
+    if (!state.accountingBookSettings.ratificationInstrument) {
+      state.accountingBookSettings.ratificationInstrument =
+        DEFAULT_ACCOUNTING_BOOK_SETTINGS.ratificationInstrument;
       changed = true;
     }
   }
@@ -2324,12 +2340,17 @@ export class ErpDatabase {
     const costPerUnitBs = mov.costPerUnitBs || Number((mov.costPerUnit * rate).toFixed(2));
     const totalCostBs = mov.totalCostBs || Number((mov.totalCost * rate).toFixed(2));
 
+    // `date` permanece como fecha de registro para CxP, asientos y libros #13.
+    // `movementDate` es la fecha operativa elegida; `registeredAt` conserva el
+    // timestamp exacto de alta para auditoría (ambas columnas aditivas).
     const newMov: InventoryMovement = {
       ...mov,
       id: 'mov-' + Date.now(),
       exchangeRateUsed: rate,
       costPerUnitBs,
       totalCostBs,
+      movementDate: mov.movementDate || mov.date,
+      registeredAt: new Date().toISOString(),
     };
     this.state.inventoryMovements.unshift(newMov);
 
@@ -2431,13 +2452,30 @@ export class ErpDatabase {
     const previous = this.state.finishedGoods[idx];
     const updated = { ...previous, ...updates };
     this.state.finishedGoods[idx] = updated;
-    if (updates.status && updates.status !== previous.status) {
+    const priceLabels: Record<string, string> = {
+      suggestedWholesalePrice: 'precio mayorista',
+      suggestedRetailPrice: 'precio detal',
+      suggestedSpecialPrice: 'precio especial',
+    };
+    const priceChanges = Object.keys(priceLabels).filter((key) => {
+      const field = key as keyof FinishedGood;
+      return updates[field] !== undefined && updates[field] !== previous[field];
+    });
+    const statusChanged = Boolean(updates.status && updates.status !== previous.status);
+    if (statusChanged || priceChanges.length) {
       const actor = this.manualOrderActor(actorInput);
+      const changes = priceChanges.map((key) => {
+        const field = key as keyof FinishedGood;
+        return `${priceLabels[key]}: ${String(previous[field] ?? 0)} → ${String(updated[field])} USD`;
+      });
+      if (statusChanged) {
+        changes.unshift(`estado: ${previous.status || 'activo'} → ${updates.status}`);
+      }
       this.addAuditLog({
         module: 'inventario',
         actionType: 'producto_terminado_actualizado',
         title: `Producto terminado ${updated.code} actualizado`,
-        description: `Estado cambiado de ${previous.status || 'activo'} a ${updates.status}.`,
+        description: changes.join('. ') + '.',
         userId: actor.userId,
         userName: actor.userName,
         userRole: actor.userRole,
@@ -2445,7 +2483,7 @@ export class ErpDatabase {
         details: {
           targetId: updated.id,
           targetCode: updated.code,
-          changes: ['status'],
+          changes,
         },
       });
     }
@@ -5581,6 +5619,7 @@ export class ErpDatabase {
     value: FiscalReferenceValue,
     actor: Pick<AuditLogEntry, 'userId' | 'userName' | 'userRole'>
   ): void {
+    if (value.status === 'anulado') return;
     const previousDay = new Date(`${value.effectiveFrom}T00:00:00.000Z`);
     previousDay.setUTCDate(previousDay.getUTCDate() - 1);
     const effectiveTo = previousDay.toISOString().slice(0, 10);
@@ -5589,7 +5628,10 @@ export class ErpDatabase {
         existing.id === value.id ||
         existing.kind !== value.kind ||
         existing.status === 'anulado' ||
-        existing.effectiveTo
+        existing.effectiveTo ||
+        (value.kind === 'islr' &&
+          (existing.conceptCode !== value.conceptCode ||
+            existing.taxpayerType !== value.taxpayerType))
       ) {
         continue;
       }
@@ -5600,7 +5642,7 @@ export class ErpDatabase {
       this.addAuditLog({
         module: 'ventas',
         actionType: 'valor_fiscal_referencia_vigencia_cerrada',
-        title: `Vigencia cerrada automáticamente: ${existing.kind.toUpperCase()}`,
+        title: `Vigencia cerrada automáticamente: ${existing.conceptLabel || existing.kind.toUpperCase()}`,
         description: `El registro ${existing.id} pasó a histórico con vigencia hasta ${effectiveTo}.`,
         userId: actor.userId,
         userName: actor.userName,
@@ -5632,7 +5674,7 @@ export class ErpDatabase {
     this.addAuditLog({
       module: 'ventas',
       actionType: 'valor_fiscal_referencia_creado',
-      title: `Valor fiscal de referencia creado: ${created.kind.toUpperCase()}`,
+      title: `Valor fiscal de referencia creado: ${created.conceptLabel || created.kind.toUpperCase()}`,
       description: `${created.value}${created.valueUnit === 'percent' ? '%' : ' Bs.'} vigente desde ${created.effectiveFrom}. Solo consulta (#13).`,
       userId: actor.userId,
       userName: actor.userName,
@@ -5657,7 +5699,7 @@ export class ErpDatabase {
     this.addAuditLog({
       module: 'ventas',
       actionType: 'valor_fiscal_referencia_actualizado',
-      title: `Valor fiscal de referencia actualizado: ${existing.kind.toUpperCase()}`,
+      title: `Valor fiscal de referencia actualizado: ${existing.conceptLabel || existing.kind.toUpperCase()}`,
       description: `Vigencia desde ${existing.effectiveFrom}; valor ${existing.value}.`,
       userId: actor.userId,
       userName: actor.userName,
@@ -5684,7 +5726,7 @@ export class ErpDatabase {
     this.addAuditLog({
       module: 'ventas',
       actionType: 'valor_fiscal_referencia_anulado',
-      title: `Valor fiscal de referencia anulado: ${existing.kind.toUpperCase()}`,
+      title: `Valor fiscal de referencia anulado: ${existing.conceptLabel || existing.kind.toUpperCase()}`,
       description: `Motivo: ${reason}. El registro se conserva para historial.`,
       userId: actor.userId,
       userName: actor.userName,

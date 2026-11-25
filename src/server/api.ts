@@ -1868,7 +1868,7 @@ export function createApiApp(): express.Express {
     })
   );
 
-  // --- VALORES FISCALES HISTÓRICOS (IVA / UT) ---
+  // --- VALORES FISCALES HISTÓRICOS (IVA / UT / ISLR) ---
   app.get(
     '/api/fiscal-reference-values',
     requireAdmin,
@@ -1894,7 +1894,7 @@ export function createApiApp(): express.Express {
     query((req, res) => {
       const params = parseOrThrow(fiscalReferenceQuerySchema, req.query);
       if (!params.kind) {
-        throw new ApiError(400, 'Indique kind=iva o kind=ut');
+        throw new ApiError(400, 'Indique kind=iva, kind=ut o kind=islr');
       }
       const date = params.date || new Date().toISOString().slice(0, 10);
       const value = dbInstance.getActiveFiscalReferenceValue(params.kind, date);

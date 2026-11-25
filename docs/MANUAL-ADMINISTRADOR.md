@@ -600,8 +600,8 @@ Tipos disponibles: `diario`, `mayor`, `balance_comprobacion`,
 Productos Terminados), correlacionados con los códigos provisionales `1.03.01`
 y `1.03.02` del plan base. Es el único libro que deja de ser borrador; sigue
 sin incluir apertura auditada ni ajustes de cierre. Firmantes: **Contador y
-socios**. La paginación `1 al 99` y la firma al final de cada cierre siguen
-pendientes de definir.
+socios**. La firma al final de cada cierre está confirmada y se guarda con la
+interfaz existente; la paginación `1 al 99` sigue pendiente de definir.
 
 Cada respuesta incluye razón social, RIF, dirección fiscal, período, estado,
 moneda USD y Bs. (columnas pareadas), tasa por documento con fallback a
@@ -651,30 +651,38 @@ e IGTF no aplica están validados desde el 23/11/2026**; IGTF queda confirmado
 como **no aplica** (`false`) con referencia G.O.E. 6.687 / Decreto 4.972 y no
 existe campo de cálculo activo.
 
-Ruta: **Configuración → IVA / UT e Historial (#13)** (solo admin/master).
-Pestañas IVA/UT con:
+Ruta: **Configuración → IVA / UT / ISLR e historial (#13)** (solo admin/master).
+Pestañas IVA/UT/ISLR con:
 
 - tabla de vigencias, valor, instrumento, gaceta, estado y confirmación;
+- en ISLR: rubro, persona natural/jurídica, sustraendo en UT y vigencia; el
+  catálogo ofrece **Cargar en histórico** para precargar concepto y base legal;
 - alta, edición y **anulación lógica con motivo** (sin borrado físico);
-- cierre automático de la vigencia anterior al día previo, con auditoría;
+- cierre automático de la vigencia anterior al día previo, con auditoría (en
+  ISLR solo dentro del mismo concepto y tipo de persona);
 - consulta del valor vigente por fecha;
-- formulario de parámetros de libros: formato aprobado `xlsx,pdf`, CSV auxiliar,
-  paginación, firma, política de tasa y notas.
+- formulario de parámetros de libros: formatos aprobados, CSV auxiliar,
+  firmantes, firma al final de cada cierre, paginación, numeración de
+  libro/página, instrumento de ratificación, política de tasa y notas.
 
 El historial es **solo referencia/consulta**: no modifica
 `fiscalSettings.taxRatePercent`, retenciones ni cálculos de facturas/libros
-hasta cerrar la Fase 0 / #13. Los estados validados se muestran en la pantalla,
-pero no sustituyen la ratificación documental pendiente. Los eventos quedan en
-`GET /api/audit-logs`.
+hasta cerrar la Fase 0 / #13. Los estados validados y las decisiones adoptadas
+se muestran en la pantalla; los soportes que falten se cargan aquí con fecha,
+instrumento y auditoría (`GET /api/audit-logs`).
 
 **Criterios registrados en Configuración → Datos Fiscales → Obligaciones y validaciones**:
 
 - **VALIDADO (23/11/2026):** IVA **16%** general, UT **Bs. 43,00** desde
   `2025-06-02` e IGTF `no_aplica` según la condición actual. Exento 0%, 8% y
   conceptos ISLR siguen **por precisar si aplica**.
-- **PENDIENTE POR EL CONTADOR:** contribuyente **ordinario**, giro **fabricación
-  de mermelada**; SPE `no_aplica` mientras se mantenga esa condición, pero falta
-  ratificación documental con instrumento y fecha.
+- **ADOPTADO (25/11/2026):** contribuyente **ordinario**, giro **fabricación
+  de mermelada**; SPE `no_aplica` mientras se mantenga esa condición. Si el
+  contador remite un instrumento, se agrega al historial sin activar módulos.
+- **PENDIENTE POR EL CONTADOR (#13):** alícuotas/sustraendos ISLR y exentos 0%/8%,
+  talonario y licencia de imprenta, migración antes del 19/04/2027, paginación
+  `1 al 99` y numeración, soporte formal de las respuestas 8/9/10, acta y
+  reconversión, fecha de corte y saldos, pago vs. devengo, SPE y conservación.
 - Retenciones **practicadas** `no_aplica` (`vatWithholdingEnabled=false` e
   `islrWithholdingEnabled=false`): no se retiene al pagar. Solo se contempla el
   **registro/control de comprobantes de retención recibidos de clientes SPE al
@@ -689,21 +697,26 @@ pero no sustituyen la ratificación documental pendiente. Los eventos quedan en
   exento e impuesto, pero no calculan 0%/8% hasta cerrar #13.
 - ISLR: catálogo de referencia de los seis rubros habituales del giro
   (honorarios profesionales, servicios técnicos/especializados, obras y
-  servicios en general, fletes/transporte, publicidad y arrendamientos), con
-  persona natural/jurídica y UT Bs. 43,00. Sustraendo y alícuotas del art. 9
-  del Decreto 1.808 quedan **pendientes del contador**.
+  servicios en general, fletes/transporte, publicidad y arrendamientos **sin
+  factura ni esquema formal aún**), con persona natural/jurídica y UT Bs. 43,00.
+  Los conceptos se mantienen **preventivamente** (respuesta 4); aplicación
+  formal, sustraendo y alícuotas del art. 9 del Decreto 1.808 quedan
+  **pendientes del contador**.
 - El plan de cuentas base tiene **35 cuentas activas del sistema** (migración
   v14): `1.01.01` Caja, `1.01.02` Bancos, `1.02.01` Clientes, `2.01.01`
   Proveedores, `1.03.01` Materia Prima, `1.03.02` Producto Terminado,
   `1.04.01` Crédito Fiscal IVA, `2.02.01` IVA por Pagar y `2.02.02` Retenciones
   por Pagar (practicadas). Catálogo VEN-NIF de 167 cuentas disponible en
-  `src/app/core/data/ven-nif-accounts.ts` y usado por el Libro de Inventario:
-  `1.03.01` → `1.1.04.02`, `1.03.02` → `1.1.04.04`, IVA crédito fiscal
-  `1.1.05.01`, IVA débito fiscal `2.1.04.01`, CxC `1.1.03.01`, CxP
-  `2.1.02.01`, Caja `1.1.01.01`, Bancos `1.1.01.03`. No existe cuenta dedicada a **retenciones recibidas**
-  de comprobantes que emitan clientes SPE al cobrar. Saldos de apertura, fecha
-  de corte, formatos legales, firma definitiva y numeración de libro/página se
-  ajustan con el contador al cerrar la Fase 0.
+  `src/app/core/data/ven-nif-accounts.ts`, **definido/activo** (respuesta 9) y
+  usado por el Libro de Inventario: `1.03.01` → `1.1.04.02`, `1.03.02` →
+  `1.1.04.04`, IVA crédito fiscal `1.1.05.01`, IVA débito fiscal
+  `2.1.04.01`, CxC `1.1.03.01`, CxP `2.1.02.01`, Caja `1.1.01.01`, Bancos
+  `1.1.01.03`. Las correlaciones de retenciones recibidas (`1.1.05.03` IVA,
+  `1.1.05.04` ISLR) quedaron **ratificadas** (respuesta 10), sin crear cuentas
+  nuevas ni activar cálculos. Saldos de apertura, fecha de corte, numeración de
+  libro/página y paginación `1 al 99` siguen pendientes; formatos XLSX/PDF con
+  CSV auxiliar, orden de columnas y firma al final de cada cierre están aprobados
+  (respuesta 8).
 - Facturación digital: solo configuración/borrador, sin emisión real ni envío
   al SENIAT.
 
@@ -718,14 +731,18 @@ El plan de cuentas vigente se consulta en `GET /api/accounting/accounts` y en
 **Contabilidad → Plan de cuentas**: 35 cuentas activas y del sistema, sembradas
 en la migración v14, con caja/bancos, CxC, CxP, inventario e IVA ya presentes.
 No se han creado cuentas nuevas ni modificado asientos por los criterios de
-esta ronda. La cuenta para retenciones recibidas, la separación de IVA 8% y el
-plan definitivo (base 35 frente a VEN-NIF de 167) quedan pendientes del
-contador; si se aprueba una cuenta nueva se hará con migración v17 y backup
-previo.
+esta ronda. El plan definitivo es **VEN-NIF de 167 cuentas** (respuesta 9),
+usado por el Libro de Inventario, y las correlaciones de retenciones recibidas
+están ratificadas (respuesta 10), sin adopción operativa. La adopción de esas
+correlaciones y una cuenta específica para IVA 8% requieren migración v17 con
+backup previo; no se activan retenciones.
 
-**Cierre formal pendiente (#13):** validación final de exentos/8% y conceptos
-ISLR, cuenta contable para retenciones recibidas, saldos de apertura, fecha de
-corte, formatos legales finales, firma y numeración de libro/página.
+**Cierre formal pendiente (#13):** aplicación formal, sustraendo y alícuotas de
+los conceptos ISLR, validación de exentos/8%, foto/talonario y licencia de
+imprenta, migración antes del 19/04/2027, saldos de apertura, fecha de corte,
+numeración y paginación `1 al 99`. Ratificados: correlaciones VEN-NIF, formatos
+XLSX/PDF con CSV auxiliar, orden de columnas, firmantes y firma al final de
+cada cierre; sin activar módulos fiscales.
 
 Formatos y columnas: `docs/PLANTILLAS-LIBROS.md`. Matriz de obligaciones y
 cuestionario pendiente: `docs/MATRIZ-OBLIGACIONES-FISCALES.md` y

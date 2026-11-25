@@ -11,18 +11,20 @@
 Esta versión recoge los requerimientos funcionales vigentes en la interfaz y añade los
 correspondientes a las mejoras de contabilidad provisional implementadas bajo el issue #13.
 No implica la validación contable integral del cierre #13 ni autorización del SENIAT:
-UT, IVA e IGTF ya están validados, mientras que el régimen ordinario/no SPE y el resto
-del cierre permanecen pendientes de ratificación documental.
+UT, IVA e IGTF están validados y el régimen ordinario/no SPE está adoptado; solo
+quedan pendientes los soportes externos detallados en el cuestionario #13. Las
+decisiones y valores que remita el contador se cargan desde el sistema con
+instrumento, vigencia y auditoría, sin activar módulos fiscales.
 
 ## Estado de decisiones fiscales y tasa de cambio (23/11/2026)
 
 | Concepto | Estado | Regla vigente |
 |---|---|---|
 | Unidad Tributaria | **Validado** | Bs. 43,00 desde `02/06/2025` (Providencia SNAT/2025/000048, G.O. 43.140). |
-| IVA | **Validado** | 16 % desde `2020-01-01` (Decreto 4.079, G.O. 41.788). Exento 0 % / 8 % y conceptos ISLR **por precisar si aplica**. |
+| IVA | **Validado** | 16 % desde `2020-01-01` (Decreto 4.079, G.O. 41.788). Exento 0 % / 8 % por precisar; conceptos ISLR **preventivos**, con aplicación formal, alícuotas y sustraendo pendientes. |
 | IGTF | **Validado** | No aplica según la condición actual (sin pagos en divisa, contribuyente ordinario); `IGTF=false`. |
-| Régimen ordinario / no SPE | **Pendiente por el contador** | Falta ratificación documental con instrumento y fecha. No enciende retenciones. |
-| Cierre #13 (reconversión, corte, aportes, saldos, formatos y firmas) | **Borrador / provisional** | Sin efecto en libros ni estados financieros definitivos. |
+| Régimen ordinario / no SPE | **Adoptado (25/11/2026)** | Registrado en `Registro de decisiones tributarias`. Instrumento que remita se agrega al historial; no enciende retenciones. |
+| Cierre #13 (reconversión, corte, aportes, saldos, formatos y firmas) | **Parcial: respuestas 4, 7, 8, 9 y 10 registradas; el resto borrador/provisional** | Solo el Libro de Inventario es definitivo sobre VEN-NIF; los demás libros siguen en borrador. Sin módulos fiscales activos. |
 | Política de tasa de cambio | **Validada** | Tasa del documento = actual (`currentUsd`) o histórica por fecha de guardado; visible y editable en UI; fallback a la tasa actual si no se especifica o modifica. |
 
 ---
@@ -53,8 +55,8 @@ del cierre permanecen pendientes de ratificación documental.
 | RF-13 | Contabilidad · Saldo provisional | Captura y edición de un saldo provisional en USD por cuenta, con fecha de actualización y nota de conciliación, marcado explícitamente como referencia #13. | No genera asiento ni modifica libros o estados financieros; el saldo contable continúa calculándose solo con asientos confirmados. |
 | RF-14 | Contabilidad · Asientos automáticos | Los asientos automáticos de inventario (compras de contado), gastos, cobros de ventas y pagos de CxP utilizan la cuenta contable elegida en cada transacción. | Los registros legacy sin cuenta usan `1.01.01` (Caja) o `1.01.02` (Bancos); una cuenta inexistente, inactiva o que no sea de activo se rechaza con `422 ACCOUNT_NOT_AVAILABLE`. Los asientos automáticos quedan `confirmado`; los manuales se crean en `borrador`. |
 | RF-15 | Inventario · CxP | La condición de pago distingue `contado` (sin deuda) de `crédito` (genera o actualiza la CxP de forma idempotente con proveedor y factura). El origen se distingue entre *Compra Inventario* y *Gasto / CxP Manual*. | Se devuelve `409 DUPLICATE_PAYABLE` al repetir un documento y `422 MISSING_CREDIT_REFERENCE` si falta proveedor o factura. La relación sobrevive al reinicio mediante `inventoryMovements[].payableId`. |
-| RF-16 | Ayuda contextual y auditoría | Panel de ayuda `help_outline` en todos los módulos, badges «BORRADOR #13» y explicación de la diferencia entre saldo provisional y saldo contable. | El Libro de Inventario usa el plan VEN-NIF de 167 cuentas y deja de ser borrador; los demás libros se rotulan `BORRADOR/PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13)`. La cadena hash está activada con backfill histórico; altas, confirmaciones y anulaciones quedan registradas en auditoría. |
-| RF-17 | Contabilidad · Libro de Inventario VEN-NIF | Valoración de materias primas y producto terminado con cuentas definitivas VEN-NIF (`1.1.04.02` y `1.1.04.04`), conservando la correlación de los códigos provisionales `1.03.01`/`1.03.02`. | El libro se genera como definitivo, con firmantes **Contador y socios**. Paginación `1 al 99` y firma al final de cada cierre quedan pendientes de definir. |
+| RF-16 | Ayuda contextual y auditoría | Panel de ayuda `help_outline` en todos los módulos, badges «BORRADOR #13» y explicación de la diferencia entre saldo provisional y saldo contable. | El Libro de Inventario usa el plan VEN-NIF de 167 cuentas y deja de ser borrador; los demás libros se rotulan `BORRADOR/PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13)`. La cadena hash está activada con backfill histórico; altas, confirmaciones y anulaciones quedan registradas en auditoría. La firma al final de cada cierre está confirmada; la paginación `1 al 99` sigue pendiente. |
+| RF-17 | Contabilidad · Libro de Inventario VEN-NIF | Valoración de materias primas y producto terminado con cuentas definitivas VEN-NIF (`1.1.04.02` y `1.1.04.04`), conservando la correlación de los códigos provisionales `1.03.01`/`1.03.02`. | El libro se genera como definitivo, con firmantes **Contador y socios**. Firma al final de cada cierre confirmada; paginación `1 al 99` pendiente de definir. |
 | RF-18 | Contabilidad · Cadena hash | Cada asiento almacena `previousHash`, `entryHash` y `hashSequence` calculados con SHA-256 sobre número, fecha, descripción, estado, montos, tasa y líneas. | El backfill cubre asientos históricos; altas, confirmaciones y anulaciones re-encadenan la cadena. Los endpoints `GET /api/accounting/hash/verify` y `POST /api/accounting/hash/rebuild` permiten verificar y reparar; el evento queda en la bitácora. |
 | RF-19 | Inventario · Proveedor habitual del insumo | Alta de insumo con autocomplete de proveedor, condición de pago derivada de `paymentTerms`, días y fecha de pago ajustables, y persistencia en el maestro. | Si el proveedor tiene días de crédito se muestra **Crédito** con vencimiento; si no, solo **Contado**. El modal usa `max-w-4xl` y scroll interno sin reducir zoom ni escala. |
 
@@ -67,7 +69,8 @@ del cierre permanecen pendientes de ratificación documental.
 - La plantilla de producción usa la matriz como fuente única, con merma separada de «por asignar/envasar».
 - No se activó facturación digital/SENIAT, retenciones de IVA/ISLR, IGTF ni régimen SPE.
   El catálogo fiscal es solo referencia de apoyo: la tasa general de IVA, la UT e IGTF están
-  validados, pero no sustituyen la ratificación documental del régimen ni cierran el resto de #13.
+  validados y el régimen ordinario/no SPE está adoptado; solo faltan los soportes externos
+  del resto de #13, que se cargan en el sistema sin activar módulos fiscales.
   El issue #11 no ha sido publicado.
 - Los formularios de documentos exponen la tasa Bs./USD de forma visible y editable. Por defecto
   toman la tasa actual o la histórica de la fecha de guardado; si el usuario no la modifica,
@@ -104,17 +107,18 @@ del cierre permanecen pendientes de ratificación documental.
 IVA 16 %, UT Bs. 43,00 e IGTF no aplica ya están validados; lo que sigue pendiente es:
 
 1. Ratificación documental del contribuyente **ordinario / no SPE**, con instrumento y fecha.
-2. Precisar **si aplican** exento **0 %**, **8 %** y los conceptos ISLR del art. 9 (sustraendo y alícuotas).
-3. Cuenta contable para **retenciones ISLR recibidas** de clientes SPE (`2.02.02` es solo para practicadas).
-4. **Reconversión** de la figura jurídica y cotejo del acta constitutiva.
-5. **Fecha de corte** y saldos de apertura: generales y por banco/clientes/proveedores.
-6. Tratamiento **pago versus devengo**.
-7. Formatos legales, paginación, firma y numeración de libro/página; conservación y auditoría.
-8. Canal de facturación antes del **19/04/2027**. El plan VEN-NIF de 167 cuentas ya está incorporado y el Libro de Inventario lo usa; el resto de los libros siguen sobre el plan base mientras se ratifica el cierre.
-9. La activación de la cadena hash fue autorizada: quedó activada con backfill y verificación. Lo pendiente es la firma al final de cada cierre y la paginación `1 al 99`, además de la ratificación documental de los firmantes.
+2. **Aplicación formal** de los conceptos ISLR del art. 9 (sustraendo y alícuotas) y precisar si aplican exento **0 %** y **8 %**; los conceptos se conservan solo como referencia preventiva.
+3. **Foto/talonario**, licencia y fecha de migración antes del **19/04/2027**; proveedor, RIF, URL/API, ambiente y certificado si se adopta facturación digital (respuesta 7).
+4. **Paginación `1 al 99`** y numeración de libro/página; la firma al final de cada cierre está confirmada y los formatos XLSX/PDF, CSV auxiliar y orden de columnas aprobados (respuesta 8).
+5. **Reconversión** de la figura jurídica y cotejo del acta constitutiva.
+6. **Fecha de corte** y saldos de apertura: generales y por banco/clientes/proveedores.
+7. Tratamiento **pago versus devengo**.
+8. Instrumento y fecha de vigencia formal de las respuestas 8, 9 y 10; las correlaciones VEN-NIF están ratificadas y el plan VEN-NIF de 167 cuentas es definitivo para el Libro de Inventario, sin activar módulos fiscales.
+9. La activación de la cadena hash fue autorizada: quedó activada con backfill y verificación; no queda acción pendiente en ese punto.
 10. Cierre formal de los comprobantes SPE y del Libro de Retenciones «SIN OPERACIONES».
+11. Conservación y auditoría: años de retención y eventos de bitácora.
 
-Todo lo anterior se mantiene en modo **BORRADOR / PRUEBA** hasta la ratificación contable.
+Todo lo anterior se mantiene en modo **BORRADOR / PRUEBA** hasta la ratificación contable. Las respuestas 4, 7, 8, 9 y 10 ya están registradas y no activan retenciones, consecutivos ni facturación digital.
 
 ---
 

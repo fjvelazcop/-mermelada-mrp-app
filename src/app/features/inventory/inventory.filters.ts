@@ -70,8 +70,10 @@ export function filterMovements(
   return movements.filter((movement) => {
     if (materialId !== 'all' && movement.materialId !== materialId) return false;
     if (type !== 'all' && movement.type !== type) return false;
-    if (dateFrom && movement.date < dateFrom) return false;
-    if (dateTo && movement.date > dateTo) return false;
+    // La fecha operativa elegida manda; los movimientos legacy usan la de registro.
+    const effectiveDate = movement.movementDate || movement.date;
+    if (dateFrom && effectiveDate < dateFrom) return false;
+    if (dateTo && effectiveDate > dateTo) return false;
     if (!term) return true;
 
     return [

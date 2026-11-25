@@ -4,7 +4,7 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import {TestBed} from '@angular/core/testing';
-import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {ErpApiService} from './erp-api.service';
 
 describe('ErpApiService — mensajes del backend', () => {
@@ -81,5 +81,58 @@ describe('ErpApiService — mensajes del backend', () => {
 
     await expect(request).rejects.toBeTruthy();
     expect(api.toastMessage()?.text).toBe(backendMessage);
+  });
+});
+
+describe('ErpApiService — doble fecha del movimiento', () => {
+  let api: ErpApiService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), ErpApiService],
+    });
+    api = TestBed.inject(ErpApiService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    clearInterval(
+      (api as unknown as {ratePollInterval: ReturnType<typeof setInterval>})
+        .ratePollInterval
+    );
+    http.verify();
+  });
+
+  it('envía la fecha elegida y conserva la de registro', async () => {
+    vi.spyOn(api, 'refreshAllData').mockResolvedValue(undefined);
+    api.rawMaterials.set([
+      {
+        id: 'rm-1', code: 'MP-QUI-02', name: 'Ácido cítrico', category: 'quimico',
+        currentStock: 21650, minStock: 1500, unit: 'g', costPerUnit: 0.012,
+        supplier: '', lastRestockDate: '2026-09-15',
+      },
+    ]);
+    const request = api.recordMovement({
+      materialId: 'rm-1',
+      type: 'entrada',
+      quantity: 10,
+      costPerUnit: 12,
+      movementDate: '2026-11-20',
+      referenceDoc: 'F-100',
+    });
+    const req = http.expectOne('/api/inventory/movements');
+    expect(req.request.body.movementDate).toBe('2026-11-20');
+    expect(req.request.body.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    req.flush({
+      movement: {id: 'mov-1', registeredAt: '2026-11-24T12:00:00.000Z'},
+      payable: null,
+    });
+    await Promise.resolve();
+    const auditReq = http.expectOne('/api/audit-logs');
+    expect(auditReq.request.body.details.movementDate).toBe('2026-11-20');
+    expect(auditReq.request.body.details.registeredAt).toBe('2026-11-24T12:00:00.000Z');
+    auditReq.flush({});
+    await request;
   });
 });

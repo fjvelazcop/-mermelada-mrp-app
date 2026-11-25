@@ -19,6 +19,10 @@ export interface ModuleHelpContent {
   sections: ModuleHelpSection[];
 }
 
+/** Nota vigente del cierre; se reutiliza en los módulos con impacto contable. */
+const CLOSURE_13_NOTE =
+  'El cierre #13 continúa en BORRADOR/PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE; no activar SENIAT, v17 fiscal, retenciones ni facturación digital.';
+
 /** Contenido por defecto mientras se documenta un módulo nuevo. */
 export const GENERIC_MODULE_HELP: ModuleHelpContent = {
   title: 'Ayuda del módulo',
@@ -62,36 +66,45 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Los roles con permiso de precios ven importes y cotizaciones.',
         ],
       },
+      {
+        title: 'Puntos de atención',
+        bullets: [CLOSURE_13_NOTE],
+      },
     ],
   },
   inventory: {
     title: 'Inventario y materia prima',
-    summary: 'Control de insumos, movimientos y trazabilidad de producto terminado.',
+    summary: 'Control de insumos, movimientos, existencias y trazabilidad de producto terminado.',
     sections: [
       {
         title: 'Qué puedes hacer',
         bullets: [
           'Buscar insumos por código, nombre o proveedor y filtrar por categoría o alertas.',
-          'Registrar entradas, consumos de cocción y ajustes de merma.',
-          'Ver el historial de movimientos de un insumo con el botón Movimientos.',
+          'Usar los iconos de la columna Acción: Editar ficha del insumo, Ver movimientos del insumo, Registrar entrada o ajuste y Fijar existencia física (solo bitácora). Pasa el cursor sobre cada icono para ver su tooltip.',
+          'Registrar entradas, consumos de cocción y ajustes de merma indicando la fecha del movimiento; la fecha real de registro se guarda aparte para auditoría.',
+          'Fijar la existencia con un motivo: queda en la bitácora sin generar movimiento, CxP ni asiento. Los cambios de ficha no alteran el stock.',
           'Distinguir compras de contado y de crédito, con su CxP y vencimiento.',
+          'Actualizar los precios mayorista, detal y especial de cada producto terminado desde el icono «Actualizar precios» de su tarjeta; el costo base permanece intacto.',
           'Buscar el proveedor habitual de un insumo en el maestro y guardar su condición de pago y fecha de pago.',
         ],
       },
       {
         title: 'Flujo recomendado',
         bullets: [
-          'Filtra por insumo u operación antes de revisar el historial.',
-          'Usa el resumen para comparar entradas, consumo y merma neta.',
+          'Filtra por insumo u operación antes de revisar el historial; el rango de fechas usa la fecha del movimiento.',
+          'Abre los movimientos de un insumo con el icono de historial y compara entradas, consumo y merma neta.',
+          'Consulta el Consolidado y el Reporte Oficial: el buscador es solo visual y no modifica totales ni exportes.',
           'Exporta el listado si tu rol tiene permiso de exportación.',
         ],
       },
       {
         title: 'Puntos de atención',
         bullets: [
+          'La CxP, los asientos automáticos y los libros usan la fecha de registro; la fecha elegida es la operativa y aparece junto a ella en el historial.',
           'Los movimientos conservan razón social y RIF del proveedor cuando se registran con factura.',
           'Los asientos automáticos de inventario se confirman solos y alimentan Diario y Mayor; la presentación de libros sigue en borrador/prueba hasta validar #13.',
           'El Libro de Compras se alimenta al pagar la CxP (gasto fiscalmente elegible), no al registrar la entrada.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],
@@ -121,6 +134,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         bullets: [
           'Los supervisores de planta tienen permisos reducidos sobre precios.',
           'Las planillas manuales y los cálculos de mermelada están en modo borrador/prueba.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],
@@ -154,6 +168,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'La exportación está disponible solo con el permiso costing.canExport.',
           'Los valores sin permiso de precios pueden mostrarse ocultos para ciertos roles.',
           'Los resultados apoyan la cotización; no generan asientos contables ni obligaciones fiscales.',
+          CLOSURE_13_NOTE,
         ],
       },
       {
@@ -183,6 +198,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         bullets: [
           'Los consecutivos anulados no se reutilizan.',
           'La facturación digital sigue en modo preparación: no hay emisión real ni envío al SENIAT.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],
@@ -204,6 +220,10 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Exportar el detalle para el área contable.',
         ],
       },
+      {
+        title: 'Puntos de atención',
+        bullets: [CLOSURE_13_NOTE],
+      },
     ],
   },
   expenses: {
@@ -223,6 +243,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         bullets: [
           'Las retenciones de IVA e ISLR están desactivadas por ser contribuyente ordinario.',
           'Los asientos automáticos de gastos se confirman solos; la presentación de libros sigue en borrador/prueba hasta validar #13.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],
@@ -251,6 +272,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'IVA 16 %, UT Bs. 43,00 e IGTF no aplica están validados; el régimen ordinario/no SPE requiere ratificación documental con fecha del contador.',
           'La tasa de los documentos es visible y editable: por defecto usa la actual o la de la fecha de guardado, con fallback a `currentUsd` si no se modifica.',
           'No hay cuenta dedicada a retenciones recibidas de clientes SPE; tampoco se han creado cuentas nuevas.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],
@@ -267,6 +289,10 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Seleccionar un proveedor desde gastos o movimientos de inventario.',
         ],
       },
+      {
+        title: 'Puntos de atención',
+        bullets: [CLOSURE_13_NOTE],
+      },
     ],
   },
   supplier_types: {
@@ -279,6 +305,10 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Crear, editar, activar o desactivar tipos de proveedor con permiso.',
           'Asignar un color para identificar cada tipo en las listas.',
         ],
+      },
+      {
+        title: 'Puntos de atención',
+        bullets: ['Los cambios del catálogo se reflejan en el maestro de proveedores.'],
       },
     ],
   },
@@ -293,6 +323,12 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Ver los cambios reflejados en los filtros y formularios de Inventario.',
         ],
       },
+      {
+        title: 'Puntos de atención',
+        bullets: [
+          'Un insumo solo puede guardarse con una categoría activa; el backend muestra el motivo exacto si el código ya existe.',
+        ],
+      },
     ],
   },
   settings: {
@@ -303,15 +339,16 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         title: 'Qué puedes hacer',
         bullets: [
           'Gestionar usuarios, matriz de permisos y simulador de accesos.',
-          'Consultar datos fiscales y el histórico de IVA/UT con permiso de administrador; IVA 16 %, UT Bs. 43,00 e IGTF no aplica están validados (#13).',
-          'Administrar correos, tipos de proveedor, categorías y reset operativo.',
+          'Consultar datos fiscales y el histórico de IVA/UT/ISLR con permiso de administrador; IVA 16 %, UT Bs. 43,00 e IGTF no aplica están validados (#13).',
+          'Administrar correos, tipos de proveedor, categorías, presentaciones y reset operativo.',
         ],
       },
       {
         title: 'Puntos de atención',
         bullets: [
           'Las opciones fiscales y catálogos se muestran solo a admin/master o a roles con permiso.',
-          'El histórico de IVA/UT es soporte documental: no modifica cálculos; la ratificación del régimen ordinario/no SPE y el resto del cierre #13 siguen pendientes.',
+          'El histórico es soporte documental: no modifica cálculos; el régimen ordinario/no SPE está adoptado y las decisiones #13 se cargan con instrumento y fecha cuando el contador las remita.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],
@@ -326,6 +363,10 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Consultar requerimientos, arquitectura, modelos de datos y decisiones de implementación.',
           'Usar esta documentación como referencia para soporte y mantenimiento.',
         ],
+      },
+      {
+        title: 'Puntos de atención',
+        bullets: [CLOSURE_13_NOTE],
       },
     ],
   },
@@ -342,7 +383,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
       },
       {
         title: 'Puntos de atención',
-        bullets: ['Esta pantalla está restringida al rol Master.'],
+        bullets: ['Esta pantalla está restringida al rol Master.', CLOSURE_13_NOTE],
       },
     ],
   },
@@ -362,6 +403,7 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
         bullets: [
           'Los consecutivos anulados no se reutilizan.',
           'No hay transmisión al SENIAT: la facturación digital está en preparación.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],
@@ -376,6 +418,10 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
           'Revisar saldos y filtrar por cliente o rango de fechas.',
           'Registrar cobros y abrir el historial de abonos de un pedido.',
         ],
+      },
+      {
+        title: 'Puntos de atención',
+        bullets: [CLOSURE_13_NOTE],
       },
     ],
   },
@@ -392,29 +438,35 @@ export const MODULE_HELP: Record<ModuleHelpKey, ModuleHelpContent> = {
       },
       {
         title: 'Puntos de atención',
-        bullets: ['USD es la moneda canónica; los valores en Bs. se derivan de la tasa vigente.'],
+        bullets: [
+          'USD es la moneda canónica; los valores en Bs. se derivan de la tasa vigente.',
+          CLOSURE_13_NOTE,
+        ],
       },
     ],
   },
   fiscal_reference_values: {
-    title: 'IVA / UT e historial (#13)',
-    summary: 'Valores con vigencia e instrumento: IVA/UT/IGTF validados y política de tasa por documento.',
+    title: 'IVA / UT / ISLR e historial (#13)',
+    summary: 'Valores con vigencia e instrumento: IVA/UT/IGTF validados, ISLR por concepto y política de tasa por documento.',
     sections: [
       {
         title: 'Qué puedes hacer',
         bullets: [
           'Consultar el IVA 16% desde 2020-01-01 y la UT Bs. 43,00 desde 2025-06-02, ambos validados, e IGTF no aplica según la condición actual.',
+          'Cargar alícuotas, sustraendos y vigencias de ISLR por rubro y tipo de persona desde el catálogo de referencia o con un registro nuevo.',
+          'Guardar formatos, firmantes, firma al final de cada cierre, paginación, numeración y soporte de ratificación de los libros (#13).',
           'Revisar la política de tasa validada: actual o histórica por fecha de guardado, visible y editable en los formularios, con fallback a currentUsd.',
-          'Registrar cambios de vigencia, con cierre automático del registro anterior.',
-          'Dar de baja valores con motivo, sin borrado físico.',
+          'Registrar cambios de vigencia, con cierre automático del registro anterior, y dar de baja valores con motivo sin borrado físico.',
         ],
       },
       {
         title: 'Puntos de atención',
         bullets: [
-          'Solo admin/master puede consultar o modificar estos parámetros.',
-          'El régimen ordinario/no SPE sigue pendiente de ratificación documental con fecha; exento 0%, 8% y conceptos ISLR están por precisar si aplica.',
-          'El histórico es soporte documental: no modifica cálculos ni activa retenciones, facturación digital ni cadena hash.',
+          'Solo admin/master puede consultar o modificar estos parámetros; cada cambio queda en auditoría.',
+          'El régimen ordinario/no SPE está adoptado; si el contador remite un instrumento, se carga al historial. Exento 0%, 8% y alícuotas/sustraendos ISLR siguen esperando soporte.',
+          'Paginación 1 al 99, numeración de libro/página y soporte formal de las respuestas 8, 9 y 10 siguen pendientes.',
+          'El histórico es soporte documental: no modifica cálculos, asientos ni activa retenciones, facturación digital o cadena hash.',
+          CLOSURE_13_NOTE,
         ],
       },
     ],

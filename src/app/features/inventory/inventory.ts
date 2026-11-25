@@ -5,6 +5,7 @@ import {ModuleHelpComponent} from '../../shared/components/module-help/module-he
 import {ErpApiService} from '../../core/services/erp-api.service';
 import {
   RawMaterial,
+  FinishedGood,
   InventoryMovement,
   MaterialCategory,
   UnitOfMeasure,
@@ -149,6 +150,8 @@ export class InventoryComponent {
   public isNewMaterialModalOpen = signal<boolean>(false);
   public isStockFixModalOpen = signal<boolean>(false);
   public isNewProductModalOpen = signal<boolean>(false);
+  public isPriceModalOpen = signal<boolean>(false);
+  public selectedProductForPrices = signal<FinishedGood | null>(null);
   public isSavingProduct = signal<boolean>(false);
   public showInactiveProducts = signal<boolean>(false);
   public selectedMaterialForMovement = signal<RawMaterial | null>(null);
@@ -178,6 +181,11 @@ export class InventoryComponent {
     costPerUnit: new FormControl<number>(1.25, {nonNullable: true, validators: [Validators.required, Validators.min(0)]}),
     exchangeRateUsed: new FormControl<number>(defaultDocumentRate(this.api.exchangeRates()), {nonNullable: true, validators: [Validators.required, Validators.min(1)]}),
     referenceDoc: new FormControl<string>('', {nonNullable: true}),
+    /** Fecha en que ocurrió el movimiento; el registro conserva su propia fecha. */
+    movementDate: new FormControl<string>(new Date().toISOString().slice(0, 10), {
+      nonNullable: true,
+      validators: [Validators.required],
+    }),
     /** Texto visible del selector; no se envía al servidor. */
     supplierQuery: new FormControl<string>('', {nonNullable: true}),
     supplierId: new FormControl<string>('', {nonNullable: true}),
@@ -254,6 +262,22 @@ export class InventoryComponent {
     notes: new FormControl<string>('Borrador/prueba #13 – pendiente de validación con el contador.', {
       nonNullable: true,
       validators: [Validators.maxLength(2000)],
+    }),
+  });
+
+  /** Actualización exclusiva de los 3 precios de venta; no toca el costo base. */
+  public priceForm = new FormGroup({
+    suggestedWholesalePrice: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(0)],
+    }),
+    suggestedRetailPrice: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(0)],
+    }),
+    suggestedSpecialPrice: new FormControl<number>(0, {
+      nonNullable: true,
+      validators: [Validators.required, Validators.min(0)],
     }),
   });
 
@@ -461,6 +485,45 @@ export class InventoryComponent {
     }
   }
 
+  public openPriceModal(product: FinishedGood): void {
+    this.selectedProductForPrices.set(product);
+    this.priceForm.reset({
+      suggestedWholesalePrice: Number(product.suggestedWholesalePrice),
+      suggestedRetailPrice: Number(product.suggestedRetailPrice),
+      suggestedSpecialPrice: Number(product.suggestedSpecialPrice),
+    });
+    this.isPriceModalOpen.set(true);
+  }
+
+  public closePriceModal(): void {
+    this.isPriceModalOpen.set(false);
+    this.selectedProductForPrices.set(null);
+  }
+
+  /** Guarda solo los precios de venta; costo base y stock no se modifican. */
+  public async saveProductPrices(): Promise<void> {
+    if (this.priceForm.invalid) {
+      this.priceForm.markAllAsTouched();
+      return;
+    }
+    const product = this.selectedProductForPrices();
+    if (!product) return;
+    const v = this.priceForm.getRawValue();
+    this.isSavingProduct.set(true);
+    try {
+      await this.api.updateFinishedGood(product.id, {
+        suggestedWholesalePrice: Number(v.suggestedWholesalePrice),
+        suggestedRetailPrice: Number(v.suggestedRetailPrice),
+        suggestedSpecialPrice: Number(v.suggestedSpecialPrice),
+      });
+      this.closePriceModal();
+    } catch {
+      // Toast handled by the API service.
+    } finally {
+      this.isSavingProduct.set(false);
+    }
+  }
+
   public async setProductStatus(id: string, code: string, status: 'activo' | 'inactivo') {
     const message =
       status === 'inactivo'
@@ -510,6 +573,7 @@ export class InventoryComponent {
       creditDays: 30,
       dueDate: '',
       notes: '',
+      movementDate: this.todayIso,
     });
     this.updateDueDate();
     this.isMovementModalOpen.set(true);
@@ -602,6 +666,10 @@ export class InventoryComponent {
   public async submitMovement() {
     if (this.movementForm.invalid) return;
     const v = this.movementForm.getRawValue();
+    if (v.movementDate > this.todayIso) {
+      this.api.showToast('La fecha del movimiento no puede ser futura.', 'error');
+      return;
+    }
     if (validateMovementReference(v) === 'missing-credit-reference') {
       this.api.showToast(
         'Para una compra a crédito selecciona el proveedor y captura el número de factura.',
@@ -631,6 +699,7 @@ export class InventoryComponent {
       costPerUnit: Number(v.costPerUnit),
       exchangeRateUsed: Number(v.exchangeRateUsed),
       referenceDoc: v.referenceDoc,
+      movementDate: v.movementDate,
       supplierId: v.supplierId || undefined,
       supplierNameSnapshot: v.supplierNameSnapshot || undefined,
       supplierTaxIdSnapshot: v.supplierTaxIdSnapshot || undefined,
@@ -1010,7 +1079,8 @@ export class InventoryComponent {
   public exportMovementsCsv() {
     const isBs = this.currencyMode() === 'Bs';
     const headers = [
-      'Fecha',
+      'Fecha del movimiento',
+      'Fecha de registro',
       'Insumo',
       'Tipo de Operación',
       'Cantidad',
@@ -1030,7 +1100,8 @@ export class InventoryComponent {
       const unitCost = isBs ? (m.costPerUnitBs || m.costPerUnit * rate) : m.costPerUnit;
       const totalCost = isBs ? (m.totalCostBs || m.totalCost * rate) : m.totalCost;
       return [
-        m.date,
+        m.movementDate || m.date,
+        m.registeredAt || m.date,
         m.materialName,
         m.type === 'entrada' ? 'Compra / Entrada' : m.type === 'salida_produccion' ? 'Consumo Cocción' : 'Ajuste / Merma',
         formatVeNumber(m.quantity, 2),
@@ -1056,7 +1127,8 @@ export class InventoryComponent {
   public exportMovementsExcel() {
     const isBs = this.currencyMode() === 'Bs';
     const headers = [
-      'Fecha',
+      'Fecha del movimiento',
+      'Fecha de registro',
       'Insumo / Materia Prima',
       'Tipo de Operación',
       'Cantidad',
@@ -1076,7 +1148,8 @@ export class InventoryComponent {
       const unitCost = isBs ? (m.costPerUnitBs || m.costPerUnit * rate) : m.costPerUnit;
       const totalCost = isBs ? (m.totalCostBs || m.totalCost * rate) : m.totalCost;
       return [
-        m.date,
+        m.movementDate || m.date,
+        m.registeredAt || m.date,
         m.materialName,
         m.type === 'entrada' ? 'Compra / Entrada' : m.type === 'salida_produccion' ? 'Consumo Cocción' : 'Ajuste / Merma',
         formatVeNumber(m.quantity, 2),

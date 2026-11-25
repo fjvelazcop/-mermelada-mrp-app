@@ -129,6 +129,32 @@ describe('filterMovements', () => {
     ).toEqual(['mov-2']);
   });
 
+  it('filtra por la fecha elegida y conserva el fallback de movimientos legacy', () => {
+    const withEffectiveDate = makeMovement({
+      id: 'mov-fecha',
+      date: '2026-01-10',
+      movementDate: '2026-02-15',
+    });
+    expect(
+      filterMovements([withEffectiveDate], {
+        search: '', materialId: 'all', type: 'all',
+        dateFrom: '2026-02-01', dateTo: '2026-02-28',
+      }).map((m) => m.id)
+    ).toEqual(['mov-fecha']);
+    expect(
+      filterMovements([withEffectiveDate], {
+        search: '', materialId: 'all', type: 'all',
+        dateFrom: '2026-01-01', dateTo: '2026-01-31',
+      })
+    ).toHaveLength(0);
+    expect(
+      filterMovements([makeMovement({date: '2026-01-10'})], {
+        search: '', materialId: 'all', type: 'all',
+        dateFrom: '2026-01-01', dateTo: '2026-01-31',
+      })
+    ).toHaveLength(1);
+  });
+
   it('busca en notas, referencia y responsable sin tildes', () => {
     expect(
       filterMovements(movements, {search: 'lote 72', materialId: 'all', type: 'all', dateFrom: '', dateTo: ''}).map((m) => m.id)

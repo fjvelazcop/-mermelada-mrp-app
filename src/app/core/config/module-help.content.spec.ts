@@ -34,6 +34,39 @@ describe('Contenido de ayuda por módulo', () => {
     expect(text).toContain('costing.canExport');
   });
 
+  it('documenta la carga de histórico ISLR y los soportes #13 sin activar módulos', () => {
+    const text = JSON.stringify(MODULE_HELP.fiscal_reference_values);
+    expect(text).toContain('ISLR');
+    expect(text).toContain('sustraendos');
+    expect(text).toContain('Paginación 1 al 99');
+    expect(text).toContain('no modifica cálculos');
+    expect(text).toContain('régimen ordinario/no SPE está adoptado');
+  });
+
+  it('documenta los iconos, la doble fecha y los precios en la ayuda de inventario', () => {
+    const text = JSON.stringify(MODULE_HELP.inventory);
+    expect(text).toContain('Editar ficha del insumo');
+    expect(text).toContain('Ver movimientos del insumo');
+    expect(text).toContain('Registrar entrada o ajuste');
+    expect(text).toContain('Fijar existencia física (solo bitácora)');
+    expect(text).toContain('tooltip');
+    expect(text).toContain('fecha del movimiento');
+    expect(text).toContain('fecha real de registro');
+    expect(text).toContain('Actualizar precios');
+    expect(text).toContain('costo base permanece intacto');
+    expect(text).toContain('no modifica totales ni exportes');
+    expect(text).not.toContain('Preparar producto nuevo');
+  });
+
+  it('mantiene la nota del cierre #13 de forma uniforme en todos los módulos que la mencionan', () => {
+    const note =
+      'El cierre #13 continúa en BORRADOR/PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE; no activar SENIAT, v17 fiscal, retenciones ni facturación digital.';
+    for (const content of Object.values(MODULE_HELP)) {
+      const text = JSON.stringify(content);
+      if (text.includes('cierre #13')) expect(text).toContain(note);
+    }
+  });
+
   it('devuelve el contenido genérico para claves no registradas', () => {
     expect(getModuleHelp('modulo_inexistente' as ModuleHelpKey)).toBe(GENERIC_MODULE_HELP);
   });

@@ -67,6 +67,7 @@ const auditActionSchema = z.enum([
   'salida_produccion',
   'ajuste_merma',
   'ajuste_existencia',
+  'insumo_actualizado',
   'reabastecimiento_alerta',
   'orden_produccion_creada',
   'orden_produccion_procesada',
@@ -185,6 +186,17 @@ export const inventoryMovementSchema = z.object({
   costPerUnitBs: money.optional(),
   totalCostBs: money.optional(),
   referenceDoc: z.string().trim().max(200).optional(),
+  /** Fecha operativa elegida por el usuario; no sustituye la fecha de registro. */
+  movementDate: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato YYYY-MM-DD')
+    .refine((value) => !Number.isNaN(new Date(`${value}T00:00:00`).getTime()), 'Fecha inválida')
+    .refine(
+      (value) => value <= new Date().toISOString().slice(0, 10),
+      'La fecha del movimiento no puede ser futura'
+    )
+    .optional(),
   supplierId: z.string().trim().max(200).optional(),
   supplierNameSnapshot: z.string().trim().max(200).optional(),
   supplierTaxIdSnapshot: z.string().trim().max(60).optional(),
@@ -837,6 +849,11 @@ const fiscalObligationKeySchema = z.enum([
   'snat_2026_00093',
   'fiscal_documents',
   'fiscal_books',
+  'legal_reconversion',
+  'opening_cutoff',
+  'accrual_criteria',
+  'spe_vouchers',
+  'record_retention',
 ]);
 
 export const fiscalObligationParamsSchema = z.object({
@@ -896,16 +913,20 @@ export const fiscalReferenceIdParamsSchema = z.object({
 });
 
 export const fiscalReferenceQuerySchema = z.object({
-  kind: z.enum(['iva', 'ut']).optional(),
+  kind: z.enum(['iva', 'ut', 'islr']).optional(),
   date: fiscalReferenceDateSchema.optional(),
   includeAnnulled: z.enum(['true', 'false']).optional(),
 });
 
 export const fiscalReferenceSchema = z
   .object({
-    kind: z.enum(['iva', 'ut']),
+    kind: z.enum(['iva', 'ut', 'islr']),
     value: z.coerce.number().finite().positive(),
     valueUnit: z.enum(['percent', 'bs']),
+    conceptCode: z.string().trim().max(60),
+    conceptLabel: z.string().trim().max(200),
+    taxpayerType: z.enum(['', 'natural', 'juridica']),
+    sustraendoUt: z.coerce.number().finite().min(0).nullable(),
     effectiveFrom: fiscalReferenceDateSchema,
     effectiveTo: optionalFiscalReferenceDateSchema,
     instrumentType: z.string().trim().max(80),
@@ -931,6 +952,20 @@ export const fiscalReferenceSchema = z
         code: 'custom',
         path: ['valueUnit'],
         message: 'La UT se expresa en bolívares',
+      });
+    }
+    if (data.kind === 'islr' && data.valueUnit !== 'percent') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['valueUnit'],
+        message: 'La alícuota ISLR se expresa como porcentaje',
+      });
+    }
+    if (data.kind === 'islr' && !data.conceptCode.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['conceptCode'],
+        message: 'Indique el rubro o concepto ISLR',
       });
     }
     if (data.valueUnit === 'percent' && data.value > 100) {
@@ -961,6 +996,8 @@ export const accountingBookSettingsSchema = z.object({
   signatureRole: z.string().trim().max(200),
   accountantSigner: z.string().trim().max(200).optional(),
   partnerSigners: z.string().trim().max(500).optional(),
+  bookPageNumbering: z.string().trim().max(500).optional(),
+  ratificationInstrument: z.string().trim().max(500).optional(),
   exchangeRatePolicy: z.literal('documento_con_fallback'),
   notes: z.string().trim().max(4000),
   approvedAt: optionalFiscalReferenceDateSchema,

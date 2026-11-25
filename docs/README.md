@@ -23,9 +23,15 @@ por el contador y consultar su historial; guardarlas no activa módulos fiscales
 
 **Validado (23/11/2026):** IVA 16 %, UT Bs. 43,00 desde 02/06/2025, IGTF no aplica
 según condición actual y política de tasa por documento con fallback a `currentUsd`.
-**Pendiente por el contador:** ratificación documental del régimen ordinario/no SPE,
-precisar si aplican exento 0 %/8 % y conceptos ISLR, apertura y formatos/firmas del
-cierre [#13](https://github.com/fjvelazcop/-mermelada-mrp-app/issues/13). Retenciones,
+**Adoptado:** régimen ordinario/no SPE (25/11/2026), formatos XLSX/PDF y CSV
+auxiliar, orden de columnas, firmantes Contador y socios, firma al final de cada
+cierre y plan VEN-NIF de 167 cuentas. **Pendiente de dato o soporte externo del
+contador (#13):** alícuotas/sustraendos ISLR y exentos 0 %/8 %, talonario y
+licencia de imprenta, migración antes del 19/04/2027, numeración y paginación
+`1 al 99`, soporte formal de respuestas 8/9/10, acta/reconversión, fecha de corte
+y saldos, pago vs. devengo, SPE y conservación. Los datos se cargan en
+**IVA / UT / ISLR e historial (#13)**, **Registro de decisiones tributarias** y
+**Contabilidad → Apertura**. Retenciones,
 contabilidad formal, régimen SPE y facturación digital permanecen apagados; todo el
 cierre se mantiene en BORRADOR/PRUEBA hasta la ratificación. Su implementación, si
 aplica, se planificará en issues separados vinculados al

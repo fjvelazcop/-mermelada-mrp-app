@@ -225,6 +225,103 @@ describe('inventory API', () => {
     expect(body.error).toContain('no existe o está inactivo');
   });
 
+  it('persiste la fecha elegida y la fecha real de registro del movimiento', async () => {
+    const before = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; name: string }[];
+    const material = before[0];
+    const effectiveDate = '2026-11-20';
+
+    const response = await jsonRequest('/api/inventory/movements', 'POST', {
+      materialId: material.id,
+      materialName: material.name,
+      type: 'entrada',
+      quantity: 2,
+      costPerUnit: 1,
+      totalCost: 2,
+      date: new Date().toISOString().slice(0, 10),
+      movementDate: effectiveDate,
+      performedBy: 'Test de fechas',
+      referenceDoc: 'FECHA-TEST-1',
+      paymentCondition: 'contado',
+    });
+    expect(response.response.status).toBe(201);
+    const movementId = response.body['movement']['id'] as string;
+    expect(response.body['movement']['movementDate']).toBe(effectiveDate);
+    expect(response.body['movement']['registeredAt']).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const row = getDb()
+      .prepare(
+        'SELECT effective_date, registered_at, movement_date FROM inventory_movements WHERE id = ?'
+      )
+      .get(movementId) as {
+      effective_date: string;
+      registered_at: string;
+      movement_date: string;
+    } | undefined;
+    expect(row?.effective_date).toBe(effectiveDate);
+    expect(row?.registered_at).toBe(response.body['movement']['registeredAt']);
+    expect(row?.movement_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('rechaza una fecha de movimiento futura', async () => {
+    const materials = (await (
+      await fetch(`${baseUrl}/api/inventory/raw-materials`)
+    ).json()) as { id: string; name: string }[];
+    const future = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+    const response = await jsonRequest('/api/inventory/movements', 'POST', {
+      materialId: materials[0].id,
+      materialName: materials[0].name,
+      type: 'entrada',
+      quantity: 1,
+      costPerUnit: 1,
+      totalCost: 1,
+      date: new Date().toISOString().slice(0, 10),
+      movementDate: future,
+      performedBy: 'Test de fechas',
+    });
+    expect(response.response.status).toBe(422);
+    expect(JSON.stringify(response.body)).toContain('no puede ser futura');
+  });
+
+  it('audita el cambio de precios sin alterar costo base ni stock', async () => {
+    const products = (await (
+      await fetch(`${baseUrl}/api/inventory/finished-goods`)
+    ).json()) as { id: string; code: string; baseCost: number; stockUnits: number }[];
+    const product = products[0];
+    expect(product).toBeTruthy();
+
+    const response = await fetch(
+      `${baseUrl}/api/inventory/finished-goods/${product.id}`,
+      {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          suggestedWholesalePrice: 7.5,
+          suggestedRetailPrice: 9,
+          suggestedSpecialPrice: 10,
+        }),
+      }
+    );
+    expect(response.status).toBe(200);
+    const updated = (await response.json()) as {
+      baseCost: number;
+      stockUnits: number;
+      suggestedRetailPrice: number;
+    };
+    expect(updated.suggestedRetailPrice).toBe(9);
+    expect(updated.baseCost).toBe(product.baseCost);
+    expect(updated.stockUnits).toBe(product.stockUnits);
+
+    const audit = getDb()
+      .prepare(
+        `SELECT details_json FROM audit_logs
+         WHERE action_type = 'producto_terminado_actualizado' AND details_json LIKE ?`
+      )
+      .get(`%${product.id}%`) as {details_json: string} | undefined;
+    expect(audit?.details_json).toContain('precio detal');
+  });
+
   it('resets demo data through the API', async () => {
     const response = await fetch(`${baseUrl}/api/system/reset`, {
       method: 'POST',
@@ -2759,6 +2856,10 @@ describe('Fase 0 — valores fiscales de referencia y parámetros de libros (HTT
       valueUnit: 'bs',
       effectiveFrom: '2026-05-01',
       effectiveTo: '',
+      conceptCode: '',
+      conceptLabel: '',
+      taxpayerType: '',
+      sustraendoUt: null,
       instrumentType: 'providencia',
       instrumentNumber: 'SNAT/PRUEBA',
       officialGazette: 'G.O. de prueba',
@@ -2799,6 +2900,10 @@ describe('Fase 0 — valores fiscales de referencia y parámetros de libros (HTT
         valueUnit: 'bs',
         effectiveFrom: '2026-05-01',
         effectiveTo: '',
+        conceptCode: '',
+        conceptLabel: '',
+        taxpayerType: '',
+        sustraendoUt: null,
         instrumentType: 'providencia',
         instrumentNumber: 'SNAT/PRUEBA',
         officialGazette: 'G.O. de prueba',
@@ -2830,6 +2935,55 @@ describe('Fase 0 — valores fiscales de referencia y parámetros de libros (HTT
     expect(historical.body['value']).toBe(43);
   });
 
+  it('registra histórico ISLR por concepto, persona y vigencia sin activar retenciones', async () => {
+    const beforeSettings = await jsonRequest('/api/fiscal-settings', 'GET');
+    const created = await jsonRequest('/api/fiscal-reference-values', 'POST', {
+      kind: 'islr',
+      value: 15,
+      valueUnit: 'percent',
+      conceptCode: 'ISR-HON-N',
+      conceptLabel: 'Honorarios profesionales (persona natural)',
+      taxpayerType: 'natural',
+      sustraendoUt: 10,
+      effectiveFrom: '2026-01-01',
+      effectiveTo: '',
+      instrumentType: 'decreto',
+      instrumentNumber: '1.808 art. 9',
+      officialGazette: 'G.O. de prueba',
+      publicationDate: '2026-01-01',
+      legalBasis: 'Art. 9 Decreto 1.808',
+      notes: 'Carga de prueba del contador',
+      status: 'confirmado',
+      confirmedByAccountant: true,
+      supportDocument: 'SOP-ISR-1',
+    });
+    expect(created.response.status).toBe(201);
+    expect(created.body['conceptCode']).toBe('ISR-HON-N');
+    expect(created.body['sustraendoUt']).toBe(10);
+
+    const filtered = await jsonRequest('/api/fiscal-reference-values?kind=islr', 'GET');
+    expect(
+      (filtered.body['values'] as JsonBody[]).filter(
+        (item) => item['id'] === created.body['id']
+      )
+    ).toHaveLength(1);
+
+    const active = await jsonRequest(
+      '/api/fiscal-reference-values/active?kind=islr&date=2026-02-01',
+      'GET'
+    );
+    expect(active.body['id']).toBe(created.body['id']);
+
+    const settings = await jsonRequest('/api/fiscal-settings', 'GET');
+    for (const flag of [
+      'vatWithholdingEnabled',
+      'islrWithholdingEnabled',
+      'digitalInvoicingEnabled',
+    ]) {
+      expect(settings.body[flag]).toBe(beforeSettings.body[flag]);
+    }
+  });
+
   it('guarda parámetros de libros y bloquea el acceso a operadores', async () => {
     const initial = await jsonRequest('/api/accounting-book-settings', 'GET');
     expect(initial.response.status).toBe(200);
@@ -2839,15 +2993,21 @@ describe('Fase 0 — valores fiscales de referencia y parámetros de libros (HTT
     const updated = await jsonRequest('/api/accounting-book-settings', 'PUT', {
       approvedFormats: 'xlsx,pdf',
       auxiliaryFormat: 'csv',
-      pagination: 'Pendiente HTTP',
+      pagination: '1 al 99 HTTP',
       signatureText: 'Firma HTTP',
-      signatureRole: 'Contador',
+      signatureRole: 'Contador y socios',
+      accountantSigner: 'Contador HTTP',
+      partnerSigners: 'Socios HTTP',
+      bookPageNumbering: 'Libro 1 / página 1 HTTP',
+      ratificationInstrument: 'SOP-HTTP 25/11/2026',
       exchangeRatePolicy: 'documento_con_fallback',
       notes: 'Notas HTTP',
       approvedAt: '2026-11-22',
     });
     expect(updated.response.status).toBe(200);
-    expect(updated.body['pagination']).toBe('Pendiente HTTP');
+    expect(updated.body['pagination']).toBe('1 al 99 HTTP');
+    expect(updated.body['bookPageNumbering']).toBe('Libro 1 / página 1 HTTP');
+    expect(updated.body['ratificationInstrument']).toBe('SOP-HTTP 25/11/2026');
     expect(updated.body['updatedBy']).toBe('Administrador (demo)');
 
     const operatorRead = await fetch(`${baseUrl}/api/fiscal-reference-values`, {

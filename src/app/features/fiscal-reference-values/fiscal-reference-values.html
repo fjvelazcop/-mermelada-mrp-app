@@ -5,19 +5,20 @@
     </div>
   } @else {
     <div class="flex justify-end">
-      <app-module-help module="fiscal_reference_values" label="Ver ayuda de IVA/UT e historial" />
+      <app-module-help module="fiscal_reference_values" label="Ver ayuda de IVA/UT/ISLR e historial" />
     </div>
 
     <div class="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4">
       <mat-icon class="text-sky-700">info</mat-icon>
       <div class="text-xs sm:text-sm text-sky-900">
-        <p class="font-bold">Histórico de IVA y UT — soporte documental (#13)</p>
+        <p class="font-bold">Histórico de IVA, UT e ISLR — soporte documental (#13)</p>
         <p class="mt-1">
           <strong>Validado (23/11/2026):</strong> IVA 16 %, UT Bs. 43,00 desde 02/06/2025 e IGTF
-          no aplica según la condición actual. El régimen ordinario/no SPE sigue pendiente de
-          ratificación documental con fecha del contador; exento 0 %, 8 % y conceptos ISLR son
-          supuestos por precisar si aplica. Los valores se conservan con vigencia e instrumento;
-          la baja es lógica, con motivo y sin borrado físico.
+          no aplica según la condición actual. El <strong>régimen ordinario/no SPE está adoptado</strong>
+          (25/11/2026); si el contador remite un instrumento, se carga aquí al historial. Exento 0 %,
+          8 % y alícuotas/sustraendos ISLR se cargan por concepto, persona y vigencia desde el catálogo
+          o con “Nuevo valor”. Todo se conserva con instrumento y auditoría; no calcula impuestos ni
+          activa retenciones, facturación digital o hash. La baja es lógica, con motivo y sin borrado físico.
         </p>
       </div>
     </div>
@@ -35,9 +36,9 @@
         <p class="font-bold text-emerald-900">IGTF no aplica</p>
         <p class="text-emerald-800">VALIDADO · condición actual</p>
       </div>
-      <div class="rounded-xl border border-amber-200 bg-amber-50 p-2.5">
-        <p class="font-bold text-amber-900">Ordinario / no SPE</p>
-        <p class="text-amber-800">PENDIENTE · ratificación documental con fecha</p>
+      <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5">
+        <p class="font-bold text-emerald-900">Ordinario / no SPE</p>
+        <p class="text-emerald-800">ADOPTADO · 25/11/2026 · sin activar módulos</p>
       </div>
     </div>
 
@@ -49,8 +50,10 @@
             Catálogo de referencia provisional — IVA e ISLR (#13)
           </h3>
           <p class="text-xs text-stone-500">
-            Solo lectura y solo para administrador/master. Clasifica los supuestos del giro,
-            pero no calcula impuestos, no activa retenciones ni modifica facturas o libros.
+            Solo lectura y solo para administrador/master. Clasifica los supuestos del giro;
+            use <strong>Cargar en histórico</strong> para registrar la alícuota, sustraendo,
+            vigencia e instrumento que indique el contador. No calcula impuestos, no activa
+            retenciones ni modifica facturas o libros.
           </p>
         </div>
       </div>
@@ -92,7 +95,7 @@
 
       <div class="mt-5 overflow-x-auto">
         <h4 class="mb-2 text-xs font-bold uppercase tracking-wide text-stone-600">
-          ISLR — Decreto 1.808 (art. 9 pendiente)
+          ISLR — Decreto 1.808 (cargar alícuota, sustraendo y vigencia)
         </h4>
         <table class="min-w-full text-left text-xs">
           <thead class="bg-stone-50 text-stone-600">
@@ -103,6 +106,7 @@
               <th class="px-3 py-2 font-bold">UT</th>
               <th class="px-3 py-2 font-bold">Sustraendo</th>
               <th class="px-3 py-2 font-bold">Alícuota / soporte</th>
+              <th class="px-3 py-2 font-bold">Acción</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-stone-100">
@@ -116,8 +120,18 @@
                 </td>
                 <td class="px-3 py-2">{{ item.sustraendo === null ? 'Pendiente' : item.sustraendo }}</td>
                 <td class="px-3 py-2">
-                  Pendiente del contador<br />
+                  {{ catalogStatus(item) }}<br />
                   <span class="text-stone-500">{{ item.legalBasis }}</span>
+                </td>
+                <td class="px-3 py-2">
+                  <button
+                    type="button"
+                    (click)="loadCatalogConcept(item)"
+                    class="rounded-lg border border-amber-300 px-2 py-1 font-semibold text-amber-800 hover:bg-amber-50"
+                    title="Cargar vigencia, alícuota y sustraendo en el histórico"
+                  >
+                    Cargar en histórico
+                  </button>
                 </td>
               </tr>
             } @empty {
@@ -163,6 +177,17 @@
       >
         UT
       </button>
+      <button
+        type="button"
+        (click)="setKind('islr')"
+        class="rounded-xl px-4 py-2.5 text-sm font-semibold"
+        [class.bg-stone-900]="kind() === 'islr'"
+        [class.text-white]="kind() === 'islr'"
+        [class.bg-white]="kind() !== 'islr'"
+        [class.text-stone-700]="kind() !== 'islr'"
+      >
+        ISLR (histórico por concepto)
+      </button>
     </div>
 
     @if (active(); as current) {
@@ -205,6 +230,12 @@
                   <td class="px-3 py-2">{{ item.effectiveTo || 'Vigente' }}</td>
                   <td class="px-3 py-2 font-semibold">
                     {{ item.value }}{{ item.valueUnit === 'percent' ? '%' : ' Bs.' }}
+                    @if (kind() === 'islr') {
+                      <div class="text-[10px] font-normal text-stone-500">
+                        {{ item.conceptLabel || item.conceptCode }} · {{ item.taxpayerType || 'sin distinción' }} ·
+                        sustraendo {{ item.sustraendoUt === null ? 'pendiente' : item.sustraendoUt + ' UT' }}
+                      </div>
+                    }
                   </td>
                   <td class="px-3 py-2">
                     {{ item.instrumentNumber }}<br />
@@ -275,6 +306,7 @@
               <select formControlName="kind" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2">
                 <option value="iva">IVA</option>
                 <option value="ut">UT</option>
+                <option value="islr">ISLR</option>
               </select>
             </label>
             <label class="block text-xs font-bold text-stone-600">
@@ -296,6 +328,28 @@
                 <option value="historico">Histórico</option>
               </select>
             </label>
+            @if (kind() === 'islr') {
+              <label class="block text-xs font-bold text-stone-600">
+                Código del concepto
+                <input formControlName="conceptCode" type="text" placeholder="ISR-HON-N" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+              </label>
+              <label class="block text-xs font-bold text-stone-600">
+                Rubro / concepto
+                <input formControlName="conceptLabel" type="text" placeholder="Honorarios profesionales" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+              </label>
+              <label class="block text-xs font-bold text-stone-600">
+                Persona
+                <select formControlName="taxpayerType" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2">
+                  <option value="">Sin distinción</option>
+                  <option value="natural">Natural</option>
+                  <option value="juridica">Jurídica</option>
+                </select>
+              </label>
+              <label class="block text-xs font-bold text-stone-600">
+                Sustraendo (UT)
+                <input formControlName="sustraendoUt" type="number" step="0.01" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+              </label>
+            }
             <label class="block text-xs font-bold text-stone-600">
               Vigencia desde
               <input formControlName="effectiveFrom" type="date" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
@@ -360,8 +414,9 @@
           <p class="text-xs text-stone-500">
             La tasa del documento toma por defecto la tasa actual o la histórica de la fecha de
             guardado; se muestra visible y editable en los formularios y usa fallback a
-            <code>currentUsd</code> si no se especifica o no se modifica. Formato XLSX/PDF, CSV
-            auxiliar, paginación, firma y numeración siguen pendientes de libros.
+            <code>currentUsd</code> si no se especifica o no se modifica. Formatos XLSX/PDF, CSV,
+            orden de columnas, firmantes y firma al final de cada cierre están aprobados; la
+            paginación <code>1 al 99</code> y la numeración de libro/página siguen pendientes.
           </p>
         </div>
       </div>
@@ -376,15 +431,31 @@
         </label>
         <label class="block text-xs font-bold text-stone-600">
           Paginación
-          <input formControlName="pagination" type="text" placeholder="Aun por definir" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+          <input formControlName="pagination" type="text" placeholder="1 al 99 (pendiente)" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
         </label>
         <label class="block text-xs font-bold text-stone-600">
           Firma
-          <input formControlName="signatureText" type="text" placeholder="Aun pendiente por indicar" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+          <input formControlName="signatureText" type="text" placeholder="Firma al final de cada cierre (confirmada)" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
         </label>
         <label class="block text-xs font-bold text-stone-600">
           Rol de firma
-          <input formControlName="signatureRole" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+          <input formControlName="signatureRole" type="text" placeholder="Contador y socios" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Firmante contador
+          <input formControlName="accountantSigner" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Firmantes socios
+          <input formControlName="partnerSigners" type="text" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600">
+          Numeración libro/página
+          <input formControlName="bookPageNumbering" type="text" placeholder="Pendiente" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
+        </label>
+        <label class="block text-xs font-bold text-stone-600 md:col-span-2">
+          Instrumento / vigencia formal (respuestas 8, 9 y 10)
+          <input formControlName="ratificationInstrument" type="text" placeholder="Documento y fecha; pendiente" class="mt-1 w-full rounded-xl border border-stone-300 px-3 py-2" />
         </label>
         <label class="block text-xs font-bold text-stone-600">
           Política de tasa (validada)

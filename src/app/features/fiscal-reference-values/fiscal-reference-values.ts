@@ -8,12 +8,13 @@ import {
   FiscalReferenceCatalogEntry,
   FiscalReferenceInput,
   FiscalReferenceKind,
+  FiscalReferenceTaxpayerType,
   FiscalReferenceValue,
   FiscalReferenceStatus,
   FiscalReferenceValueUnit,
 } from '../../core/models/erp.models';
 
-/** Administración de IVA/UT históricos y parámetros pendientes de la Fase 0 (#13). */
+/** Administración de históricos IVA/UT/ISLR y parámetros de la Fase 0 (#13). */
 @Component({
   selector: 'app-fiscal-reference-values',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -40,7 +41,11 @@ export class FiscalReferenceValuesComponent implements OnInit {
   );
 
   public active = computed(() =>
-    this.kind() === 'iva' ? this.api.activeIva() : this.api.activeUt()
+    this.kind() === 'iva'
+      ? this.api.activeIva()
+      : this.kind() === 'ut'
+        ? this.api.activeUt()
+        : null
   );
 
   public catalog = computed(() => this.api.fiscalReferenceCatalog());
@@ -49,7 +54,10 @@ export class FiscalReferenceValuesComponent implements OnInit {
   public catalogStatus(item: FiscalReferenceCatalogEntry): string {
     if (item.code === 'IVA-GEN-16') return 'Validado · tasa general';
     if (item.group === 'iva') return 'Por precisar si aplica';
-    return 'Pendiente del contador';
+    const loaded = this.api
+      .fiscalReferenceValues()
+      .some((value) => value.kind === 'islr' && value.conceptCode === item.code);
+    return loaded ? 'Cargado en el histórico (solo consulta)' : 'Pendiente del contador';
   }
 
   public catalogIva = computed<FiscalReferenceCatalogEntry[]>(
@@ -73,6 +81,10 @@ export class FiscalReferenceValuesComponent implements OnInit {
       nonNullable: true,
       validators: [Validators.required],
     }),
+    conceptCode: new FormControl('', {nonNullable: true}),
+    conceptLabel: new FormControl('', {nonNullable: true}),
+    taxpayerType: new FormControl<FiscalReferenceTaxpayerType | ''>('', {nonNullable: true}),
+    sustraendoUt: new FormControl<number | null>(null),
     effectiveFrom: new FormControl('', {
       nonNullable: true,
       validators: [Validators.required],
@@ -95,6 +107,10 @@ export class FiscalReferenceValuesComponent implements OnInit {
     pagination: new FormControl('', {nonNullable: true}),
     signatureText: new FormControl('', {nonNullable: true}),
     signatureRole: new FormControl('', {nonNullable: true}),
+    accountantSigner: new FormControl('Contador', {nonNullable: true}),
+    partnerSigners: new FormControl('Socios', {nonNullable: true}),
+    bookPageNumbering: new FormControl('', {nonNullable: true}),
+    ratificationInstrument: new FormControl('', {nonNullable: true}),
     exchangeRatePolicy: new FormControl<'documento_con_fallback'>('documento_con_fallback', {
       nonNullable: true,
     }),
@@ -115,6 +131,10 @@ export class FiscalReferenceValuesComponent implements OnInit {
           pagination: settings.pagination,
           signatureText: settings.signatureText,
           signatureRole: settings.signatureRole,
+          accountantSigner: settings.accountantSigner || 'Contador',
+          partnerSigners: settings.partnerSigners || 'Socios',
+          bookPageNumbering: settings.bookPageNumbering || '',
+          ratificationInstrument: settings.ratificationInstrument || '',
           exchangeRatePolicy: 'documento_con_fallback',
           notes: settings.notes,
           approvedAt: settings.approvedAt,
@@ -128,19 +148,49 @@ export class FiscalReferenceValuesComponent implements OnInit {
     this.resetForm();
   }
 
+  public loadCatalogConcept(entry: FiscalReferenceCatalogEntry): void {
+    this.kind.set('islr');
+    this.editingId.set(null);
+    this.form.reset({
+      kind: 'islr',
+      value: entry.ratePercent ?? 0,
+      valueUnit: 'percent',
+      conceptCode: entry.code,
+      conceptLabel: entry.label,
+      taxpayerType: entry.taxpayerTypes[0] ?? '',
+      sustraendoUt: entry.sustraendo,
+      effectiveFrom: '',
+      effectiveTo: '',
+      instrumentType: '',
+      instrumentNumber: '',
+      officialGazette: '',
+      publicationDate: '',
+      legalBasis: entry.legalBasis,
+      notes: entry.notes,
+      status: 'referencia',
+      confirmedByAccountant: false,
+      supportDocument: '',
+    });
+  }
+
   public resetForm(): void {
     const kind = this.kind();
     this.editingId.set(null);
     this.form.reset({
       kind,
-      value: kind === 'iva' ? 16 : 43,
-      valueUnit: kind === 'iva' ? 'percent' : 'bs',
-      effectiveFrom: kind === 'iva' ? '2020-01-01' : '2025-06-02',
+      value: kind === 'iva' ? 16 : kind === 'ut' ? 43 : 0,
+      valueUnit: kind === 'ut' ? 'bs' : 'percent',
+      conceptCode: '',
+      conceptLabel: '',
+      taxpayerType: '',
+      sustraendoUt: null,
+      effectiveFrom: kind === 'iva' ? '2020-01-01' : kind === 'ut' ? '2025-06-02' : '',
       effectiveTo: '',
-      instrumentType: kind === 'iva' ? 'decreto' : 'providencia',
-      instrumentNumber: kind === 'iva' ? '4.079' : 'SNAT/2025/000048',
-      officialGazette: kind === 'iva' ? 'G.O. N° 41.788 del 26/12/2019' : 'G.O. N° 43.140',
-      publicationDate: kind === 'iva' ? '2019-12-26' : '2025-06-02',
+      instrumentType: kind === 'ut' ? 'providencia' : kind === 'iva' ? 'decreto' : '',
+      instrumentNumber: kind === 'ut' ? 'SNAT/2025/000048' : kind === 'iva' ? '4.079' : '',
+      officialGazette:
+        kind === 'ut' ? 'G.O. N° 43.140' : kind === 'iva' ? 'G.O. N° 41.788 del 26/12/2019' : '',
+      publicationDate: kind === 'ut' ? '2025-06-02' : kind === 'iva' ? '2019-12-26' : '',
       legalBasis: '',
       notes: '',
       status: 'referencia',
@@ -156,6 +206,10 @@ export class FiscalReferenceValuesComponent implements OnInit {
       kind: item.kind,
       value: item.value,
       valueUnit: item.valueUnit,
+      conceptCode: item.conceptCode,
+      conceptLabel: item.conceptLabel,
+      taxpayerType: item.taxpayerType,
+      sustraendoUt: item.sustraendoUt,
       effectiveFrom: item.effectiveFrom,
       effectiveTo: item.effectiveTo,
       instrumentType: item.instrumentType,
@@ -174,9 +228,14 @@ export class FiscalReferenceValuesComponent implements OnInit {
     if (!this.isAdmin() || this.form.invalid || this.saving()) return;
     this.saving.set(true);
     try {
+      const raw = this.form.getRawValue();
       const input: FiscalReferenceInput = {
-        ...this.form.getRawValue(),
-        effectiveTo: this.form.controls.effectiveTo.value || '',
+        ...raw,
+        conceptCode: raw.conceptCode.trim(),
+        conceptLabel: raw.conceptLabel.trim(),
+        taxpayerType: raw.taxpayerType || '',
+        sustraendoUt: raw.sustraendoUt,
+        effectiveTo: raw.effectiveTo || '',
       };
       if (this.editingId()) {
         await this.api.updateFiscalReferenceValue(this.editingId()!, input);

@@ -930,12 +930,16 @@ function migrate(db: SqliteDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_accounting_entry_lines_account
       ON accounting_entry_lines(account_id);
 
-    -- IVA/UT históricos y parámetros pendientes de la Fase 0 (#13).
+    -- IVA/UT/ISLR históricos y parámetros de la Fase 0 (#13).
     CREATE TABLE IF NOT EXISTS fiscal_reference_values (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
       value REAL NOT NULL,
       value_unit TEXT NOT NULL,
+      concept_code TEXT NOT NULL DEFAULT '',
+      concept_label TEXT NOT NULL DEFAULT '',
+      taxpayer_type TEXT NOT NULL DEFAULT '',
+      sustraendo_ut REAL,
       effective_from TEXT NOT NULL,
       effective_to TEXT NOT NULL DEFAULT '',
       instrument_type TEXT NOT NULL DEFAULT '',
@@ -965,6 +969,10 @@ function migrate(db: SqliteDatabase): void {
       pagination TEXT NOT NULL DEFAULT '',
       signature_text TEXT NOT NULL DEFAULT '',
       signature_role TEXT NOT NULL DEFAULT '',
+      accountant_signer TEXT NOT NULL DEFAULT '',
+      partner_signers TEXT NOT NULL DEFAULT '',
+      book_page_numbering TEXT NOT NULL DEFAULT '',
+      ratification_instrument TEXT NOT NULL DEFAULT '',
       exchange_rate_policy TEXT NOT NULL DEFAULT 'documento_con_fallback',
       notes TEXT NOT NULL DEFAULT '',
       approved_at TEXT NOT NULL DEFAULT '',
@@ -984,6 +992,14 @@ function migrate(db: SqliteDatabase): void {
 
   // Apply additive column migrations for databases created before the
   // newer modules existed. SQLite does not support ADD COLUMN IF NOT EXISTS.
+  ensureColumn(db, 'fiscal_reference_values', 'concept_code', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_reference_values', 'concept_label', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_reference_values', 'taxpayer_type', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'fiscal_reference_values', 'sustraendo_ut', 'REAL');
+  ensureColumn(db, 'accounting_book_settings', 'accountant_signer', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'accounting_book_settings', 'partner_signers', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'accounting_book_settings', 'book_page_numbering', "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, 'accounting_book_settings', 'ratification_instrument', "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, 'auth_users', 'password_changed_at', 'TEXT');
   ensureColumn(db, 'auth_users', 'avatar_bg', 'TEXT');
   ensureColumn(db, 'raw_materials', 'supplier_id', 'TEXT');
@@ -1071,6 +1087,11 @@ function migrate(db: SqliteDatabase): void {
   // Cuenta contable elegida por transacción para los asientos automáticos.
   // Columnas aditivas, sin cambio de versión de DB.
   ensureColumn(db, 'inventory_movements', 'payment_account_code', 'TEXT');
+  // Doble fecha: fecha operativa elegida y timestamp real de registro (#13).
+  // Se dejan vacías en movimientos históricos: la UI usa `movementDate || date`
+  // como fallback, evitando alterar la forma de los registros legacy.
+  ensureColumn(db, 'inventory_movements', 'effective_date', 'TEXT');
+  ensureColumn(db, 'inventory_movements', 'registered_at', 'TEXT');
   ensureColumn(db, 'expenses', 'payment_account_code', 'TEXT');
   ensureColumn(db, 'payable_payments', 'account_code', 'TEXT');
   // Cuentas contables: clasificación, datos bancarios y saldo provisional #13.

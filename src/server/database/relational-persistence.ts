@@ -123,6 +123,8 @@ export function loadRelationalState(): DatabaseState | null {
       supplierTaxIdSnapshot: o(r['supplier_tax_id_snapshot']),
       notes: o(r['notes']),
       date: r['movement_date'],
+      movementDate: o(r['effective_date']),
+      registeredAt: o(r['registered_at']),
       performedBy: r['performed_by'],
       paymentCondition: o(r['payment_condition']) as InventoryMovement['paymentCondition'],
       paymentMethod: o(r['payment_method']) as InventoryMovement['paymentMethod'],
@@ -713,6 +715,10 @@ export function loadRelationalState(): DatabaseState | null {
       kind: r['kind'],
       value: r['value'],
       valueUnit: r['value_unit'],
+      conceptCode: r['concept_code'] ?? '',
+      conceptLabel: r['concept_label'] ?? '',
+      taxpayerType: r['taxpayer_type'] ?? '',
+      sustraendoUt: r['sustraendo_ut'] ?? null,
       effectiveFrom: r['effective_from'],
       effectiveTo: r['effective_to'] ?? '',
       instrumentType: r['instrument_type'] ?? '',
@@ -744,6 +750,10 @@ export function loadRelationalState(): DatabaseState | null {
         pagination: bookSettingsRow['pagination'] ?? '',
         signatureText: bookSettingsRow['signature_text'] ?? '',
         signatureRole: bookSettingsRow['signature_role'] ?? '',
+        accountantSigner: bookSettingsRow['accountant_signer'] ?? '',
+        partnerSigners: bookSettingsRow['partner_signers'] ?? '',
+        bookPageNumbering: bookSettingsRow['book_page_numbering'] ?? '',
+        ratificationInstrument: bookSettingsRow['ratification_instrument'] ?? '',
         exchangeRatePolicy:
           bookSettingsRow['exchange_rate_policy'] ?? 'documento_con_fallback',
         notes: bookSettingsRow['notes'] ?? '',
@@ -758,6 +768,10 @@ export function loadRelationalState(): DatabaseState | null {
         pagination: '',
         signatureText: '',
         signatureRole: '',
+        accountantSigner: '',
+        partnerSigners: '',
+        bookPageNumbering: '',
+        ratificationInstrument: '',
         exchangeRatePolicy: 'documento_con_fallback',
         notes: '',
         approvedAt: '',
@@ -1115,8 +1129,8 @@ export function saveRelationalState(state: DatabaseState): void {
         reference_doc, supplier_id, supplier_name_snapshot, supplier_tax_id_snapshot,
         notes, movement_date, performed_by, payment_condition, payment_method,
         bank_code, bank_name, payment_reference, credit_days, due_date,
-        payable_id, payable_number, payment_account_code
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payable_id, payable_number, payment_account_code, effective_date, registered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const m of snapshot.inventoryMovements) {
       insertMovement.run(
@@ -1146,7 +1160,9 @@ export function saveRelationalState(state: DatabaseState): void {
         v(m.dueDate),
         v(m.payableId),
         v(m.payableNumber),
-        v(m.paymentAccountCode)
+        v(m.paymentAccountCode),
+        v(m.movementDate),
+        v(m.registeredAt)
       );
     }
 
@@ -1824,11 +1840,12 @@ export function saveRelationalState(state: DatabaseState): void {
 
     const insertFiscalReferenceValue = db.prepare(`
       INSERT INTO fiscal_reference_values (
-        id, kind, value, value_unit, effective_from, effective_to,
-        instrument_type, instrument_number, official_gazette, publication_date,
-        legal_basis, notes, status, confirmed_by_accountant, support_document,
-        created_at, created_by, updated_at, annulled_at, annulled_reason, annulled_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, kind, value, value_unit, concept_code, concept_label, taxpayer_type,
+        sustraendo_ut, effective_from, effective_to, instrument_type, instrument_number,
+        official_gazette, publication_date, legal_basis, notes, status,
+        confirmed_by_accountant, support_document, created_at, created_by, updated_at,
+        annulled_at, annulled_reason, annulled_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const item of snapshot.fiscalReferenceValues || []) {
       insertFiscalReferenceValue.run(
@@ -1836,6 +1853,10 @@ export function saveRelationalState(state: DatabaseState): void {
         item.kind,
         item.value,
         item.valueUnit,
+        item.conceptCode ?? '',
+        item.conceptLabel ?? '',
+        item.taxpayerType ?? '',
+        item.sustraendoUt ?? null,
         item.effectiveFrom,
         item.effectiveTo ?? '',
         item.instrumentType ?? '',
@@ -1863,6 +1884,10 @@ export function saveRelationalState(state: DatabaseState): void {
       pagination: '',
       signatureText: '',
       signatureRole: '',
+      accountantSigner: '',
+      partnerSigners: '',
+      bookPageNumbering: '',
+      ratificationInstrument: '',
       exchangeRatePolicy: 'documento_con_fallback',
       notes: '',
       approvedAt: '',
@@ -1872,14 +1897,19 @@ export function saveRelationalState(state: DatabaseState): void {
     db.prepare(`
       INSERT INTO accounting_book_settings (
         id, approved_formats, auxiliary_format, pagination, signature_text,
-        signature_role, exchange_rate_policy, notes, approved_at, updated_at, updated_by
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        signature_role, accountant_signer, partner_signers, book_page_numbering,
+        ratification_instrument, exchange_rate_policy, notes, approved_at, updated_at, updated_by
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       bookSettings.approvedFormats ?? 'xlsx,pdf',
       bookSettings.auxiliaryFormat ?? 'csv',
       bookSettings.pagination ?? '',
       bookSettings.signatureText ?? '',
       bookSettings.signatureRole ?? '',
+      bookSettings.accountantSigner ?? '',
+      bookSettings.partnerSigners ?? '',
+      bookSettings.bookPageNumbering ?? '',
+      bookSettings.ratificationInstrument ?? '',
       bookSettings.exchangeRatePolicy ?? 'documento_con_fallback',
       bookSettings.notes ?? '',
       bookSettings.approvedAt ?? '',

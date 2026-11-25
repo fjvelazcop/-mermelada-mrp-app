@@ -957,7 +957,7 @@ function buildInventario(input: AccountingBookInput): {
     ],
     notes: [
       `Plan VEN-NIF de 167 cuentas. Correlación: 1.03.01 → ${LEGACY_TO_VEN_NIF['1.03.01']} (Materia Prima) y 1.03.02 → ${LEGACY_TO_VEN_NIF['1.03.02']} (Productos Terminados).`,
-      'Firmantes: Contador y socios. Paginación 1 al 99 y firma al final de cada cierre: pendientes.',
+      'Firmantes: Contador y socios. Firma al final de cada cierre confirmada; paginación 1 al 99 pendiente.',
       'No incluye inventario inicial auditado ni ajustes de cierre; el resto del cierre #13 permanece borrador/provisional.',
     ],
   };
@@ -1010,7 +1010,7 @@ function buildRetenciones(): {
     notes: [
       'SIN OPERACIONES. Como contribuyente ordinario no practicamos retenciones al pagar; solo se contempla el registro/control de comprobantes de retención que clientes SPE nos practican al cobrar (#13).',
       'Retenciones practicadas: NO APLICA (vatWithholdingEnabled=false e islrWithholdingEnabled=false). Retenciones recibidas: 0, solo control documental; sin cálculo real ni consecutivos oficiales.',
-      'La cuenta de control para retenciones recibidas de ISLR queda pendiente de definir con el contador; hoy se usa el plan base provisional.',
+      'La cuenta de control para retenciones recibidas de ISLR tiene la correlación VEN-NIF 1.1.05.04 ratificada (respuesta 10); hoy se usa el plan base provisional y no se calculan retenciones.',
     ],
   };
 }
@@ -1430,12 +1430,12 @@ export function buildAccountingBook(input: AccountingBookInput): AccountingBookR
     ...(input.type === 'inventario'
       ? [
           'LIBRO DEFINITIVO — PLAN VEN-NIF DE 167 CUENTAS.',
-          'Firmantes: Contador y socios. Paginación 1 al 99 y firma al final de cada cierre: pendientes de definir.',
+          'Firmantes: Contador y socios. Firma al final de cada cierre confirmada; paginación 1 al 99 pendiente de definir.',
         ]
       : [
           'BORRADOR / PRUEBA – PROVISIONAL – PENDIENTE DE VALIDACIÓN CONTABLE (#13).',
           'Generado con el plan base actual y cuentas de control provisionales; no es evidencia fiscal.',
-          'Saldos de apertura, fecha de corte, formatos legales, firma definitiva y numeración de libro/página: pendientes de ajustar con el contador (#13).',
+          'Saldos de apertura, fecha de corte y numeración de libro/página: pendientes de ajustar con el contador (#13). Formatos XLSX/PDF, CSV auxiliar, orden de columnas y firma al final de cada cierre: aprobados (#13).',
         ]),
     ...localized.notes,
     ...(input.bookSettings?.notes ? [input.bookSettings.notes] : []),

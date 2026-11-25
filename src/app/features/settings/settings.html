@@ -58,7 +58,7 @@
 
           <button type="button" (click)="setSection('fiscalReferences')" [class]="navTabClass('fiscalReferences')">
             <mat-icon class="text-sm">history_edu</mat-icon>
-            <span>IVA/UT</span>
+            <span>IVA/UT/ISLR</span>
             <span [class]="navBadgeClass('fiscalReferences')">#13</span>
           </button>
 
@@ -1386,9 +1386,20 @@
                 (change)="handleFiscalObligationSelection($event)"
                 class="min-h-11 w-full rounded-xl border border-stone-300 bg-white px-3 text-sm"
               >
-                @for (item of fiscalObligationDefinitions; track item.key) {
-                  <option [value]="item.key">{{ item.title }}</option>
-                }
+                <optgroup label="Pendiente del contador (#13)">
+                  @for (item of fiscalObligationDefinitions; track item.key) {
+                    @if (phaseZeroKeys.includes(item.key)) {
+                      <option [value]="item.key">{{ item.title }}</option>
+                    }
+                  }
+                </optgroup>
+                <optgroup label="Resto de decisiones fiscales">
+                  @for (item of fiscalObligationDefinitions; track item.key) {
+                    @if (!phaseZeroKeys.includes(item.key)) {
+                      <option [value]="item.key">{{ item.title }}</option>
+                    }
+                  }
+                </optgroup>
               </select>
             </div>
 
@@ -1417,7 +1428,7 @@
                   <option value="aplica">Aplica</option>
                   <option value="no_aplica">No aplica</option>
                 </select>
-                <p class="mt-1 text-[11px] text-stone-500">Para confirmar “Aplica” o “No aplica”, indique fecha y una referencia o conclusión del contador.</p>
+                <p class="mt-1 text-[11px] text-stone-500">Para confirmar “Aplica” o “No aplica”, indique fecha y una referencia o conclusión del contador. Cargar aquí un dato #13 solo documenta la decisión: no activa retenciones, facturación digital, asientos ni libros.</p>
               </div>
               <div>
                 <label for="obligation-reference" class="mb-1 block text-xs font-bold text-stone-600">Referencia normativa o evidencia</label>

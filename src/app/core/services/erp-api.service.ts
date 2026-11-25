@@ -1462,6 +1462,7 @@ export class ErpApiService {
     costPerUnit: number;
     exchangeRateUsed?: number;
     referenceDoc?: string;
+    movementDate?: string;
     supplierId?: string;
     supplierNameSnapshot?: string;
     supplierTaxIdSnapshot?: string;
@@ -1508,7 +1509,7 @@ export class ErpApiService {
           ? 'entrada_materia_prima'
           : (data.type === 'salida_produccion' ? 'salida_produccion' : 'ajuste_merma'),
         title: actionTitle,
-        description: `${data.quantity} ${mat?.unit || 'uds'} (${data.type === 'entrada' ? 'Recepción' : 'Consumo'}). Ref: ${data.referenceDoc || 'S/N'}. ${data.notes || ''}`.trim(),
+        description: `${data.quantity} ${mat?.unit || 'uds'} (${data.type === 'entrada' ? 'Recepción' : 'Consumo'}). Ref: ${data.referenceDoc || 'S/N'}. Fecha del movimiento: ${data.movementDate || payload.date} · Registrado: ${payload.date}. ${data.notes || ''}`.trim(),
         severity: data.type === 'ajuste_merma' ? 'warning' : 'info',
         details: {
           targetId: data.materialId,
@@ -1517,6 +1518,8 @@ export class ErpApiService {
           unit: mat ? mat.unit : undefined,
           costUsd: totalCost,
           referenceDoc: data.referenceDoc,
+          movementDate: data.movementDate || payload.date,
+          registeredAt: created.movement.registeredAt || payload.date,
           supplierId: data.supplierId,
           supplierName: data.supplierNameSnapshot,
           taxId: data.supplierTaxIdSnapshot,
@@ -2828,7 +2831,7 @@ export class ErpApiService {
     this.showToast('Obligación fiscal e historial actualizados.');
   }
 
-  // --- VALORES FISCALES HISTÓRICOS (IVA / UT) ---
+  // --- VALORES FISCALES HISTÓRICOS (IVA / UT / ISLR) ---
   public async refreshFiscalReferenceCatalog(): Promise<FiscalReferenceCatalogResponse> {
     try {
       const catalog = await firstValueFrom(

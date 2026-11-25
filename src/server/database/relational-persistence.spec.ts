@@ -99,6 +99,63 @@ describe('normalized SQLite schema', () => {
     ).map((row) => row.version);
 
     expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+
+    const fiscalColumns = (
+      db.prepare('PRAGMA table_info(fiscal_reference_values)').all() as {name: string}[]
+    ).map((row) => row.name);
+    expect(fiscalColumns).toEqual(
+      expect.arrayContaining(['concept_code', 'concept_label', 'taxpayer_type', 'sustraendo_ut'])
+    );
+    const bookColumns = (
+      db.prepare('PRAGMA table_info(accounting_book_settings)').all() as {name: string}[]
+    ).map((row) => row.name);
+    expect(bookColumns).toEqual(
+      expect.arrayContaining([
+        'accountant_signer',
+        'partner_signers',
+        'book_page_numbering',
+        'ratification_instrument',
+      ])
+    );
+  });
+
+  it('persiste un histórico ISLR con vigencia, sustraendo y soporte por concepto', () => {
+    dbInstance.createFiscalReferenceValue(
+      {
+        kind: 'islr',
+        value: 15,
+        valueUnit: 'percent',
+        conceptCode: 'ISR-HON-N',
+        conceptLabel: 'Honorarios profesionales',
+        taxpayerType: 'natural',
+        sustraendoUt: 10,
+        effectiveFrom: '2026-01-01',
+        effectiveTo: '',
+        instrumentType: 'decreto',
+        instrumentNumber: '1.808',
+        officialGazette: 'G.O.',
+        publicationDate: '2026-01-01',
+        legalBasis: 'Art. 9',
+        notes: 'Prueba de persistencia ISLR',
+        status: 'confirmado',
+        confirmedByAccountant: true,
+        supportDocument: 'SOP-ISR',
+      },
+      {userId: 'u-1', userName: 'Admin', userRole: 'admin'}
+    );
+    dbInstance.persist();
+    closeDb();
+    setDbPath(dbPath);
+    const persisted = loadRelationalState();
+    const entry = persisted?.fiscalReferenceValues.find(
+      (item) => item.conceptCode === 'ISR-HON-N'
+    );
+    expect(entry).toMatchObject({
+      value: 15,
+      sustraendoUt: 10,
+      taxpayerType: 'natural',
+      supportDocument: 'SOP-ISR',
+    });
   });
 
   it('persists the fiscal invoice credit days introduced by migration v11', () => {

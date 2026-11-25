@@ -20,6 +20,7 @@ import {
   FiscalBooksFormat,
   FiscalObligationApplicability,
   FiscalObligationKey,
+  FiscalObligationRecord,
   FISCAL_OBLIGATION_DEFINITIONS,
   FiscalRegime,
   HistoricalOrdersTreatment,
@@ -147,9 +148,17 @@ export class Settings {
   public notificationResending = signal<boolean>(false);
   private notificationsLoaded = false;
   public fiscalObligationSaving = signal<boolean>(false);
-  public selectedFiscalObligationKey = signal<FiscalObligationKey>('tax_regime');
+  public selectedFiscalObligationKey = signal<FiscalObligationKey>('legal_reconversion');
   public fiscalObligationDefinitions = FISCAL_OBLIGATION_DEFINITIONS;
-  public selectedFiscalObligation = computed(() =>
+  public readonly phaseZeroKeys: FiscalObligationKey[] = [
+    'legal_reconversion',
+    'opening_cutoff',
+    'accrual_criteria',
+    'spe_vouchers',
+    'record_retention',
+    'digital_invoicing',
+  ];
+  public selectedFiscalObligation = computed<FiscalObligationRecord | undefined>(() =>
     this.api
       .fiscalObligations()
       .find((item) => item.key === this.selectedFiscalObligationKey())

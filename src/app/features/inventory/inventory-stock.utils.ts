@@ -73,11 +73,13 @@ export function buildStockConsolidation(
   const byMaterial: StockConsolidationRow[] = input.materials.map((material) => {
     const materialMovements = input.movements
       .filter((movement) => movement.materialId === material.id)
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) =>
+        (b.movementDate || b.date).localeCompare(a.movementDate || a.date)
+      );
     const lastMovement = materialMovements[0];
     const daysSince = lastMovement
       ? Math.floor(
-          (today.getTime() - new Date(`${lastMovement.date}T00:00:00`).getTime()) /
+          (today.getTime() - new Date(`${lastMovement.movementDate || lastMovement.date}T00:00:00`).getTime()) /
             86_400_000
         )
       : Number.POSITIVE_INFINITY;

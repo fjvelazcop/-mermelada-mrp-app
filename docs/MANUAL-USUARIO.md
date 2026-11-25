@@ -338,10 +338,13 @@ Disponible para administradores y Master:
 - **Usuarios:** crear, editar, desactivar y asignar roles.
 - **Roles:** matriz de permisos por módulo y acción.
 - **Datos fiscales:** razón social, RIF, dirección, serie y datos de contacto.
-- **IVA / UT e Historial (#13):** solo admin/master. Histórico de IVA/UT con
-  vigencias e instrumentos, parámetros pendientes de libros y un catálogo de
-  referencia de solo lectura con la clasificación IVA 16%/0%/8% y los rubros
-  ISLR del giro. No calcula impuestos ni activa retenciones.
+- **IVA / UT / ISLR e historial (#13):** solo admin/master. Histórico con
+  vigencias e instrumentos; los rubros ISLR se cargan por concepto, persona,
+  alícuota y sustraendo desde el catálogo (**Cargar en histórico**) o con un
+  registro nuevo. En **Parámetros de libros** se guardan formatos aprobados,
+  firmantes, firma al final de cada cierre, paginación, numeración y soporte de
+  ratificación. No calcula impuestos ni activa retenciones, facturación digital
+  o hash.
 - **Auditoría:** consulta de eventos por módulo y usuario.
 
 ### 4.10. Documentación y guía
@@ -409,19 +412,24 @@ permiso. Cinco pestañas:
    e IVA; no incluye una cuenta dedicada a **retenciones recibidas** ni una
    cuenta específica para IVA 8%. Administradores pueden crear cuentas
    adicionales, pero en esta ronda no se han creado cuentas ni modificado
-   asientos. Los códigos, la naturaleza y el plan definitivo (base 35 o VEN-NIF
-   de 167) deben confirmarse con el contador (#13).
+   asientos. El plan definitivo es **VEN-NIF de 167 cuentas** (respuesta 9) y lo
+   usa el Libro de Inventario; las correlaciones de retenciones recibidas quedaron
+   ratificadas (`1.1.05.03` IVA, `1.1.05.04` ISLR; respuesta 10) sin adopción
+   operativa. El plan base de 35 cuentas sigue en pruebas/borradores.
 2. **Asientos / Diario:** consulta los asientos automáticos generados desde
    ventas, cobros, egresos, pagos de CxP e inventario, y permite crear asientos
    manuales balanceados. Un asiento con débitos distintos de créditos no puede
    guardarse. Admin/Master pueden confirmar borradores o anular con motivo; la
    anulación conserva el historial.
 3. **Libros:** genera versiones **BORRADOR / PRUEBA** de Diario, Mayor, Balance
-   de comprobación, Balance General, Inventario, Estado de resultados, Compras,
-   Ventas, Retenciones, Caja/Banco y auxiliares CxC/CxP para el año y mes
-   elegidos. Inventario usa las cuentas provisionales `1.03.01` y `1.03.02`.
-   Cada libro incluye metadatos, saldo de control, hash, leyenda «PENDIENTE DE
-   VALIDACIÓN CONTABLE (#13)» y línea de firma. Puede exportarlo a CSV, Excel o
+   de comprobación, Balance General, Estado de resultados, Compras, Ventas,
+   Retenciones, Caja/Banco y auxiliares CxC/CxP para el año y mes elegidos.
+   **Inventario es definitivo**: usa el plan VEN-NIF de 167 cuentas
+   (`1.1.04.02` y `1.1.04.04`, antes `1.03.01`/`1.03.02`). Cada libro incluye
+   metadatos, saldo de control, hash y firma al final de cada cierre, ya
+   confirmada; los libros en borrador llevan la leyenda «PENDIENTE DE
+   VALIDACIÓN CONTABLE (#13)» y la paginación `1 al 99` sigue pendiente. Puede
+   exportarlos a CSV, Excel o
    PDF. Retenciones se muestra «SIN OPERACIONES»: como ordinario no se practican retenciones; solo control de comprobantes recibidos de SPE, sin cálculo ni
    consecutivos.
 4. **Períodos:** los meses se crean automáticamente al registrar el primer
@@ -486,11 +494,14 @@ automáticamente «Sujeto Pasivo Especial», «Agente de Retención de IVA» y
 «Agente de Retención de ISLR» como condición declarativa. No enciende los cálculos
 de retención: `vatWithholdingEnabled` e `islrWithholdingEnabled` permanecen en
 `false` hasta la validación contable. El usuario confirmó que hoy somos
-contribuyentes **ordinarios** (fabricación de mermelada), condición que sigue
-**pendiente de ratificación documental con fecha del contador**. Ya están
-**validados (23/11/2026)**: IVA 16% general para mermelada procesada/envasada,
-UT Bs. 43,00 desde 02/06/2025 e IGTF no aplica según la condición actual.
-Siguen **por precisar si aplica**: exentos 0%, 8% y los conceptos de ISLR.
+contribuyentes **ordinarios** (fabricación de mermelada), condición **adoptada
+(25/11/2026)** y documentada en `Configuración → Registro de decisiones
+tributarias`; si el contador remite un instrumento, se agrega al historial con
+fecha y auditoría. Ya están **validados (23/11/2026)**: IVA 16% general para
+mermelada procesada/envasada, UT Bs. 43,00 desde 02/06/2025 e IGTF no aplica
+según la condición actual. Siguen **por precisar si aplica**: exentos 0%, 8% y
+las alícuotas/sustraendos ISLR, que se cargan por concepto y vigencia en
+`IVA / UT / ISLR e historial (#13)`.
 
 La tasa de cambio de cada documento toma por defecto la tasa actual o la de la
 fecha de guardado, aparece visible y editable en los formularios y permite ajuste
