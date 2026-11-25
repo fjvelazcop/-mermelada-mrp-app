@@ -205,6 +205,19 @@ conexiones, espera las peticiones en curso, cierra SQLite y sale con código 0
 > (API/SSR + túnel + correo) usa `npm run start:all` en local o
 > `npm run start:pm2` en el servidor.
 
+### Avisos de dependencias CommonJS en el build
+
+`npm run build` puede mostrar avisos `CommonJS or AMD dependencies can cause
+optimization bailouts`. Se gestionan con `allowedCommonJsDependencies` en
+`angular.json` (`architect.build.options`): son dependencias transitivas de
+librerías cargadas de forma diferida, **`jspdf`/`canvg`/`html2canvas`** en
+`src/app/core/utils/export.utils.ts` (exportación PDF) y
+**React/Recharts** en `src/app/features/dashboard/dashboard-charts.renderer.ts`
+(gráficas). Están permitidas de forma explícita y documentada: el aviso es
+informativo, no cambia cálculos ni habilita módulos fiscales. Al actualizar
+estas librerías o sustituir Recharts por un renderer Angular nativo, revisar la
+lista y retirar las entradas que dejen de aplicar.
+
 ```bash
 npm ci
 npm run build
